@@ -82,7 +82,7 @@ export default function Hud() {
       <div className="strip-anchor">
         <PrintTape events={freshEvents} onDone={dismissTick} />
 
-        <div className={`strip ${live ? "live" : "idle"}`} role="group" aria-label="I/O terminal">
+        <div className={`strip ${live ? "live" : "idle"}`} role="group" aria-label="I/O">
           <button
             type="button"
             className="mark"
@@ -104,7 +104,7 @@ export default function Hud() {
             onClick={toggle}
             disabled={pending || !state}
           >
-            <span className="k">I</span>
+            <span className="k">TIME</span>
             <span className="v in">{clock(inputMs)}</span>
           </button>
 
@@ -116,7 +116,6 @@ export default function Hud() {
             onClick={toggle}
             disabled={pending || !state}
           >
-            <span className="k">O</span>
             <span className="v out">
               {output >= 0 ? "+" : ""}
               {money(output)}
@@ -126,8 +125,8 @@ export default function Hud() {
           {live && (
             <>
               <div className="sep" />
-              <div className="cell thin">
-                <span className="k">NX</span>
+              <div className="cell thin" title="Time until the next $20">
+                <span className="k">NEXT</span>
                 <span className="v dim">{countdown(state?.msToNextPrint ?? 0)}</span>
               </div>
             </>
@@ -174,23 +173,23 @@ export default function Hud() {
               transition={{ duration: 0.12 }}
             >
               <div className="menu-row">
-                <span className="k">I.U</span>
+                <span className="k">ACTIONS</span>
                 <span className={`v in ${flashI ? "flash-up" : ""}`}>{inputUnits}</span>
                 <span className="k">$/HR</span>
                 <span className="v out">{efficiency.toFixed(0)}</span>
               </div>
               <div className="menu-actions">
                 <button type="button" disabled={pending} onClick={() => recordInput("prompt")}>
-                  I+3
+                  Prompt
                 </button>
                 <button type="button" disabled={pending} onClick={() => recordInput("email")}>
-                  I+2
+                  Email
                 </button>
                 <button type="button" disabled={pending} onClick={() => reset()}>
-                  CLR
+                  Reset
                 </button>
                 <button type="button" disabled={pending || !state} onClick={toggle}>
-                  {live ? "OUT" : "IN"}
+                  {live ? "Clock out" : "Clock in"}
                 </button>
               </div>
               {error && <div className="err">{error}</div>}

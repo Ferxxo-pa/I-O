@@ -3,11 +3,12 @@
 **Input vs Output.** A tiny trading-terminal strip that gamifies work.
 
 ```
-I/O ●  I 00:12  │  O +$20.00  │  NX 00:08
+I/O ●  TIME 00:12  │  +$20.00  │  NEXT 00:08
 ```
 
-- **I** — input (time + actions) · sky cyan
-- **O** — output (money printed) · gain green
+- **TIME** — how long you have been clocked in · white
+- **+$** — money printed · green
+- **NEXT** — time until the next $20 print
 - Clock in → hour prints `+$20` → dopamine
 
 ## Run
