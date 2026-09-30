@@ -100,56 +100,20 @@ export default function Hud() {
             <span className={`dot ${live ? "on" : ""}`} />
           </button>
 
-          <button
-            type="button"
-            className={`cell ${flashI ? "flash-up" : ""}`}
-            onClick={toggle}
-            disabled={pending || !state}
-          >
-            <span className="k">TIME</span>
-            <span className="v in">{clock(inputMs)}</span>
-          </button>
-
-          <div className="sep" />
-
-          <button
-            type="button"
-            className={`cell primary ${flashO ? "flash-up" : ""}`}
-            onClick={toggle}
-            disabled={pending || !state}
-          >
-            <span className="v out">
-              {output >= 0 ? "+" : ""}
-              {money(output)}
-            </span>
-          </button>
+          <div className={`cell ${flashI ? "flash-up" : ""}`} title="Points for messages sent">
+            <span className="k">PTS</span>
+            <span className="v pts">{inputUnits}</span>
+          </div>
 
           <div className="sep" />
 
           <div
-            className="cell"
-            title={squareOn ? "Hourly rate from Square" : "Demo rate until Square is connected"}
+            className={`cell primary ${flashO ? "flash-up" : ""}`}
+            title={squareOn ? "What you make per hour, from Square" : "What you make per hour"}
           >
             <span className="k">$/HR</span>
             <span className="v out">{rateText(rateCents)}</span>
           </div>
-
-          <div className="sep" />
-
-          <div className="cell" title="Points for messages sent from the Square account">
-            <span className="k">PTS</span>
-            <span className={`v in ${flashI ? "flash-up" : ""}`}>{inputUnits}</span>
-          </div>
-
-          {live && (
-            <>
-              <div className="sep" />
-              <div className="cell thin" title={`Time until the next $${rateText(rateCents)}`}>
-                <span className="k">NEXT</span>
-                <span className="v dim">{countdown(state?.msToNextPrint ?? 0)}</span>
-              </div>
-            </>
-          )}
 
           <button
             type="button"
@@ -160,26 +124,6 @@ export default function Hud() {
             +
           </button>
 
-          {live && (
-            <div className="rail">
-              <motion.div
-                className="rail-fill"
-                animate={{
-                  width: `${
-                    state
-                      ? Math.min(
-                          100,
-                          ((state.config.hourDurationMs - state.msToNextPrint) /
-                            state.config.hourDurationMs) *
-                            100,
-                        )
-                      : 0
-                  }%`,
-                }}
-                transition={{ duration: 0.15, ease: "linear" }}
-              />
-            </div>
-          )}
         </div>
 
         <AnimatePresence>
@@ -191,10 +135,25 @@ export default function Hud() {
               exit={{ opacity: 0, y: 6 }}
               transition={{ duration: 0.12 }}
             >
+              <div className="detail">
+                <span className="k">TIME</span>
+                <span className="v in">{clock(inputMs)}</span>
+              </div>
+              <div className="detail">
+                <span className="k">MONEY</span>
+                <span className={`v out ${flashO ? "flash-up" : ""}`}>
+                  {output >= 0 ? "+" : ""}
+                  {money(output)}
+                </span>
+              </div>
+              {live && (
+                <div className="detail">
+                  <span className="k">NEXT</span>
+                  <span className="v dim">{countdown(state?.msToNextPrint ?? 0)}</span>
+                </div>
+              )}
               <div className="hint">
-                {squareOn
-                  ? "Square is connected. Paid invoices print here. Sent invoices add a point."
-                  : "Demo rate until Square is connected."}
+                {squareOn ? "Rate from Square." : "Demo rate until Square is connected."}
               </div>
               <div className="menu-actions">
                 <button type="button" disabled={pending} onClick={() => reset()}>

@@ -3,14 +3,13 @@
 **Input vs Output.** A tiny trading-terminal strip that gamifies work.
 
 ```
-I/O ●  TIME 00:12  │  +$4.00  │  $20/HR  │  PTS 1  │  NEXT 00:08
+I/O ●  PTS 1  │  $20/HR
 ```
 
-- **TIME** — how long you have been clocked in · white
-- **+$** — wages accrued at your hourly rate · green
-- **$/HR** — your Square wage (demo $20 until Square is connected)
-- **PTS** — one point each time an invoice is sent from the Square account
-- **NEXT** — time until the next wage print
+Open **+** for time, money accrued, and the countdown to the next print.
+
+- **PTS** — one point each time an invoice is sent · orange
+- **$/HR** — what you make per hour · green (Square wage, or demo $20)
 - A paid invoice floats a green `+$200` for everyone watching this strip. That sale is not added to your wages.
 
 ## Run
