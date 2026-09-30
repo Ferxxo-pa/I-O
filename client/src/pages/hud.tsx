@@ -32,6 +32,24 @@ function rateText(cents: number): string {
   return dollars.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
+/** Revenue stepped once a second so the total ticks like a clock. */
+function tickedRevenue(state: {
+  session: { clockedIn: boolean; outputCents: number };
+  config: { hourlyOutputCents: number; hourDurationMs: number };
+  accruedOutputCents: number;
+  msToNextPrint: number;
+} | null): number {
+  if (!state) return 0;
+  const printed = state.session.outputCents;
+  if (!state.session.clockedIn) return printed;
+  const hour = state.config.hourDurationMs;
+  const elapsed = Math.max(0, hour - state.msToNextPrint);
+  const seconds = Math.floor(elapsed / 1000);
+  const perSecond = state.config.hourlyOutputCents / (hour / 1000);
+  const stepped = Math.min(state.config.hourlyOutputCents, Math.floor(seconds * perSecond));
+  return printed + stepped;
+}
+
 export default function Hud() {
   const {
     state,
@@ -45,14 +63,11 @@ export default function Hud() {
   } = useIoState();
 
   const [flashO, setFlashO] = useState(false);
-  const [flashI, setFlashI] = useState(false);
   const [menu, setMenu] = useState(false);
 
   const live = state?.session.clockedIn ?? false;
-  const output =
-    (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
+  const revenue = tickedRevenue(state);
   const inputMs = state?.inputMs ?? 0;
-  const inputUnits = state?.session.inputUnits ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const squareOn = state?.square.connected ?? false;
 
@@ -64,11 +79,6 @@ export default function Hud() {
       const t = setTimeout(() => setFlashO(false), 280);
       return () => clearTimeout(t);
     }
-    if (latest.kind === "input") {
-      setFlashI(true);
-      const t = setTimeout(() => setFlashI(false), 280);
-      return () => clearTimeout(t);
-    }
   }, [state?.events[0]?.id]);
 
   const toggle = () => {
@@ -78,7 +88,7 @@ export default function Hud() {
   };
 
   return (
-    <div className="stage">
+    <div className={`stage ${live ? "live" : "idle"}`}>
       <div className="crt" aria-hidden />
 
       <div className="strip-anchor">
@@ -100,19 +110,13 @@ export default function Hud() {
             <span className={`dot ${live ? "on" : ""}`} />
           </button>
 
-          <div className={`cell ${flashI ? "flash-up" : ""}`} title="Points for messages sent">
-            <span className="k">PTS</span>
-            <span className="v pts">{inputUnits}</span>
-          </div>
-
           <div className="sep" />
 
-          <div
-            className={`cell primary ${flashO ? "flash-up" : ""}`}
-            title={squareOn ? "What you make per hour, from Square" : "What you make per hour"}
-          >
-            <span className="k">$/HR</span>
-            <span className="v out">{rateText(rateCents)}</span>
+          <div className={`cell revenue ${flashO ? "flash-up" : ""}`} title="Revenue this shift">
+            <span className="v out">
+              {revenue >= 0 ? "+" : ""}
+              {money(revenue)}
+            </span>
           </div>
 
           <button
@@ -141,10 +145,14 @@ export default function Hud() {
               </div>
               <div className="detail">
                 <span className="k">MONEY</span>
-                <span className={`v out ${flashO ? "flash-up" : ""}`}>
-                  {output >= 0 ? "+" : ""}
-                  {money(output)}
+                <span className="v out">
+                  {revenue >= 0 ? "+" : ""}
+                  {money(revenue)}
                 </span>
+              </div>
+              <div className="detail">
+                <span className="k">$/HR</span>
+                <span className="v dim">{rateText(rateCents)}</span>
               </div>
               {live && (
                 <div className="detail">

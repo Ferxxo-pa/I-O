@@ -3,13 +3,12 @@
 **Input vs Output.** A tiny trading-terminal strip that gamifies work.
 
 ```
-I/O ●  PTS 1  │  $20/HR
+I/O ●  +$4.00
 ```
 
-Open **+** for time, money accrued, and the countdown to the next print.
+The number is revenue. It ticks up once a second while you are clocked in. **I/O** is green when you are working. Clocked out, the whole stage is grey.
 
-- **PTS** — one point each time an invoice is sent · orange
-- **$/HR** — what you make per hour · green (Square wage, or demo $20)
+Open **+** for time, the money total, and the hourly rate. Points show up as orange notifications, not a counter on the strip.
 - A paid invoice floats a green `+$200` for everyone watching this strip. That sale is not added to your wages.
 
 ## Run
