@@ -26,6 +26,12 @@ function countdown(ms: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+function rateText(cents: number): string {
+  const dollars = cents / 100;
+  if (Number.isInteger(dollars)) return String(dollars);
+  return dollars.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 export default function Hud() {
   const {
     state,
@@ -35,7 +41,6 @@ export default function Hud() {
     dismissTick,
     clockIn,
     clockOut,
-    recordInput,
     reset,
   } = useIoState();
 
@@ -48,16 +53,13 @@ export default function Hud() {
     (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
   const inputMs = state?.inputMs ?? 0;
   const inputUnits = state?.session.inputUnits ?? 0;
-  const rate = state ? state.config.hourlyOutputCents / 100 : 20;
-
-  // Efficiency: output dollars per hour of input time (live mark).
-  const efficiency =
-    inputMs > 0 ? output / 100 / (inputMs / 3_600_000) : live ? rate : 0;
+  const rateCents = state?.config.hourlyOutputCents ?? 2000;
+  const squareOn = state?.square.connected ?? false;
 
   useEffect(() => {
     const latest = state?.events[0];
     if (!latest) return;
-    if (latest.kind === "hour_print") {
+    if (latest.kind === "hour_print" || latest.kind === "sale") {
       setFlashO(true);
       const t = setTimeout(() => setFlashO(false), 280);
       return () => clearTimeout(t);
@@ -122,10 +124,27 @@ export default function Hud() {
             </span>
           </button>
 
+          <div className="sep" />
+
+          <div
+            className="cell"
+            title={squareOn ? "Hourly rate from Square" : "Demo rate until Square is connected"}
+          >
+            <span className="k">$/HR</span>
+            <span className="v out">{rateText(rateCents)}</span>
+          </div>
+
+          <div className="sep" />
+
+          <div className="cell" title="Points for messages sent from the Square account">
+            <span className="k">PTS</span>
+            <span className={`v in ${flashI ? "flash-up" : ""}`}>{inputUnits}</span>
+          </div>
+
           {live && (
             <>
               <div className="sep" />
-              <div className="cell thin" title="Time until the next $20">
+              <div className="cell thin" title={`Time until the next $${rateText(rateCents)}`}>
                 <span className="k">NEXT</span>
                 <span className="v dim">{countdown(state?.msToNextPrint ?? 0)}</span>
               </div>
@@ -172,19 +191,12 @@ export default function Hud() {
               exit={{ opacity: 0, y: 6 }}
               transition={{ duration: 0.12 }}
             >
-              <div className="menu-row">
-                <span className="k">ACTIONS</span>
-                <span className={`v in ${flashI ? "flash-up" : ""}`}>{inputUnits}</span>
-                <span className="k">$/HR</span>
-                <span className="v out">{efficiency.toFixed(0)}</span>
+              <div className="hint">
+                {squareOn
+                  ? "Square is connected. Paid invoices print here. Sent invoices add a point."
+                  : "Demo rate until Square is connected."}
               </div>
               <div className="menu-actions">
-                <button type="button" disabled={pending} onClick={() => recordInput("prompt")}>
-                  Prompt
-                </button>
-                <button type="button" disabled={pending} onClick={() => recordInput("email")}>
-                  Email
-                </button>
                 <button type="button" disabled={pending} onClick={() => reset()}>
                   Reset
                 </button>
@@ -229,11 +241,13 @@ function TapePrint({
   onDone: (id: string) => void;
 }) {
   useEffect(() => {
-    const t = setTimeout(() => onDone(event.id), 1600);
+    const life = event.kind === "sale" ? 3200 : 1600;
+    const t = setTimeout(() => onDone(event.id), life);
     return () => clearTimeout(t);
-  }, [event.id, onDone]);
+  }, [event.id, event.kind, onDone]);
 
-  const big = event.kind === "hour_print" && event.outputCents >= 2000;
+  const big =
+    (event.kind === "hour_print" || event.kind === "sale") && event.outputCents >= 2000;
   const isOut = event.outputCents > 0;
 
   return (

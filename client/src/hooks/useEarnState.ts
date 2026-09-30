@@ -18,19 +18,21 @@ export function useIoState() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const seenIds = useRef<Set<string>>(new Set());
+  const seeded = useRef(false);
   const [freshEvents, setFreshEvents] = useState<PrintEvent[]>([]);
 
   const ingest = useCallback((next: AppState, seedOnly = false) => {
     setState(next);
-    if (seenIds.current.size === 0) {
+    if (!seeded.current) {
       next.events.forEach((e) => seenIds.current.add(e.id));
+      seeded.current = true;
       return;
     }
     const brandNew = next.events.filter((e) => !seenIds.current.has(e.id));
     brandNew.forEach((e) => seenIds.current.add(e.id));
     if (seedOnly) return;
     const hits = brandNew.filter(
-      (e) => e.kind === "hour_print" || e.kind === "input",
+      (e) => e.kind === "hour_print" || e.kind === "sale" || e.kind === "input",
     );
     if (hits.length) {
       setFreshEvents((prev) => [...hits, ...prev].slice(0, 8));
@@ -75,6 +77,7 @@ export function useIoState() {
   const reset = () =>
     run(() => {
       seenIds.current = new Set();
+      seeded.current = false;
       setFreshEvents([]);
       return api("/api/reset", { method: "POST" });
     });

@@ -3,13 +3,15 @@
 **Input vs Output.** A tiny trading-terminal strip that gamifies work.
 
 ```
-I/O ●  TIME 00:12  │  +$20.00  │  NEXT 00:08
+I/O ●  TIME 00:12  │  +$4.00  │  $20/HR  │  PTS 1  │  NEXT 00:08
 ```
 
 - **TIME** — how long you have been clocked in · white
-- **+$** — money printed · green
-- **NEXT** — time until the next $20 print
-- Clock in → hour prints `+$20` → dopamine
+- **+$** — wages accrued at your hourly rate · green
+- **$/HR** — your Square wage (demo $20 until Square is connected)
+- **PTS** — one point each time an invoice is sent from the Square account
+- **NEXT** — time until the next wage print
+- A paid invoice floats a green `+$200` for everyone watching this strip. That sale is not added to your wages.
 
 ## Run
 
@@ -39,4 +41,13 @@ git remote add origin https://github.com/Ferxxo-pa/I-O.git
 git push -u origin main
 ```
 
-Independent of CastAloud. Square Labor Timecards later via `server/clock/adapters.ts`.
+## Square
+
+Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). The server reads that team member's wage into **$/HR**. Every 15 seconds it checks invoices:
+
+- Sent to a customer (unpaid or paid) → **+1** point
+- Paid → a floating **+$200** (or whatever was collected), with the invoice title
+
+Subscribe Square webhooks to `POST /api/square/webhook` for `invoice.published` and `invoice.payment_made`, and set `SQUARE_WEBHOOK_SIGNATURE_KEY` plus `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL.
+
+Square does not publish a customer-messages API. Points follow invoices you send, which is the outbound message Square records.

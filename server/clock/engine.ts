@@ -7,7 +7,9 @@ import {
   type InputType,
   type PrintEvent,
   type Session,
+  type SquareLink,
 } from "@shared/schema";
+import type { InvoiceSnapshot } from "../square/parse";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
 import { randomUUID } from "crypto";
 
@@ -34,8 +36,10 @@ export class EarnEngine {
   config: AppConfig = { ...DEFAULT_CONFIG };
   session: Session = { ...DEFAULT_SESSION };
   events: PrintEvent[] = [];
+  square: SquareLink = { connected: false, source: "demo" };
   private adapter: ClockAdapter = createClockAdapter(this.config.clockSource);
   private timer: ReturnType<typeof setInterval> | null = null;
+  private seenExternal = new Set<string>();
 
   start() {
     if (this.timer) return;
@@ -60,6 +64,7 @@ export class EarnEngine {
     const { accruedOutputCents, msToNextPrint, inputMs } = this.derive(t);
     return {
       config: this.config,
+      square: { ...this.square },
       session: { ...this.session },
       events: this.events.slice(0, 40),
       accruedOutputCents,
@@ -145,6 +150,70 @@ export class EarnEngine {
     this.session = { ...DEFAULT_SESSION };
     this.events = [];
     return this.getState();
+  }
+
+  /** Square wage becomes the rate the strip accrues at. */
+  applyWage(cents: number) {
+    if (!Number.isInteger(cents) || cents <= 0) return;
+    this.square = { connected: true, source: "square" };
+    if (this.config.hourlyOutputCents !== cents) {
+      this.config = { ...this.config, hourlyOutputCents: cents };
+    }
+  }
+
+  /**
+   * A collected Square invoice prints a sale. A sent invoice awards one point.
+   * Personal wages stay on the hour clock — the sale is the shared notification.
+   */
+  ingestSquareInvoice(snapshot: InvoiceSnapshot): { sale: boolean; points: boolean } {
+    const points = snapshot.sent ? this.awardMessage(snapshot.id) : false;
+    const sale = snapshot.collected
+      ? this.celebrateSale(snapshot.id, snapshot.centsPaid, snapshot.title)
+      : false;
+    return { sale, points };
+  }
+
+  /** Remember invoices that already existed so startup does not replay them. */
+  markSquareInvoiceSeen(snapshot: InvoiceSnapshot) {
+    if (snapshot.sent) this.seenExternal.add(`msg:${snapshot.id}`);
+    if (snapshot.collected) this.seenExternal.add(`sale:${snapshot.id}`);
+  }
+
+  private awardMessage(id: string): boolean {
+    const key = `msg:${id}`;
+    if (this.seenExternal.has(key)) return false;
+    this.seenExternal.add(key);
+    this.session = {
+      ...this.session,
+      inputUnits: this.session.inputUnits + 1,
+    };
+    this.pushEvent(
+      makeEvent({
+        kind: "input",
+        outputCents: 0,
+        inputUnits: 1,
+        label: "+1",
+        inputType: "message",
+      }),
+    );
+    return true;
+  }
+
+  private celebrateSale(id: string, cents: number, title?: string): boolean {
+    const key = `sale:${id}`;
+    if (this.seenExternal.has(key)) return false;
+    this.seenExternal.add(key);
+    const name = title?.trim();
+    const short = name && name.length > 22 ? `${name.slice(0, 21)}…` : name;
+    this.pushEvent(
+      makeEvent({
+        kind: "sale",
+        outputCents: cents,
+        inputUnits: 0,
+        label: short ? `+$${formatDollars(cents)} ${short}` : `+$${formatDollars(cents)}`,
+      }),
+    );
+    return true;
   }
 
   private tick() {

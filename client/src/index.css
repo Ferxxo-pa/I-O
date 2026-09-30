@@ -317,9 +317,17 @@ body {
   margin-bottom: 6px;
 }
 
+.hint {
+  margin-bottom: 6px;
+  color: var(--mute);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+}
+
 .menu-actions {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 4px;
 }
 

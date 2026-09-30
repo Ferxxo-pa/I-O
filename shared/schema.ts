@@ -14,11 +14,12 @@ export const printKindSchema = z.enum([
   "clock_in",
   "clock_out",
   "input",
+  "sale",
 ]);
 export type PrintKind = z.infer<typeof printKindSchema>;
 
 /** Manual inputs you inject into the book. */
-export const inputTypeSchema = z.enum(["prompt", "email"]);
+export const inputTypeSchema = z.enum(["prompt", "email", "message"]);
 export type InputType = z.infer<typeof inputTypeSchema>;
 
 export const INPUT_WEIGHTS: Record<
@@ -27,6 +28,7 @@ export const INPUT_WEIGHTS: Record<
 > = {
   prompt: { units: 3, label: "PROMPT" },
   email: { units: 2, label: "EMAIL" },
+  message: { units: 1, label: "MESSAGE" },
 };
 
 export const printEventSchema = z.object({
@@ -68,8 +70,15 @@ export const sessionSchema = z.object({
 });
 export type Session = z.infer<typeof sessionSchema>;
 
+export const squareLinkSchema = z.object({
+  connected: z.boolean(),
+  source: z.enum(["square", "demo"]),
+});
+export type SquareLink = z.infer<typeof squareLinkSchema>;
+
 export const appStateSchema = z.object({
   config: configSchema,
+  square: squareLinkSchema,
   session: sessionSchema,
   events: z.array(printEventSchema),
   /** Unrealized output accrued in the open hour. */

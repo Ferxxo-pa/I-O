@@ -1,10 +1,13 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { configSchema, inputTypeSchema } from "@shared/schema";
 import { earnEngine } from "./clock/engine";
+import { signaturesMatch, squareSignature } from "./square/signature";
+import { applySquareWebhook, startSquareSync } from "./square/sync";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   earnEngine.start();
+  startSquareSync();
 
   app.get("/api/state", (_req, res) => {
     res.json(earnEngine.getState());
@@ -58,6 +61,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/reset", (_req, res) => {
     res.json(earnEngine.reset());
+  });
+
+  app.post("/api/square/webhook", (req, res) => {
+    const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+    const url = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+    if (!key || !url) {
+      return res.status(401).json({ message: "Square webhook is not configured" });
+    }
+
+    const raw = (req as Request & { rawBody?: Buffer }).rawBody?.toString("utf8") ?? "";
+    const header = req.header("x-square-hmacsha256-signature") ?? "";
+    const expected = squareSignature({
+      signatureKey: key,
+      notificationUrl: url,
+      rawBody: raw,
+    });
+    if (!signaturesMatch(header, expected)) {
+      return res.status(403).json({ message: "Invalid Square signature" });
+    }
+
+    const result = applySquareWebhook(req.body);
+    res.status(200).json({ ok: true, ...result });
   });
 
   return createServer(app);
