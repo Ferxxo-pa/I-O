@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
@@ -62,8 +62,11 @@ export default function Hud() {
     reset,
   } = useIoState();
 
-  const [flashO, setFlashO] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [wash, setWash] = useState<"in" | "sale" | "point" | null>(null);
+  const [tick, setTick] = useState<{ id: number; label: string } | null>(null);
+  const seenRevenue = useRef<number | null>(null);
+  const wasLive = useRef(false);
 
   const live = state?.session.clockedIn ?? false;
   const revenue = tickedRevenue(state);
@@ -72,14 +75,37 @@ export default function Hud() {
   const squareOn = state?.square.connected ?? false;
 
   useEffect(() => {
+    if (live && !wasLive.current) setWash("in");
+    wasLive.current = live;
+  }, [live]);
+
+  useEffect(() => {
     const latest = state?.events[0];
     if (!latest) return;
-    if (latest.kind === "hour_print" || latest.kind === "sale") {
-      setFlashO(true);
-      const t = setTimeout(() => setFlashO(false), 280);
-      return () => clearTimeout(t);
-    }
+    if (latest.kind === "sale" || latest.kind === "hour_print") setWash("sale");
+    else if (latest.kind === "input") setWash("point");
   }, [state?.events[0]?.id]);
+
+  useEffect(() => {
+    if (!wash) return;
+    const life = wash === "sale" ? 720 : 560;
+    const t = setTimeout(() => setWash(null), life);
+    return () => clearTimeout(t);
+  }, [wash]);
+
+  useEffect(() => {
+    if (seenRevenue.current === null) {
+      seenRevenue.current = revenue;
+      return;
+    }
+    const delta = revenue - seenRevenue.current;
+    seenRevenue.current = revenue;
+    if (!live || delta <= 0) return;
+    const id = Date.now();
+    setTick({ id, label: `+${money(delta)}` });
+    const t = setTimeout(() => setTick((current) => (current?.id === id ? null : current)), 700);
+    return () => clearTimeout(t);
+  }, [revenue, live]);
 
   const toggle = () => {
     if (pending || !state) return;
@@ -88,7 +114,7 @@ export default function Hud() {
   };
 
   return (
-    <div className={`stage ${live ? "live" : "idle"}`}>
+    <div className={`stage ${live ? "live" : "idle"}${wash ? ` wash-${wash}` : ""}`}>
       <div className="crt" aria-hidden />
 
       <div className="strip-anchor">
@@ -112,11 +138,31 @@ export default function Hud() {
 
           <div className="sep" />
 
-          <div className={`cell revenue ${flashO ? "flash-up" : ""}`} title="Revenue this shift">
-            <span className="v out">
+          <div className="cell revenue" title="Revenue this shift">
+            <AnimatePresence>
+              {tick && (
+                <motion.div
+                  key={tick.id}
+                  className="tick-pop"
+                  initial={{ opacity: 0, y: 8, scale: 0.45, x: "-50%" }}
+                  animate={{ opacity: 1, y: -20, scale: 1.05, x: "-50%" }}
+                  exit={{ opacity: 0, y: -38, scale: 0.9, x: "-50%" }}
+                  transition={{ type: "spring", stiffness: 680, damping: 16 }}
+                >
+                  {tick.label}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <motion.span
+              key={live ? revenue : "idle"}
+              className="v out"
+              initial={live ? { scale: 1.38, y: 2 } : false}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 700, damping: 12 }}
+            >
               {revenue >= 0 ? "+" : ""}
               {money(revenue)}
-            </span>
+            </motion.span>
           </div>
 
           <button
@@ -207,23 +253,25 @@ function TapePrint({
   offset: number;
   onDone: (id: string) => void;
 }) {
-  useEffect(() => {
-    const life = event.kind === "sale" ? 3200 : 1600;
-    const t = setTimeout(() => onDone(event.id), life);
-    return () => clearTimeout(t);
-  }, [event.id, event.kind, onDone]);
-
   const big =
     (event.kind === "hour_print" || event.kind === "sale") && event.outputCents >= 2000;
+  const point = event.kind === "input";
+
+  useEffect(() => {
+    const life = big ? 4200 : point ? 2400 : 1800;
+    const t = setTimeout(() => onDone(event.id), life);
+    return () => clearTimeout(t);
+  }, [event.id, big, point, onDone]);
+
   const isOut = event.outputCents > 0;
 
   return (
     <motion.div
       className={`print ${isOut ? "out" : "in"} ${big ? "big" : ""}`}
-      initial={{ opacity: 0, y: 8, scale: 0.9 }}
-      animate={{ opacity: 1, y: -4 - offset * 4, scale: big ? 1.15 : 1 }}
-      exit={{ opacity: 0, y: -28 }}
-      transition={{ type: "spring", stiffness: 420, damping: 24 }}
+      initial={{ opacity: 0, y: 18, scale: 0.35 }}
+      animate={{ opacity: 1, y: -10 - offset * 8, scale: big ? 1.4 : point ? 1.22 : 1.05 }}
+      exit={{ opacity: 0, y: -46, scale: 0.8 }}
+      transition={{ type: "spring", stiffness: 680, damping: 14 }}
     >
       {event.label}
     </motion.div>
