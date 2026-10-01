@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
 
@@ -55,37 +55,17 @@ function dollars(cents: number): string {
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
-  const [delta, setDelta] = useState("");
-  const seenRevenue = useRef<number | null>(null);
 
   const live = state?.session.clockedIn ?? false;
   const revenue = tickedRevenue(state);
   const inputMs = state?.inputMs ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
-  const squareOn = state?.square.connected ?? false;
   const shown = revenue < 0 ? dollars(revenue) : `+${dollars(revenue)}`;
-
-  useEffect(() => {
-    if (seenRevenue.current === null) {
-      seenRevenue.current = revenue;
-      return;
-    }
-    const step = revenue - seenRevenue.current;
-    seenRevenue.current = revenue;
-    if (!live || step <= 0) {
-      if (!live) setDelta("");
-      return;
-    }
-    setDelta(`+${dollars(step)}`);
-  }, [revenue, live]);
 
   const toggle = () => {
     if (pending || !state) return;
     if (live) clockOut();
-    else {
-      setDelta("");
-      clockIn();
-    }
+    else clockIn();
   };
 
   return (
@@ -108,15 +88,9 @@ export default function Hud() {
           disabled={pending || !state}
           title={live ? "Clock out" : "Clock in"}
         >
-          <span className="where">{live ? "Working" : "Off"}</span>
           <span className="now" key={live ? shown : "out"}>
             {live ? shown : "Clock in"}
           </span>
-          {live && delta && (
-            <span className="step" key={delta + shown}>
-              {delta}
-            </span>
-          )}
           <span className="cursor" />
         </button>
 
@@ -127,12 +101,8 @@ export default function Hud() {
               <span>{clock(inputMs)}</span>
             </div>
             <div className="meta">
-              <span>Made</span>
-              <span className="money">{shown}</span>
-            </div>
-            <div className="meta">
               <span>Rate</span>
-              <span>${rateText(rateCents)}/hr</span>
+              <span className="money">${rateText(rateCents)}/hr</span>
             </div>
             {live && (
               <div className="meta">
@@ -140,11 +110,7 @@ export default function Hud() {
                 <span>{countdown(state?.msToNextPrint ?? 0)}</span>
               </div>
             )}
-            <p className="hint">{squareOn ? "Rate from Square" : "Demo rate"}</p>
             <div className="cmds">
-              <button type="button" disabled={pending || !state} onClick={toggle}>
-                {live ? "Clock out" : "Clock in"}
-              </button>
               <button type="button" disabled={pending} onClick={() => reset()}>
                 Reset
               </button>
@@ -168,7 +134,6 @@ function TapeLine({ event, onDone }: { event: PrintEvent; onDone: (id: string) =
   }, [event.id, big, point, onDone]);
 
   const rank = big ? "sale" : point ? "point" : "note";
-  const units = event.inputUnits || 1;
-  const text = point ? `+${units} ${units === 1 ? "point" : "points"}` : event.label;
+  const text = point ? `+${event.inputUnits || 1}` : event.label;
   return <div className={`row ${rank}`}>{text}</div>;
 }
