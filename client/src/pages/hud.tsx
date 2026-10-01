@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
 
@@ -32,7 +31,6 @@ function rateText(cents: number): string {
   return dollars.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-/** Revenue stepped once a second so the total ticks like a clock. */
 function tickedRevenue(state: {
   session: { clockedIn: boolean; outputCents: number };
   config: { hourlyOutputCents: number; hourDurationMs: number };
@@ -49,9 +47,17 @@ function tickedRevenue(state: {
   return printed + stepped;
 }
 
+function sigil(): string {
+  if (typeof navigator === "undefined") return "%";
+  return /Win/i.test(navigator.userAgent) ? ">" : "%";
+}
+
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
+  const [delta, setDelta] = useState("");
+  const seenRevenue = useRef<number | null>(null);
+  const mark = sigil();
 
   const live = state?.session.clockedIn ?? false;
   const revenue = tickedRevenue(state);
@@ -60,107 +66,112 @@ export default function Hud() {
   const squareOn = state?.square.connected ?? false;
   const shown = `${revenue >= 0 ? "+" : ""}${money(revenue)}`;
 
+  useEffect(() => {
+    if (seenRevenue.current === null) {
+      seenRevenue.current = revenue;
+      return;
+    }
+    const step = revenue - seenRevenue.current;
+    seenRevenue.current = revenue;
+    if (!live || step <= 0) {
+      if (!live) setDelta("");
+      return;
+    }
+    setDelta(`+${money(step)}`);
+  }, [revenue, live]);
+
   const toggle = () => {
     if (pending || !state) return;
     if (live) clockOut();
-    else clockIn();
+    else {
+      setDelta("");
+      clockIn();
+    }
   };
 
   return (
-    <div className={`stage ${live ? "live" : "idle"}`}>
-      <div className="deck">
-        <div className="prints">
-          <PrintTape events={freshEvents} onDone={dismissTick} />
+    <div className={`term ${live ? "live" : "idle"}`}>
+      <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-label="More">
+        {menu ? "–" : "+"}
+      </button>
+
+      <div className="session">
+        <div className="log" aria-live="polite">
+          {[...freshEvents].reverse().map((event) => (
+            <TapeLine key={event.id} event={event} onDone={dismissTick} />
+          ))}
         </div>
 
-        <div className="box">
-          <button
-            type="button"
-            className="face"
-            onClick={toggle}
-            disabled={pending || !state}
-            title={live ? "Clock out" : "Clock in"}
-          >
-            <span className="mark">I/O</span>
-            <span className="money">{shown}</span>
-          </button>
-          <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-label="More">
-            {menu ? "–" : "+"}
-          </button>
-
-          {menu && (
-            <div className="details">
-              <div className="row">
-                <span className="k">Time</span>
-                <span className="v">{clock(inputMs)}</span>
-              </div>
-              <div className="row">
-                <span className="k">Made</span>
-                <span className="v">{shown}</span>
-              </div>
-              <div className="row">
-                <span className="k">$/hr</span>
-                <span className="v">{rateText(rateCents)}</span>
-              </div>
-              {live && (
-                <div className="row">
-                  <span className="k">Next</span>
-                  <span className="v">{countdown(state?.msToNextPrint ?? 0)}</span>
-                </div>
-              )}
-              <div className="hint">{squareOn ? "Rate from Square" : "Demo rate, until Square is on"}</div>
-              <div className="cmds">
-                <button type="button" className="cmd" disabled={pending || !state} onClick={toggle}>
-                  {live ? "Out" : "In"}
-                </button>
-                <button type="button" className="cmd" disabled={pending} onClick={() => reset()}>
-                  Reset
-                </button>
-              </div>
-              {error && <div className="err">{error}</div>}
-            </div>
+        <button
+          type="button"
+          className="prompt"
+          onClick={toggle}
+          disabled={pending || !state}
+          title={live ? "Clock out" : "Clock in"}
+        >
+          <span className="who">io</span>
+          <span className="at">@</span>
+          <span className="where">{live ? "in" : "out"}</span>
+          <span className="sig"> {mark} </span>
+          <span className="now" key={live ? shown : "out"}>
+            {live ? shown : "clock in"}
+          </span>
+          {live && delta && (
+            <span className="step" key={delta + shown}>
+              {delta}
+            </span>
           )}
-        </div>
+          <span className="cursor" />
+        </button>
+
+        {menu && (
+          <div className="details">
+            <div className="meta">
+              <span># time</span>
+              <span>{clock(inputMs)}</span>
+            </div>
+            <div className="meta">
+              <span># made</span>
+              <span>{shown}</span>
+            </div>
+            <div className="meta">
+              <span># $/hr</span>
+              <span>{rateText(rateCents)}</span>
+            </div>
+            {live && (
+              <div className="meta">
+                <span># next</span>
+                <span>{countdown(state?.msToNextPrint ?? 0)}</span>
+              </div>
+            )}
+            <p className="hint"># {squareOn ? "rate from square" : "demo rate"}</p>
+            <div className="cmds">
+              <button type="button" disabled={pending || !state} onClick={toggle}>
+                # {live ? "out" : "in"}
+              </button>
+              <button type="button" disabled={pending} onClick={() => reset()}>
+                # reset
+              </button>
+            </div>
+            {error && <p className="err"># {error}</p>}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function PrintTape({
-  events,
-  onDone,
-}: {
-  events: PrintEvent[];
-  onDone: (id: string) => void;
-}) {
-  return (
-    <>
-      {events.map((event) => (
-        <TapePrint key={event.id} event={event} onDone={onDone} />
-      ))}
-    </>
-  );
-}
-
-function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) => void }) {
+function TapeLine({ event, onDone }: { event: PrintEvent; onDone: (id: string) => void }) {
   const big = (event.kind === "hour_print" || event.kind === "sale") && event.outputCents >= 2000;
   const point = event.kind === "input";
 
   useEffect(() => {
-    const life = big ? 4200 : point ? 2400 : 1800;
+    const life = big ? 5600 : point ? 4000 : 2400;
     const t = window.setTimeout(() => onDone(event.id), life);
     return () => window.clearTimeout(t);
   }, [event.id, big, point, onDone]);
 
   const rank = big ? "sale" : point ? "point" : "note";
-  return (
-    <motion.div
-      className={`hit ${rank}`}
-      initial={{ opacity: 0, scale: 0.72, y: 16 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 420, damping: 16 }}
-    >
-      {event.label}
-    </motion.div>
-  );
+  const text = point ? `+${event.inputUnits || 1}` : event.label;
+  return <div className={`row ${rank}`}>{text}</div>;
 }
