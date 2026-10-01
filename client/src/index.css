@@ -91,9 +91,7 @@ button {
 .row.sale {
   align-self: flex-start;
   margin: 10px 0 6px;
-  padding: 8px 14px 10px;
-  background: #f6f6f4;
-  color: #141414;
+  color: var(--money);
   font-size: 34px;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -101,7 +99,7 @@ button {
 }
 
 .row.note {
-  color: var(--dim);
+  color: var(--money);
 }
 
 @keyframes lock {
@@ -148,7 +146,7 @@ button {
 
 .term.live .now {
   font-size: 22px;
-  color: #ffffff;
+  color: var(--money);
   animation: tick 380ms ease;
 }
 
@@ -165,10 +163,10 @@ button {
 
 @keyframes tick {
   from {
-    color: var(--money);
+    color: #e9ffef;
   }
   to {
-    color: #ffffff;
+    color: var(--money);
   }
 }
 
@@ -207,6 +205,11 @@ button {
 
 .term.idle .meta span:last-child {
   color: #c8c8c8;
+}
+
+.meta span.money,
+.term.idle .meta span.money {
+  color: var(--money);
 }
 
 .hint {

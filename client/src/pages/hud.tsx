@@ -128,7 +128,7 @@ export default function Hud() {
             </div>
             <div className="meta">
               <span>Made</span>
-              <span>{shown}</span>
+              <span className="money">{shown}</span>
             </div>
             <div className="meta">
               <span>Rate</span>
