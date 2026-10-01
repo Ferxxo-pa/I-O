@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
 
@@ -9,26 +9,6 @@ function money(cents: number): string {
     maximumFractionDigits: 2,
   });
   return n < 0 ? `-${abs}` : abs;
-}
-
-function clock(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function countdown(ms: number): string {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
-
-function rateText(cents: number): string {
-  const dollars = cents / 100;
-  if (Number.isInteger(dollars)) return String(dollars);
-  return dollars.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function tickedRevenue(state: {
@@ -53,13 +33,10 @@ function dollars(cents: number): string {
 }
 
 export default function Hud() {
-  const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
-  const [menu, setMenu] = useState(false);
+  const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut } = useIoState();
 
   const live = state?.session.clockedIn ?? false;
   const revenue = tickedRevenue(state);
-  const inputMs = state?.inputMs ?? 0;
-  const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const shown = revenue < 0 ? dollars(revenue) : `+${dollars(revenue)}`;
 
   const toggle = () => {
@@ -70,10 +47,6 @@ export default function Hud() {
 
   return (
     <div className={`term ${live ? "live" : "idle"}`}>
-      <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-expanded={menu}>
-        {menu ? "Close" : "Details"}
-      </button>
-
       <div className="session">
         <div className="log" aria-live="polite">
           {[...freshEvents].reverse().map((event) => (
@@ -91,33 +64,9 @@ export default function Hud() {
           <span className="now" key={live ? shown : "out"}>
             {live ? shown : "Clock in"}
           </span>
-          <span className="cursor" />
         </button>
 
-        {menu && (
-          <div className="details">
-            <div className="meta">
-              <span>Time</span>
-              <span>{clock(inputMs)}</span>
-            </div>
-            <div className="meta">
-              <span>Rate</span>
-              <span className="money">${rateText(rateCents)}/hr</span>
-            </div>
-            {live && (
-              <div className="meta">
-                <span>Next hour</span>
-                <span>{countdown(state?.msToNextPrint ?? 0)}</span>
-              </div>
-            )}
-            <div className="cmds">
-              <button type="button" disabled={pending} onClick={() => reset()}>
-                Reset
-              </button>
-            </div>
-            {error && <p className="err">{error}</p>}
-          </div>
-        )}
+        {error && <p className="err">{error}</p>}
       </div>
     </div>
   );

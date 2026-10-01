@@ -3,13 +3,11 @@
 @tailwind utilities;
 
 /*
-  The page is the terminal. Black while you are in, grey while you are out.
-  A new line is the hit. The chrome belongs to the computer, not this page.
+  Right edge only. Grey and "Clock in" while out.
+  Black and the green total while in. A point or a payment appears, then leaves.
 */
 
 :root {
-  --ink: #ffffff;
-  --dim: #9a9a9a;
   --money: #3dff9a;
   --point: #ffaa33;
   --down: #ff6b6b;
@@ -45,37 +43,21 @@ button {
 .term {
   min-height: 100vh;
   display: flex;
-  flex-direction: column;
   align-items: flex-end;
   justify-content: flex-end;
   padding: 28px 32px 36px;
-  transition: background 180ms ease, color 180ms ease;
+  transition: background 180ms ease;
 }
 
 .term.live {
   background: #000000;
-  color: var(--ink);
 }
 
 .term.idle {
   background: #2a2a2a;
-  color: #ffffff;
-}
-
-.more {
-  position: fixed;
-  top: 20px;
-  right: 24px;
-  color: #8a8a8a;
-  font-size: 13px;
-}
-
-.term.live .more {
-  color: #c8c8c8;
 }
 
 .session {
-  width: min(420px, 100%);
   text-align: right;
 }
 
@@ -83,54 +65,43 @@ button {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
-  margin-bottom: 10px;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .row.point {
   color: var(--point);
   font-size: 22px;
-  margin: 8px 0 4px;
   animation: lock 420ms ease;
 }
 
-.row.sale {
-  margin: 8px 0 4px;
+.row.sale,
+.row.note {
   color: var(--money);
+}
+
+.row.sale {
   font-size: 28px;
   line-height: 1;
   animation: lock 420ms ease;
 }
 
-.row.note {
-  color: var(--money);
-}
-
 @keyframes lock {
-  0% {
-    background: rgba(255, 255, 255, 0.16);
+  from {
     transform: translateY(6px);
   }
-  100% {
-    background: transparent;
+  to {
     transform: none;
   }
 }
 
 .prompt {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  width: 100%;
-  text-align: right;
-}
-
-.now {
   color: #ffffff;
+  font-size: 28px;
+  line-height: 1;
 }
 
 .term.live .now {
-  font-size: 28px;
   color: var(--money);
   animation: tick 380ms ease;
 }
@@ -144,82 +115,19 @@ button {
   }
 }
 
-.cursor {
-  width: 9px;
-  height: 18px;
-  margin-left: 6px;
-  background: currentColor;
-  animation: blink 1.05s steps(1) infinite;
-}
-
-.term.live .cursor {
-  background: var(--money);
-}
-
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-.details {
-  margin-top: 16px;
-  color: var(--dim);
-  font-size: 13px;
-}
-
-.meta {
-  display: flex;
-  justify-content: flex-end;
-  gap: 24px;
-  margin-top: 4px;
-}
-
-.meta span:last-child {
-  color: var(--ink);
-}
-
-.term.idle .meta span:last-child {
-  color: #c8c8c8;
-}
-
-.meta span.money,
-.term.idle .meta span.money {
-  color: var(--money);
-}
-
-.hint {
-  margin: 10px 0 0;
-  color: var(--faint);
-}
-
-.cmds {
-  display: flex;
-  justify-content: flex-end;
-  gap: 16px;
-  margin-top: 8px;
-}
-
-.cmds button:hover:not(:disabled) {
-  color: var(--ink);
-}
-
-.cmds button:disabled {
+.prompt:disabled {
   opacity: 0.45;
   cursor: wait;
 }
 
 .err {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   color: var(--down);
+  font-size: 13px;
 }
 
 @media (max-width: 480px) {
   .term {
     padding: 20px 16px 24px;
-  }
-
-  .row.sale {
-    font-size: 28px;
   }
 }
