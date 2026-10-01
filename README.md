@@ -6,7 +6,7 @@
 I/O   +4.00
 ```
 
-The page is the terminal. Grey and **Clock in** while you are out. Black while you are in, with the total in bright green. A point is orange. A paid invoice is a bigger green amount. Click the total to clock out. **Details** has the time and the rate.
+The page is the terminal, sitting on the right. Grey and **Clock in** while you are out. Black while you are in, with the total in bright green. A point is orange. A paid invoice is a bigger green amount. Click the total to clock out. **Details** has the time and the rate.
 - A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is not added to your wages.
 
 ## Run
