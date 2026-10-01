@@ -3,12 +3,11 @@
 **Input vs Output.** A tiny trading-terminal strip that gamifies work.
 
 ```
-I/O ●  +$4.00
+┤ I/O ├
+REV ........ +4.00
 ```
 
-The number is revenue. It ticks up once a second while you are clocked in. **I/O** is green when you are working. Clocked out, the whole stage is grey.
-
-Open **+** for time, the money total, and the hourly rate. Points show up as orange notifications, not a counter on the strip.
+A small DOS box. Green is the frame while you are clocked in. Amber is money. The revenue digits scramble, then settle, once a second. Clocked out, the box is dim grey on black. Open **+** for time, money, and the hourly rate. Points print as bright lines, not a counter.
 - A paid invoice floats a green `+$200` for everyone watching this strip. That sale is not added to your wages.
 
 ## Run

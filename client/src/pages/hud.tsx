@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
 
@@ -36,7 +35,6 @@ function rateText(cents: number): string {
 function tickedRevenue(state: {
   session: { clockedIn: boolean; outputCents: number };
   config: { hourlyOutputCents: number; hourDurationMs: number };
-  accruedOutputCents: number;
   msToNextPrint: number;
 } | null): number {
   if (!state) return 0;
@@ -50,48 +48,52 @@ function tickedRevenue(state: {
   return printed + stepped;
 }
 
-export default function Hud() {
-  const {
-    state,
-    error,
-    pending,
-    freshEvents,
-    dismissTick,
-    clockIn,
-    clockOut,
-    reset,
-  } = useIoState();
+function Scramble({ text, armed }: { text: string; armed: boolean }) {
+  const [shown, setShown] = useState(text);
+  const [hot, setHot] = useState(false);
+  const first = useRef(true);
 
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      setShown(text);
+      return;
+    }
+    if (!armed) {
+      setShown(text);
+      setHot(false);
+      return;
+    }
+    setHot(true);
+    let frame = 0;
+    const id = window.setInterval(() => {
+      frame += 1;
+      if (frame >= 7) {
+        setShown(text);
+        setHot(false);
+        window.clearInterval(id);
+        return;
+      }
+      setShown(text.replace(/[0-9]/g, () => String(Math.floor(Math.random() * 10))));
+    }, 36);
+    return () => window.clearInterval(id);
+  }, [text, armed]);
+
+  return <span className={hot ? "hot" : undefined}>{shown}</span>;
+}
+
+export default function Hud() {
+  const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
-  const [wash, setWash] = useState<"in" | "sale" | "point" | null>(null);
   const [tick, setTick] = useState<{ id: number; label: string } | null>(null);
   const seenRevenue = useRef<number | null>(null);
-  const wasLive = useRef(false);
 
   const live = state?.session.clockedIn ?? false;
   const revenue = tickedRevenue(state);
   const inputMs = state?.inputMs ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const squareOn = state?.square.connected ?? false;
-
-  useEffect(() => {
-    if (live && !wasLive.current) setWash("in");
-    wasLive.current = live;
-  }, [live]);
-
-  useEffect(() => {
-    const latest = state?.events[0];
-    if (!latest) return;
-    if (latest.kind === "sale" || latest.kind === "hour_print") setWash("sale");
-    else if (latest.kind === "input") setWash("point");
-  }, [state?.events[0]?.id]);
-
-  useEffect(() => {
-    if (!wash) return;
-    const life = wash === "sale" ? 720 : 560;
-    const t = setTimeout(() => setWash(null), life);
-    return () => clearTimeout(t);
-  }, [wash]);
+  const shown = `${revenue >= 0 ? "+" : ""}${money(revenue)}`;
 
   useEffect(() => {
     if (seenRevenue.current === null) {
@@ -103,8 +105,10 @@ export default function Hud() {
     if (!live || delta <= 0) return;
     const id = Date.now();
     setTick({ id, label: `+${money(delta)}` });
-    const t = setTimeout(() => setTick((current) => (current?.id === id ? null : current)), 700);
-    return () => clearTimeout(t);
+    const t = window.setTimeout(() => {
+      setTick((current) => (current?.id === id ? null : current));
+    }, 900);
+    return () => window.clearTimeout(t);
   }, [revenue, live]);
 
   const toggle = () => {
@@ -114,113 +118,76 @@ export default function Hud() {
   };
 
   return (
-    <div className={`stage ${live ? "live" : "idle"}${wash ? ` wash-${wash}` : ""}`}>
+    <div className={`stage ${live ? "live" : "idle"}`}>
       <div className="crt" aria-hidden />
 
-      <div className="strip-anchor">
-        <PrintTape events={freshEvents} onDone={dismissTick} />
+      <div className="deck">
+        <div className="prints">
+          {tick && (
+            <div key={tick.id} className="line money">
+              {tick.label}
+            </div>
+          )}
+          <PrintTape events={freshEvents} onDone={dismissTick} />
+        </div>
 
-        <div className={`strip ${live ? "live" : "idle"}`} role="group" aria-label="I/O">
+        <div className="box">
+          <div className="box-title">┤ I/O ├</div>
+          <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-label="More">
+            {menu ? "-" : "+"}
+          </button>
+
           <button
             type="button"
-            className="mark"
+            className="row rev"
             onClick={toggle}
             disabled={pending || !state}
             title={live ? "Clock out" : "Clock in"}
           >
-            <span className="mark-name">
-              <span className="mark-i">I</span>
-              <span className="mark-slash">/</span>
-              <span className="mark-o">O</span>
+            <span className="k">REV</span>
+            <span className="lead" />
+            <span className="v money">
+              <Scramble text={shown} armed={live} />
             </span>
-            <span className={`dot ${live ? "on" : ""}`} />
           </button>
 
-          <div className="sep" />
-
-          <div className="cell revenue" title="Revenue this shift">
-            <AnimatePresence>
-              {tick && (
-                <motion.div
-                  key={tick.id}
-                  className="tick-pop"
-                  initial={{ opacity: 0, y: 8, scale: 0.45, x: "-50%" }}
-                  animate={{ opacity: 1, y: -20, scale: 1.05, x: "-50%" }}
-                  exit={{ opacity: 0, y: -38, scale: 0.9, x: "-50%" }}
-                  transition={{ type: "spring", stiffness: 680, damping: 16 }}
-                >
-                  {tick.label}
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <motion.span
-              key={live ? revenue : "idle"}
-              className="v out"
-              initial={live ? { scale: 1.38, y: 2 } : false}
-              animate={{ scale: 1, y: 0 }}
-              transition={{ type: "spring", stiffness: 700, damping: 12 }}
-            >
-              {revenue >= 0 ? "+" : ""}
-              {money(revenue)}
-            </motion.span>
-          </div>
-
-          <button
-            type="button"
-            className="menu-btn"
-            onClick={() => setMenu((m) => !m)}
-            aria-label="More"
-          >
-            +
-          </button>
-
-        </div>
-
-        <AnimatePresence>
           {menu && (
-            <motion.div
-              className="menu"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
-              transition={{ duration: 0.12 }}
-            >
-              <div className="detail">
+            <div className="details">
+              <div className="row">
                 <span className="k">TIME</span>
-                <span className="v in">{clock(inputMs)}</span>
+                <span className="lead" />
+                <span className="v">{clock(inputMs)}</span>
               </div>
-              <div className="detail">
+              <div className="row">
                 <span className="k">MONEY</span>
-                <span className="v out">
-                  {revenue >= 0 ? "+" : ""}
-                  {money(revenue)}
-                </span>
+                <span className="lead" />
+                <span className="v money">{shown}</span>
               </div>
-              <div className="detail">
+              <div className="row">
                 <span className="k">$/HR</span>
-                <span className="v dim">{rateText(rateCents)}</span>
+                <span className="lead" />
+                <span className="v">{rateText(rateCents)}</span>
               </div>
               {live && (
-                <div className="detail">
+                <div className="row">
                   <span className="k">NEXT</span>
-                  <span className="v dim">{countdown(state?.msToNextPrint ?? 0)}</span>
+                  <span className="lead" />
+                  <span className="v">{countdown(state?.msToNextPrint ?? 0)}</span>
                 </div>
               )}
-              <div className="hint">
-                {squareOn ? "Rate from Square." : "Demo rate until Square is connected."}
-              </div>
-              <div className="menu-actions">
-                <button type="button" disabled={pending} onClick={() => reset()}>
-                  Reset
+              <div className="hint">{squareOn ? "RATE FROM SQUARE" : "DEMO RATE"}</div>
+              <div className="cmds">
+                <button type="button" className="cmd" disabled={pending || !state} onClick={toggle}>
+                  {live ? "OUT" : "IN"}
                 </button>
-                <button type="button" disabled={pending || !state} onClick={toggle}>
-                  {live ? "Clock out" : "Clock in"}
+                <button type="button" className="cmd" disabled={pending} onClick={() => reset()}>
+                  RESET
                 </button>
               </div>
               {error && <div className="err">{error}</div>}
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
+        </div>
       </div>
     </div>
   );
@@ -234,46 +201,24 @@ function PrintTape({
   onDone: (id: string) => void;
 }) {
   return (
-    <div className="tape">
-      <AnimatePresence>
-        {events.map((event, i) => (
-          <TapePrint key={event.id} event={event} offset={i} onDone={onDone} />
-        ))}
-      </AnimatePresence>
-    </div>
+    <>
+      {events.map((event) => (
+        <TapePrint key={event.id} event={event} onDone={onDone} />
+      ))}
+    </>
   );
 }
 
-function TapePrint({
-  event,
-  offset,
-  onDone,
-}: {
-  event: PrintEvent;
-  offset: number;
-  onDone: (id: string) => void;
-}) {
-  const big =
-    (event.kind === "hour_print" || event.kind === "sale") && event.outputCents >= 2000;
+function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) => void }) {
+  const big = (event.kind === "hour_print" || event.kind === "sale") && event.outputCents >= 2000;
   const point = event.kind === "input";
 
   useEffect(() => {
     const life = big ? 4200 : point ? 2400 : 1800;
-    const t = setTimeout(() => onDone(event.id), life);
-    return () => clearTimeout(t);
+    const t = window.setTimeout(() => onDone(event.id), life);
+    return () => window.clearTimeout(t);
   }, [event.id, big, point, onDone]);
 
-  const isOut = event.outputCents > 0;
-
-  return (
-    <motion.div
-      className={`print ${isOut ? "out" : "in"} ${big ? "big" : ""}`}
-      initial={{ opacity: 0, y: 18, scale: 0.35 }}
-      animate={{ opacity: 1, y: -10 - offset * 8, scale: big ? 1.4 : point ? 1.22 : 1.05 }}
-      exit={{ opacity: 0, y: -46, scale: 0.8 }}
-      transition={{ type: "spring", stiffness: 680, damping: 14 }}
-    >
-      {event.label}
-    </motion.div>
-  );
+  const kind = event.outputCents > 0 ? "money" : "point";
+  return <div className={`line ${kind}${big ? " big" : ""}`}>{event.label}</div>;
 }
