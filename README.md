@@ -3,10 +3,10 @@
 **Input vs Output.** A tiny trading-terminal strip that gamifies work.
 
 ```
-I/O    +4.00
+I/O   +4.00
 ```
 
-A small future terminal. Green is the live mark and the money. It ticks once a second, scrambles for a beat, then pops. Points print in orange. Clocked out, the panel goes dim. Open **+** for time, what you've made, and the hourly rate.
+The panel stays quiet, grey on black, so it sits on the machine. A point or a paid invoice is the loud part: huge white type, then it is gone. Open **+** for time, what you've made, and the hourly rate.
 - A paid invoice floats a green `+$200` for everyone watching this strip. That sale is not added to your wages.
 
 ## Run

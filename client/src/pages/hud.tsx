@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
@@ -49,45 +49,9 @@ function tickedRevenue(state: {
   return printed + stepped;
 }
 
-function Scramble({ text, armed }: { text: string; armed: boolean }) {
-  const [shown, setShown] = useState(text);
-  const [hot, setHot] = useState(false);
-  const first = useRef(true);
-
-  useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      setShown(text);
-      return;
-    }
-    if (!armed) {
-      setShown(text);
-      setHot(false);
-      return;
-    }
-    setHot(true);
-    let frame = 0;
-    const id = window.setInterval(() => {
-      frame += 1;
-      if (frame >= 4) {
-        setShown(text);
-        setHot(false);
-        window.clearInterval(id);
-        return;
-      }
-      setShown(text.replace(/[0-9]/g, () => String(Math.floor(Math.random() * 10))));
-    }, 32);
-    return () => window.clearInterval(id);
-  }, [text, armed]);
-
-  return <span className={hot ? "hot" : undefined}>{shown}</span>;
-}
-
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
-  const [tick, setTick] = useState<{ id: number; label: string } | null>(null);
-  const seenRevenue = useRef<number | null>(null);
 
   const live = state?.session.clockedIn ?? false;
   const revenue = tickedRevenue(state);
@@ -95,22 +59,6 @@ export default function Hud() {
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const squareOn = state?.square.connected ?? false;
   const shown = `${revenue >= 0 ? "+" : ""}${money(revenue)}`;
-
-  useEffect(() => {
-    if (seenRevenue.current === null) {
-      seenRevenue.current = revenue;
-      return;
-    }
-    const delta = revenue - seenRevenue.current;
-    seenRevenue.current = revenue;
-    if (!live || delta <= 0) return;
-    const id = Date.now();
-    setTick({ id, label: `+${money(delta)}` });
-    const t = window.setTimeout(() => {
-      setTick((current) => (current?.id === id ? null : current));
-    }, 900);
-    return () => window.clearTimeout(t);
-  }, [revenue, live]);
 
   const toggle = () => {
     if (pending || !state) return;
@@ -120,15 +68,8 @@ export default function Hud() {
 
   return (
     <div className={`stage ${live ? "live" : "idle"}`}>
-      <div className="crt" aria-hidden />
-
       <div className="deck">
         <div className="prints">
-          {tick && (
-            <div key={tick.id} className="line money">
-              {tick.label}
-            </div>
-          )}
           <PrintTape events={freshEvents} onDone={dismissTick} />
         </div>
 
@@ -140,19 +81,8 @@ export default function Hud() {
             disabled={pending || !state}
             title={live ? "Clock out" : "Clock in"}
           >
-            <span className="mark">
-              <span className="pip" />
-              I/O
-            </span>
-            <motion.span
-              key={live ? shown : "idle"}
-              className="v money"
-              initial={live ? { scale: 1.22, y: 2 } : false}
-              animate={{ scale: 1, y: 0 }}
-              transition={{ type: "spring", stiffness: 640, damping: 14 }}
-            >
-              <Scramble text={shown} armed={live} />
-            </motion.span>
+            <span className="mark">I/O</span>
+            <span className="money">{shown}</span>
           </button>
           <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-label="More">
             {menu ? "–" : "+"}
@@ -162,23 +92,19 @@ export default function Hud() {
             <div className="details">
               <div className="row">
                 <span className="k">Time</span>
-                <span className="lead" />
                 <span className="v">{clock(inputMs)}</span>
               </div>
               <div className="row">
                 <span className="k">Made</span>
-                <span className="lead" />
-                <span className="v money">{shown}</span>
+                <span className="v">{shown}</span>
               </div>
               <div className="row">
                 <span className="k">$/hr</span>
-                <span className="lead" />
                 <span className="v">{rateText(rateCents)}</span>
               </div>
               {live && (
                 <div className="row">
                   <span className="k">Next</span>
-                  <span className="lead" />
                   <span className="v">{countdown(state?.msToNextPrint ?? 0)}</span>
                 </div>
               )}
@@ -226,6 +152,15 @@ function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) 
     return () => window.clearTimeout(t);
   }, [event.id, big, point, onDone]);
 
-  const kind = event.outputCents > 0 ? "money" : "point";
-  return <div className={`line ${kind}${big ? " big" : ""}`}>{event.label}</div>;
+  const rank = big ? "sale" : point ? "point" : "note";
+  return (
+    <motion.div
+      className={`hit ${rank}`}
+      initial={{ opacity: 0, scale: 0.72, y: 16 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 420, damping: 16 }}
+    >
+      {event.label}
+    </motion.div>
+  );
 }
