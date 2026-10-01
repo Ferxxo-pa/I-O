@@ -47,9 +47,9 @@ function tickedRevenue(state: {
   return printed + stepped;
 }
 
-function sigil(): string {
-  if (typeof navigator === "undefined") return "%";
-  return /Win/i.test(navigator.userAgent) ? ">" : "%";
+function dollars(cents: number): string {
+  const body = money(Math.abs(cents));
+  return cents < 0 ? `-$${body}` : `$${body}`;
 }
 
 export default function Hud() {
@@ -57,14 +57,13 @@ export default function Hud() {
   const [menu, setMenu] = useState(false);
   const [delta, setDelta] = useState("");
   const seenRevenue = useRef<number | null>(null);
-  const mark = sigil();
 
   const live = state?.session.clockedIn ?? false;
   const revenue = tickedRevenue(state);
   const inputMs = state?.inputMs ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const squareOn = state?.square.connected ?? false;
-  const shown = `${revenue >= 0 ? "+" : ""}${money(revenue)}`;
+  const shown = revenue < 0 ? dollars(revenue) : `+${dollars(revenue)}`;
 
   useEffect(() => {
     if (seenRevenue.current === null) {
@@ -77,7 +76,7 @@ export default function Hud() {
       if (!live) setDelta("");
       return;
     }
-    setDelta(`+${money(step)}`);
+    setDelta(`+${dollars(step)}`);
   }, [revenue, live]);
 
   const toggle = () => {
@@ -91,8 +90,8 @@ export default function Hud() {
 
   return (
     <div className={`term ${live ? "live" : "idle"}`}>
-      <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-label="More">
-        {menu ? "–" : "+"}
+      <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-expanded={menu}>
+        {menu ? "Close" : "Details"}
       </button>
 
       <div className="session">
@@ -109,12 +108,9 @@ export default function Hud() {
           disabled={pending || !state}
           title={live ? "Clock out" : "Clock in"}
         >
-          <span className="who">io</span>
-          <span className="at">@</span>
-          <span className="where">{live ? "in" : "out"}</span>
-          <span className="sig"> {mark} </span>
+          <span className="where">{live ? "Working" : "Off"}</span>
           <span className="now" key={live ? shown : "out"}>
-            {live ? shown : "clock in"}
+            {live ? shown : "Clock in"}
           </span>
           {live && delta && (
             <span className="step" key={delta + shown}>
@@ -127,33 +123,33 @@ export default function Hud() {
         {menu && (
           <div className="details">
             <div className="meta">
-              <span># time</span>
+              <span>Time</span>
               <span>{clock(inputMs)}</span>
             </div>
             <div className="meta">
-              <span># made</span>
+              <span>Made</span>
               <span>{shown}</span>
             </div>
             <div className="meta">
-              <span># $/hr</span>
-              <span>{rateText(rateCents)}</span>
+              <span>Rate</span>
+              <span>${rateText(rateCents)}/hr</span>
             </div>
             {live && (
               <div className="meta">
-                <span># next</span>
+                <span>Next hour</span>
                 <span>{countdown(state?.msToNextPrint ?? 0)}</span>
               </div>
             )}
-            <p className="hint"># {squareOn ? "rate from square" : "demo rate"}</p>
+            <p className="hint">{squareOn ? "Rate from Square" : "Demo rate"}</p>
             <div className="cmds">
               <button type="button" disabled={pending || !state} onClick={toggle}>
-                # {live ? "out" : "in"}
+                {live ? "Clock out" : "Clock in"}
               </button>
               <button type="button" disabled={pending} onClick={() => reset()}>
-                # reset
+                Reset
               </button>
             </div>
-            {error && <p className="err"># {error}</p>}
+            {error && <p className="err">{error}</p>}
           </div>
         )}
       </div>
@@ -172,6 +168,7 @@ function TapeLine({ event, onDone }: { event: PrintEvent; onDone: (id: string) =
   }, [event.id, big, point, onDone]);
 
   const rank = big ? "sale" : point ? "point" : "note";
-  const text = point ? `+${event.inputUnits || 1}` : event.label;
+  const units = event.inputUnits || 1;
+  const text = point ? `+${units} ${units === 1 ? "point" : "points"}` : event.label;
   return <div className={`row ${rank}`}>{text}</div>;
 }

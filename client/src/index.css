@@ -8,12 +8,12 @@
 */
 
 :root {
-  --ink: #ededed;
-  --dim: #8d8d8d;
-  --faint: #6a6a6a;
-  --money: #5ee08a;
-  --point: #ff9f43;
-  --down: #ff7b72;
+  --ink: #f4f4f2;
+  --dim: #a8a8a8;
+  --faint: #8f8f8f;
+  --money: #8ee4a8;
+  --point: #ffb15a;
+  --down: #ff8d86;
 }
 
 * {
@@ -53,26 +53,21 @@ button {
 }
 
 .term.live {
-  background: #0c0c0c;
+  background: #111111;
   color: var(--ink);
 }
 
 .term.idle {
-  background: #4a4a4a;
-  color: #c4c4c4;
+  background: #3c3c3c;
+  color: #d4d4d4;
 }
 
 .more {
   position: fixed;
   top: 18px;
   right: 22px;
-  color: var(--faint);
-  font-size: 18px;
-  line-height: 1;
-}
-
-.term.live .more {
-  color: #bdbdbd;
+  color: #cfcfcf;
+  font-size: 13px;
 }
 
 .session {
@@ -97,8 +92,8 @@ button {
   align-self: flex-start;
   margin: 10px 0 6px;
   padding: 8px 14px 10px;
-  background: #f4f4f4;
-  color: #0c0c0c;
+  background: #f6f6f4;
+  color: #141414;
   font-size: 34px;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -134,18 +129,13 @@ button {
 .prompt {
   display: flex;
   align-items: baseline;
+  gap: 14px;
   width: 100%;
   text-align: left;
 }
 
-.who {
-  color: inherit;
-}
-
-.at,
-.where,
-.sig {
-  color: var(--faint);
+.where {
+  color: #b5b5b5;
 }
 
 .term.live .where {
@@ -160,6 +150,10 @@ button {
   font-size: 22px;
   color: #ffffff;
   animation: tick 380ms ease;
+}
+
+.term.idle .now {
+  color: #f4f4f2;
 }
 
 .step {

@@ -6,8 +6,8 @@
 I/O   +4.00
 ```
 
-The page is the terminal. It sits in whatever window you opened on a Mac or a PC. Grey while you are clocked out, black while you are in. The prompt total ticks every second. A point or a paid invoice locks in on its own row. Click the prompt to clock in or out. Open **+** for time, what you've made, and the hourly rate.
-- A paid invoice floats a green `+$200` for everyone watching this strip. That sale is not added to your wages.
+The page is the terminal. It sits in whatever window you opened on a Mac or a PC. Grey and **Off** while you are clocked out, black and **Working** while you are in. The total ticks every second. A point or a paid invoice locks in on its own row. Click the prompt to clock in or out. Open **Details** for time, what you've made, and the hourly rate.
+- A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is not added to your wages.
 
 ## Run
 
