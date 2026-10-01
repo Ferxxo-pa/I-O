@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
 
@@ -68,14 +69,14 @@ function Scramble({ text, armed }: { text: string; armed: boolean }) {
     let frame = 0;
     const id = window.setInterval(() => {
       frame += 1;
-      if (frame >= 7) {
+      if (frame >= 4) {
         setShown(text);
         setHot(false);
         window.clearInterval(id);
         return;
       }
       setShown(text.replace(/[0-9]/g, () => String(Math.floor(Math.random() * 10))));
-    }, 36);
+    }, 32);
     return () => window.clearInterval(id);
   }, [text, armed]);
 
@@ -132,56 +133,62 @@ export default function Hud() {
         </div>
 
         <div className="box">
-          <div className="box-title">┤ I/O ├</div>
-          <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-label="More">
-            {menu ? "-" : "+"}
-          </button>
-
           <button
             type="button"
-            className="row rev"
+            className="face"
             onClick={toggle}
             disabled={pending || !state}
             title={live ? "Clock out" : "Clock in"}
           >
-            <span className="k">REV</span>
-            <span className="lead" />
-            <span className="v money">
-              <Scramble text={shown} armed={live} />
+            <span className="mark">
+              <span className="pip" />
+              I/O
             </span>
+            <motion.span
+              key={live ? shown : "idle"}
+              className="v money"
+              initial={live ? { scale: 1.22, y: 2 } : false}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 640, damping: 14 }}
+            >
+              <Scramble text={shown} armed={live} />
+            </motion.span>
+          </button>
+          <button type="button" className="more" onClick={() => setMenu((open) => !open)} aria-label="More">
+            {menu ? "–" : "+"}
           </button>
 
           {menu && (
             <div className="details">
               <div className="row">
-                <span className="k">TIME</span>
+                <span className="k">Time</span>
                 <span className="lead" />
                 <span className="v">{clock(inputMs)}</span>
               </div>
               <div className="row">
-                <span className="k">MONEY</span>
+                <span className="k">Made</span>
                 <span className="lead" />
                 <span className="v money">{shown}</span>
               </div>
               <div className="row">
-                <span className="k">$/HR</span>
+                <span className="k">$/hr</span>
                 <span className="lead" />
                 <span className="v">{rateText(rateCents)}</span>
               </div>
               {live && (
                 <div className="row">
-                  <span className="k">NEXT</span>
+                  <span className="k">Next</span>
                   <span className="lead" />
                   <span className="v">{countdown(state?.msToNextPrint ?? 0)}</span>
                 </div>
               )}
-              <div className="hint">{squareOn ? "RATE FROM SQUARE" : "DEMO RATE"}</div>
+              <div className="hint">{squareOn ? "Rate from Square" : "Demo rate, until Square is on"}</div>
               <div className="cmds">
                 <button type="button" className="cmd" disabled={pending || !state} onClick={toggle}>
-                  {live ? "OUT" : "IN"}
+                  {live ? "Out" : "In"}
                 </button>
                 <button type="button" className="cmd" disabled={pending} onClick={() => reset()}>
-                  RESET
+                  Reset
                 </button>
               </div>
               {error && <div className="err">{error}</div>}
