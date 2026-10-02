@@ -6,7 +6,7 @@
 I/O   +4.00
 ```
 
-The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The number is the money collected, ticking. Wages float in green, a paid invoice in pink, a message in blue. **+** has the hourly rate and reset.
+The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is the money collected, ticking. Collapse it to just **I/O**. **+** shows the hourly rate and reset. Wages float in green, a paid invoice in pink, a message in blue.
 - A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is not added to your wages.
 
 ## Run

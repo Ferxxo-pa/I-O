@@ -21,6 +21,7 @@ function rateText(cents: number): string {
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const live = state?.session.clockedIn ?? false;
   const output = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
@@ -38,7 +39,7 @@ export default function Hud() {
       <div className="strip-anchor">
         <PrintTape events={freshEvents} onDone={dismissTick} />
 
-        <div className={`strip ${live ? "live" : "idle"}`}>
+        <div className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}`}>
           <button
             type="button"
             className="mark"
@@ -50,9 +51,22 @@ export default function Hud() {
             <span className="dot" />
             <span className="tip">{live ? "Clock out" : "Clock in"}</span>
           </button>
-          <span className="num">{shown}</span>
-          <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
-            +
+          {!collapsed && <span className="num">{shown}</span>}
+          {!collapsed && (
+            <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
+              +
+            </button>
+          )}
+          <button
+            type="button"
+            className="fold"
+            onClick={() => {
+              setCollapsed((open) => !open);
+              setMenu(false);
+            }}
+            aria-label={collapsed ? "Expand" : "Collapse"}
+          >
+            {collapsed ? "›" : "‹"}
           </button>
         </div>
 

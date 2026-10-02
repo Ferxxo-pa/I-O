@@ -110,6 +110,23 @@ button {
 
 .strip.live .dot {
   background: #34c759;
+  animation: hop 0.85s ease-in-out infinite;
+}
+
+@keyframes hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+  50% {
+    transform: translateY(0);
+  }
+  70% {
+    transform: translateY(-2px);
+  }
 }
 
 .num {
@@ -135,6 +152,29 @@ button {
 .plus:hover {
   background: rgba(0, 0, 0, 0.04);
   color: var(--ink);
+}
+
+.fold {
+  width: 16px;
+  margin-right: 4px;
+  color: var(--mute);
+  font-size: 14px;
+  opacity: 0;
+}
+
+.strip:hover .fold,
+.strip:focus-within .fold {
+  opacity: 1;
+}
+
+.strip.collapsed {
+  gap: 2px;
+  min-height: 32px;
+  padding: 0 4px 0 12px;
+}
+
+.strip.collapsed .mark {
+  font-size: 12px;
 }
 
 .tip {
