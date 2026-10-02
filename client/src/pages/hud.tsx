@@ -77,8 +77,6 @@ export default function Hud() {
 
   return (
     <div className="stage">
-      <div className="crt" aria-hidden />
-
       <div className="strip-anchor">
         <PrintTape events={freshEvents} onDone={dismissTick} />
 
@@ -95,7 +93,12 @@ export default function Hud() {
               <span className="mark-slash">/</span>
               <span className="mark-o">O</span>
             </span>
-            <span className={`dot ${live ? "on" : ""}`} />
+            <span className="swatch" aria-hidden>
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
           </button>
 
           <button
@@ -229,21 +232,25 @@ function TapePrint({
   offset: number;
   onDone: (id: string) => void;
 }) {
-  useEffect(() => {
-    const t = setTimeout(() => onDone(event.id), 1600);
-    return () => clearTimeout(t);
-  }, [event.id, onDone]);
-
-  const big = event.kind === "hour_print" && event.outputCents >= 2000;
+  const point = event.kind === "input";
+  const big = (event.kind === "hour_print" || event.kind === "sale") && event.outputCents >= 2000;
   const isOut = event.outputCents > 0;
+
+  useEffect(() => {
+    const life = big ? 2400 : point ? 1800 : 1400;
+    const t = setTimeout(() => onDone(event.id), life);
+    return () => clearTimeout(t);
+  }, [event.id, big, point, onDone]);
+
+  const rank = point ? "point" : isOut ? "out" : "in";
 
   return (
     <motion.div
-      className={`print ${isOut ? "out" : "in"} ${big ? "big" : ""}`}
-      initial={{ opacity: 0, y: 8, scale: 0.9 }}
-      animate={{ opacity: 1, y: -4 - offset * 4, scale: big ? 1.15 : 1 }}
-      exit={{ opacity: 0, y: -28 }}
-      transition={{ type: "spring", stiffness: 420, damping: 24 }}
+      className={`print ${rank}${big ? " big" : ""}`}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: -offset * 6 }}
+      exit={{ opacity: 0, y: -18 }}
+      transition={{ duration: 0.08 }}
     >
       {event.label}
     </motion.div>

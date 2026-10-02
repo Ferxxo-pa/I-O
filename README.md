@@ -6,7 +6,7 @@
 I/O   +4.00
 ```
 
-The strip sits on the right. **I** and the clock are cyan, **O** and the money are green, and **NX** counts down to the next print. A `+$20` floats above the bar when an hour lands. Click **I/O** to clock in or out. **+** opens the rest.
+The strip is a black bitmap tile on pale paper, sitting on the right. **I** is cyan, **O** is lime, and a 2×2 of pink, cyan, lime, and cream lights up while you are clocked in. A payment lands as a pink block above the tile. Click **I/O** to clock in or out. **+** opens the rest.
 - A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is not added to your wages.
 
 ## Run
