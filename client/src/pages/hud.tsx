@@ -45,16 +45,15 @@ export default function Hud() {
     }
   };
 
-  const goIn = () => {
-    if (pending || !state || live) return;
-    if (seen === "0") mark("in");
-    clockIn();
-  };
-
-  const goOut = () => {
-    if (pending || !state || !live) return;
-    if (seen !== "1") mark("1");
-    clockOut();
+  const toggle = () => {
+    if (pending || !state) return;
+    if (live) {
+      if (seen !== "1") mark("1");
+      clockOut();
+    } else {
+      if (seen === "0") mark("in");
+      clockIn();
+    }
   };
 
   const hint = seen === "1" ? null : live ? "out" : "in";
@@ -64,50 +63,36 @@ export default function Hud() {
       <div className="strip-anchor">
         <PrintTape events={freshEvents} onDone={dismissTick} />
 
-        <div className={`strip ${live ? "live" : "idle"}`} role="group" aria-label="I/O">
+        <div className={`strip ${live ? "live" : "idle"}`}>
           <button
             type="button"
-            className="io out-btn"
-            onClick={goOut}
-            disabled={pending || !state || !live}
+            className="mark"
+            onClick={toggle}
+            disabled={pending || !state}
+            title={live ? "Clock out" : "Clock in"}
           >
-            I
+            I/O
+            <span className="dot" />
           </button>
-          <button
-            type="button"
-            className="io in-btn"
-            onClick={goIn}
-            disabled={pending || !state || live}
-          >
-            O
-          </button>
-          <div className="sep" />
-          <div className="cell">
-            <span className="num">{live || output !== 0 ? shown : "$0.00"}</span>
-          </div>
+          <span className="num">{shown}</span>
           <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
             +
           </button>
-
-          {hint && (
-            <div className={`tip ${hint === "out" ? "on-i" : "on-o"}`} role="note">
-              {hint === "out" ? "Click I to clock out" : "Click O to clock in"}
-            </div>
-          )}
+          {hint && <div className="tip">{hint === "out" ? "Clock out" : "Clock in"}</div>}
         </div>
 
         <AnimatePresence>
           {menu && (
             <motion.div
               className="menu"
-              initial={{ opacity: 0, y: 6 }}
+              initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 6 }}
+              exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.12 }}
             >
               <div className="menu-row">
                 <span>Rate</span>
-                <span className="num">${rateText(rateCents)}/hr</span>
+                <span>${rateText(rateCents)}/hr</span>
               </div>
               <button type="button" disabled={pending} onClick={() => reset()}>
                 Reset
@@ -150,15 +135,14 @@ function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) 
   }, [event.id, big, point, onDone]);
 
   const text = point ? `+${event.inputUnits || 1}` : event.label;
-  const rank = point ? "point" : big ? "big" : "out";
 
   return (
     <motion.div
-      className={`print ${rank}`}
-      initial={{ opacity: 0, y: 8 }}
+      className={`print${point ? " point" : ""}${big ? " big" : ""}`}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
-      transition={{ duration: 0.08 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.16 }}
     >
       {text}
     </motion.div>
