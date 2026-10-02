@@ -92,6 +92,7 @@ button {
 }
 
 .mark {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -137,8 +138,9 @@ button {
 }
 
 .tip {
+  display: none;
   position: absolute;
-  left: 12px;
+  left: 0;
   bottom: calc(100% + 8px);
   padding: 6px 8px;
   border-radius: 8px;
@@ -148,7 +150,14 @@ button {
   backdrop-filter: blur(16px);
   color: var(--ink);
   font-size: 12px;
+  font-weight: 450;
+  letter-spacing: 0;
   white-space: nowrap;
+}
+
+.mark:hover .tip,
+.mark:focus-visible .tip {
+  display: block;
 }
 
 .tip::after {
@@ -172,19 +181,33 @@ button {
 }
 
 .print {
-  font-weight: 560;
+  font-weight: 600;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+}
+
+.print.money {
+  color: #12c45a;
+}
+
+.print.sale {
+  color: #f83090;
+}
+
+.print.message {
+  color: #2f6bff;
+}
+
+.print.email {
+  color: #b45cff;
+}
+
+.print.prompt {
+  color: #f86020;
 }
 
 .print.big {
   font-size: 22px;
-}
-
-.print.point {
-  font-size: 15px;
-  color: var(--mute);
 }
 
 .menu {

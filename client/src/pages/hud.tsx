@@ -3,8 +3,6 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
 import type { PrintEvent } from "@shared/schema";
 
-const HINT_KEY = "io-hint";
-
 function money(cents: number): string {
   const n = cents / 100;
   const abs = Math.abs(n).toLocaleString("en-US", {
@@ -23,40 +21,17 @@ function rateText(cents: number): string {
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
-  const [seen, setSeen] = useState(() => {
-    try {
-      return localStorage.getItem(HINT_KEY) ?? "0";
-    } catch {
-      return "0";
-    }
-  });
 
   const live = state?.session.clockedIn ?? false;
   const output = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const shown = `$${money(Math.abs(output))}`;
 
-  const mark = (next: string) => {
-    setSeen(next);
-    try {
-      localStorage.setItem(HINT_KEY, next);
-    } catch {
-      /* ignore */
-    }
-  };
-
   const toggle = () => {
     if (pending || !state) return;
-    if (live) {
-      if (seen !== "1") mark("1");
-      clockOut();
-    } else {
-      if (seen === "0") mark("in");
-      clockIn();
-    }
+    if (live) clockOut();
+    else clockIn();
   };
-
-  const hint = seen === "1" ? null : live ? "out" : "in";
 
   return (
     <div className="stage">
@@ -73,12 +48,12 @@ export default function Hud() {
           >
             I/O
             <span className="dot" />
+            <span className="tip">{live ? "Clock out" : "Clock in"}</span>
           </button>
           <span className="num">{shown}</span>
           <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
             +
           </button>
-          {hint && <div className="tip">{hint === "out" ? "Clock out" : "Clock in"}</div>}
         </div>
 
         <AnimatePresence>
@@ -126,7 +101,9 @@ function PrintTape({
 
 function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) => void }) {
   const point = event.kind === "input";
-  const big = (event.kind === "hour_print" || event.kind === "sale") && event.outputCents >= 2000;
+  const sale = event.kind === "sale";
+  const moneyHit = event.kind === "hour_print" || (sale && event.outputCents > 0);
+  const big = moneyHit && event.outputCents >= 2000;
 
   useEffect(() => {
     const life = big ? 2600 : point ? 1800 : 1400;
@@ -134,11 +111,20 @@ function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) 
     return () => clearTimeout(t);
   }, [event.id, big, point, onDone]);
 
+  const tone = sale
+    ? "sale"
+    : point
+      ? event.inputType === "email"
+        ? "email"
+        : event.inputType === "prompt"
+          ? "prompt"
+          : "message"
+      : "money";
   const text = point ? `+${event.inputUnits || 1}` : event.label;
 
   return (
     <motion.div
-      className={`print${point ? " point" : ""}${big ? " big" : ""}`}
+      className={`print ${tone}${big ? " big" : ""}`}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
