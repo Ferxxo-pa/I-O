@@ -249,91 +249,107 @@ function SettingsPanel({
         </button>
       </div>
 
-      <div className="menu-row">
-        <span>Rate</span>
-        <span>${rate}/hr</span>
-      </div>
+      <section className="settings-block">
+        <p className="settings-label">Pay</p>
+        <div className="menu-row">
+          <span>Rate</span>
+          <span>${rate}/hr</span>
+        </div>
+      </section>
 
-      <p className="settings-label">Telegram</p>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void onSave("/api/integrations", { kind: "telegram", account: handle });
-          setHandle("");
-        }}
-      >
-        <input
-          value={handle}
-          onChange={(event) => setHandle(event.target.value)}
-          placeholder={telegram ? `@${telegram}` : "@username"}
-          aria-label="Telegram username"
-        />
-        <button type="submit">{telegram ? "Update" : "Connect"}</button>
-      </form>
-      <p className="settings-note">Group chat later. Each message is a point.</p>
-
-      <p className="settings-label">Later</p>
-      <div className="menu-row">
-        <span>Square</span>
-        <span>{squareOn ? "Connected" : "Soon"}</span>
-      </div>
-
-      <p className="settings-label">Company</p>
-      {company?.name ? (
-        <>
+      <section className="settings-block">
+        <p className="settings-label">Telegram</p>
+        {telegram && (
           <div className="menu-row">
-            <span>{company.name}</span>
+            <span>@{telegram}</span>
+            <span>Connected</span>
           </div>
-          <div className="menu-row">
-            <span>You</span>
-            <span>{telegram ? `@${telegram}` : ""}</span>
-          </div>
-          {people.map((person) => (
-            <div className="menu-row" key={person.id}>
-              <span>{person.name}</span>
-              <span>{person.telegram ? `@${person.telegram}` : ""}</span>
-            </div>
-          ))}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void onSave("/api/company/people", { name: personName, telegram: personTelegram });
-              setPersonName("");
-              setPersonTelegram("");
-            }}
-          >
-            <input
-              value={personName}
-              onChange={(event) => setPersonName(event.target.value)}
-              placeholder="Name"
-              aria-label="Person name"
-            />
-            <input
-              value={personTelegram}
-              onChange={(event) => setPersonTelegram(event.target.value)}
-              placeholder="@telegram"
-              aria-label="Person Telegram"
-            />
-            <button type="submit">Add</button>
-          </form>
-        </>
-      ) : (
+        )}
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void onSave("/api/company", { name: companyName });
-            setCompanyName("");
+            void onSave("/api/integrations", { kind: "telegram", account: handle });
+            setHandle("");
           }}
         >
           <input
-            value={companyName}
-            onChange={(event) => setCompanyName(event.target.value)}
-            placeholder="Company name"
-            aria-label="Company name"
+            value={handle}
+            onChange={(event) => setHandle(event.target.value)}
+            placeholder="@username"
+            aria-label="Telegram username"
           />
-          <button type="submit">Create</button>
+          <button type="submit">{telegram ? "Update" : "Connect"}</button>
         </form>
-      )}
+        <p className="settings-note">Group chat later. Each message is a point.</p>
+      </section>
+
+      <section className="settings-block">
+        <p className="settings-label">Company</p>
+        {company?.name ? (
+          <>
+            <p className="settings-name">{company.name}</p>
+            <div className="menu-row">
+              <span>You</span>
+              <span>{telegram ? `@${telegram}` : ""}</span>
+            </div>
+            {people.map((person) => (
+              <div className="menu-row" key={person.id}>
+                <span>{person.name}</span>
+                <span>{person.telegram ? `@${person.telegram}` : ""}</span>
+              </div>
+            ))}
+            <form
+              className="stack"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void onSave("/api/company/people", { name: personName, telegram: personTelegram });
+                setPersonName("");
+                setPersonTelegram("");
+              }}
+            >
+              <input
+                value={personName}
+                onChange={(event) => setPersonName(event.target.value)}
+                placeholder="Name"
+                aria-label="Person name"
+              />
+              <div className="form-line">
+                <input
+                  value={personTelegram}
+                  onChange={(event) => setPersonTelegram(event.target.value)}
+                  placeholder="@telegram"
+                  aria-label="Person Telegram"
+                />
+                <button type="submit">Add</button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onSave("/api/company", { name: companyName });
+              setCompanyName("");
+            }}
+          >
+            <input
+              value={companyName}
+              onChange={(event) => setCompanyName(event.target.value)}
+              placeholder="Company name"
+              aria-label="Company name"
+            />
+            <button type="submit">Create</button>
+          </form>
+        )}
+      </section>
+
+      <section className="settings-block">
+        <p className="settings-label">Later</p>
+        <div className="menu-row">
+          <span>Square</span>
+          <span>{squareOn ? "Connected" : "Soon"}</span>
+        </div>
+      </section>
       {error && <div className="err">{error}</div>}
     </motion.div>
   );
