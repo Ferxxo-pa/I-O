@@ -31,7 +31,7 @@ function rateText(cents: number): string {
 }
 
 export default function Hud() {
-  const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
+  const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut } = useIoState();
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -143,14 +143,7 @@ export default function Hud() {
                 <span>Points</span>
                 <span>{points}</span>
               </div>
-              <div className="menu-row">
-                <span>Rate</span>
-                <span>${rateText(rateCents)}/hr</span>
-              </div>
               <div className="menu-actions">
-                <button type="button" disabled={pending} onClick={() => reset()}>
-                  Reset
-                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -171,6 +164,7 @@ export default function Hud() {
             <SettingsPanel
               company={company}
               squareOn={state?.square.connected ?? false}
+              rate={rateText(rateCents)}
               telegram={company?.integrations.find((item) => item.kind === "telegram")?.account ?? null}
               error={settingsError}
               onClose={() => setSettings(false)}
@@ -219,6 +213,7 @@ function FlowBar({ inCents, outCents }: { inCents: number; outCents: number }) {
 function SettingsPanel({
   company,
   squareOn,
+  rate,
   telegram,
   error,
   onClose,
@@ -226,6 +221,7 @@ function SettingsPanel({
 }: {
   company: CompanyState | null;
   squareOn: boolean;
+  rate: string;
   telegram: string | null;
   error: string | null;
   onClose: () => void;
@@ -251,6 +247,11 @@ function SettingsPanel({
         <button type="button" onClick={onClose}>
           Close
         </button>
+      </div>
+
+      <div className="menu-row">
+        <span>Rate</span>
+        <span>${rate}/hr</span>
       </div>
 
       <p className="settings-label">Telegram</p>
