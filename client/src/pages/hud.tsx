@@ -65,9 +65,22 @@ export default function Hud() {
   const moneyIn = state?.session.collectedCents ?? 0;
   const points = state?.session.inputUnits ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
-  const balance = moneyIn - moneyOut;
-  const shown = balance === 0 ? "$0.00" : `${balance > 0 ? "+" : "−"}$${money(Math.abs(balance))}`;
   const combined = moneyIn + moneyOut;
+  const barFloor = 16;
+  let greenShare = 0;
+  let redShare = 0;
+  if (combined > 0) {
+    if (moneyIn === 0) {
+      greenShare = barFloor;
+      redShare = 100 - barFloor;
+    } else if (moneyOut === 0) {
+      redShare = barFloor;
+      greenShare = 100 - barFloor;
+    } else {
+      greenShare = Math.min(100 - barFloor, Math.max(barFloor, (moneyIn / combined) * 100));
+      redShare = 100 - greenShare;
+    }
+  }
   const wide = (menu || settings) && !collapsed;
 
   useEffect(() => {
@@ -146,31 +159,36 @@ export default function Hud() {
             <span className="tip">{live ? "Clock out" : "Clock in"}</span>
           </button>
           {!collapsed && (
-            <span className={`num${balance > 0 ? " up" : balance < 0 ? " down" : ""}`}>{shown}</span>
+            <span className="nums">
+              <span className="num up">+${money(moneyIn)}</span>
+              <span className="num down">−${money(moneyOut)}</span>
+            </span>
           )}
-          {!collapsed && (
-            <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
-              +
+          <span className="actions">
+            {!collapsed && (
+              <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
+                +
+              </button>
+            )}
+            <button
+              type="button"
+              className="fold"
+              onClick={() => {
+                setCollapsed((open) => !open);
+                setMenu(false);
+                setSettings(false);
+              }}
+              aria-label={collapsed ? "Expand" : "Collapse"}
+            >
+              {collapsed ? "›" : "‹"}
             </button>
-          )}
-          <button
-            type="button"
-            className="fold"
-            onClick={() => {
-              setCollapsed((open) => !open);
-              setMenu(false);
-              setSettings(false);
-            }}
-            aria-label={collapsed ? "Expand" : "Collapse"}
-          >
-            {collapsed ? "›" : "‹"}
-          </button>
+          </span>
           {!collapsed && (
             <span className="balance-bar" aria-hidden>
               {combined > 0 && (
                 <>
-                  <i className="in" style={{ width: `${(moneyIn / combined) * 100}%` }} />
-                  <i className="out" style={{ width: `${(moneyOut / combined) * 100}%` }} />
+                  <i className="in" style={{ width: `${greenShare}%` }} />
+                  <i className="out" style={{ width: `${redShare}%` }} />
                 </>
               )}
             </span>

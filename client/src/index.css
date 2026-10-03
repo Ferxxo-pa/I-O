@@ -228,6 +228,22 @@ button {
   }
 }
 
+.nums {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.actions .plus + .fold {
+  margin-left: -8px;
+}
+
 .num {
   font-variant-numeric: tabular-nums;
   font-weight: 560;
@@ -259,7 +275,7 @@ button {
 
 .fold {
   width: 16px;
-  margin-right: 4px;
+  margin-right: 0;
   color: var(--mute);
   font-size: 14px;
   opacity: 0;
@@ -280,18 +296,17 @@ button {
   font-size: 12px;
 }
 
-.strip.with-panel .num {
+.strip.with-panel .nums {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
 }
 
-.strip.with-panel .plus {
+.strip.with-panel .actions {
   margin-left: auto;
 }
 
 .strip.with-panel .fold {
-  margin-right: 2px;
   opacity: 1;
 }
 
