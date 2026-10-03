@@ -106,7 +106,7 @@ button {
 .balance-bar i {
   display: block;
   height: 100%;
-  transition: width 0.45s ease;
+  transition: width 0.45s ease, background 0.35s ease;
 }
 
 .balance-bar .in {
@@ -204,6 +204,7 @@ button {
   font-weight: 560;
   letter-spacing: -0.03em;
   font-size: 14px;
+  transition: color 0.35s ease;
 }
 
 .nums {
@@ -236,6 +237,25 @@ button {
 
 .num.down {
   color: #ff3b30;
+}
+
+.num,
+.plus,
+.fold {
+  transition: color 0.35s ease;
+}
+
+.strip.idle .mark,
+.strip.idle .num.up,
+.strip.idle .num.down,
+.strip.idle .plus,
+.strip.idle .fold {
+  color: #c7c7cc;
+}
+
+.strip.idle .balance-bar .in,
+.strip.idle .balance-bar .out {
+  background: #c7c7cc;
 }
 
 .plus {
