@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useIoState } from "@/hooks/useEarnState";
+import { WHO_ID, useIoState } from "@/hooks/useEarnState";
 import { ching, unlockChing } from "@/lib/ching";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
 
 const OWNER_STORE = "io.owner";
+const WHO_NAME = "io.who.name";
+
+type TeamPerson = { id: string; name: string };
 
 function ownerHeaders(): Record<string, string> {
   const key = localStorage.getItem(OWNER_STORE);
@@ -43,10 +46,15 @@ function rateText(cents: number): string {
 }
 
 export default function Hud() {
-  const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut } = useIoState();
+  const { state, error, pending, freshEvents, dismissTick, refresh, clockIn, clockOut } = useIoState();
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [change, setChange] = useState(false);
+  const [whoOpen, setWhoOpen] = useState(false);
+  const [whoMode, setWhoMode] = useState<"clock" | "link">("clock");
+  const [team, setTeam] = useState<TeamPerson[]>([]);
+  const [teamSource, setTeamSource] = useState<"square" | "manual">("manual");
+  const [youName, setYouName] = useState<string | null>(() => localStorage.getItem(WHO_NAME));
   const [collapsed, setCollapsed] = useState(false);
   const [chips, setChips] = useState(threeColors);
   const [company, setCompany] = useState<CompanyView | null>(null);
@@ -87,7 +95,7 @@ export default function Hud() {
       redShare = 100 - greenShare;
     }
   }
-  const wide = (menu || settings || change) && !collapsed;
+  const wide = (menu || settings || change || whoOpen) && !collapsed;
 
   useEffect(() => {
     if (!live) return;
@@ -146,8 +154,37 @@ export default function Hud() {
     takeCompany(next);
   };
 
+  const openWho = async (mode: "clock" | "link") => {
+    setMenu(false);
+    setSettings(false);
+    setChange(false);
+    setWhoMode(mode);
+    setWhoOpen(true);
+    const res = await fetch("/api/company/who");
+    const body = (await res.json()) as { people?: TeamPerson[]; source?: "square" | "manual"; message?: string };
+    if (!res.ok) {
+      setTeam([]);
+      return;
+    }
+    setTeam(body.people ?? []);
+    setTeamSource(body.source === "square" ? "square" : "manual");
+  };
+
+  const choosePerson = (person: TeamPerson) => {
+    localStorage.setItem(WHO_ID, person.id);
+    localStorage.setItem(WHO_NAME, person.name);
+    setYouName(person.name);
+    setWhoOpen(false);
+    if (whoMode === "clock") clockIn();
+    else void refresh();
+  };
+
   const toggle = () => {
     if (pending || !state) return;
+    if (!localStorage.getItem(WHO_ID)) {
+      void openWho("clock");
+      return;
+    }
     if (live) clockOut();
     else clockIn();
   };
@@ -170,10 +207,10 @@ export default function Hud() {
             className="mark"
             onClick={toggle}
             disabled={pending || !state}
-            title={live ? "Clock out" : "Clock in"}
+            title={live ? "Clock out" : youName || "Clock in"}
           >
             I/O
-            <span className="tip">{live ? "Clock out" : "Clock in"}</span>
+            <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
           </button>
           {!collapsed && (
             <span className="nums">
@@ -195,6 +232,7 @@ export default function Hud() {
                 setMenu(false);
                 setSettings(false);
                 setChange(false);
+                setWhoOpen(false);
               }}
               aria-label={collapsed ? "Expand" : "Collapse"}
             >
@@ -259,7 +297,10 @@ export default function Hud() {
           {settings && (
             <SettingsPanel
               company={company}
+              youName={youName}
+              live={live}
               error={settingsError}
+              onLink={() => void openWho("link")}
               onClose={() => setSettings(false)}
               onSave={async (path, body) => {
                 try {
@@ -276,19 +317,76 @@ export default function Hud() {
         <AnimatePresence>
           {change && <ChangePanel onClose={() => setChange(false)} onCompany={takeCompany} />}
         </AnimatePresence>
+
+        <AnimatePresence>
+          {whoOpen && (
+            <WhoPanel
+              people={team}
+              source={teamSource}
+              onChoose={choosePerson}
+              onClose={() => setWhoOpen(false)}
+            />
+          )}
+        </AnimatePresence>
+        {error && !menu && <div className="err">{error}</div>}
       </div>
     </div>
   );
 }
 
+function WhoPanel({
+  people,
+  source,
+  onChoose,
+  onClose,
+}: {
+  people: TeamPerson[];
+  source: "square" | "manual";
+  onChoose: (person: TeamPerson) => void;
+  onClose: () => void;
+}) {
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>{source === "square" ? "Square" : "You"}</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {people.map((person) => (
+        <button key={person.id} type="button" className="menu-row who" onClick={() => onChoose(person)}>
+          <span>{person.name}</span>
+        </button>
+      ))}
+      {people.length === 0 && (
+        <div className="menu-row">
+          <span>{source === "square" ? "Nobody on the Square team yet" : "The owner adds people in Change"}</span>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 function SettingsPanel({
   company,
+  youName,
+  live,
   error,
+  onLink,
   onClose,
   onSave,
 }: {
   company: CompanyState | null;
+  youName: string | null;
+  live: boolean;
   error: string | null;
+  onLink: () => void;
   onClose: () => void;
   onSave: (path: string, body: unknown) => Promise<void>;
 }) {
@@ -328,6 +426,12 @@ function SettingsPanel({
         <span>Settings</span>
         <button type="button" onClick={onClose}>
           Close
+        </button>
+      </div>
+
+      <div className="settings-line">
+        <button type="button" className="settings-name" onClick={() => { if (!live) onLink(); }}>
+          {youName || "Link"}
         </button>
       </div>
 

@@ -449,6 +449,14 @@ button {
   font-size: 12px;
 }
 
+.menu-row.who {
+  width: 100%;
+  justify-content: flex-start;
+  margin-top: 12px;
+  margin-bottom: 0;
+  text-align: left;
+}
+
 .menu-row span:last-child {
   color: var(--ink);
   font-variant-numeric: tabular-nums;

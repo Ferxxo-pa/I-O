@@ -16,7 +16,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5000 — click the strip to clock in/out.
+Open http://localhost:5000. Each PC links to one person, then **I/O** clocks that person in and out. The green and red numbers stay the whole business.
 
 ```bash
 npm run build
@@ -38,11 +38,13 @@ git push -u origin main
 
 ## Square
 
-Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). Square then sets **$/HR** from the team, and Change shows those rates instead of asking for them again. Every 15 seconds it checks invoices. The first check remembers invoices that already exist so history is not replayed. After that, and on the webhook, a new invoice counts even if the process restarted while it was paid:
+Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). Square then sets **$/HR** from the team, and Change shows those rates instead of asking for them again. Each person picks their own name from that Square team. **I/O** opens and closes that person's timecard. Every open wage still adds into the one red number, and collected invoices stay the one green number.
+
+Every 15 seconds it checks invoices. The first check remembers invoices that already exist so history is not replayed. After that, and on the webhook, a new invoice counts even if the process restarted while it was paid:
 
 - Sent to a customer (unpaid or paid) → **+1** point
 - Paid → a floating **+$200** (or whatever was collected)
 
-Subscribe Square webhooks to `POST /api/square/webhook` for `invoice.published` and `invoice.payment_made`, and set `SQUARE_WEBHOOK_SIGNATURE_KEY` plus `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL.
+Subscribe Square webhooks to `POST /api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Set `SQUARE_WEBHOOK_SIGNATURE_KEY` plus `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL. A timecard opened in Square still counts that person's wage here.
 
 Square does not publish a customer-messages API. Points follow invoices you send, which is the outbound message Square records.

@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   companyStateSchema,
   configSchema,
+  personShiftSchema,
   sessionSchema,
   squareLinkSchema,
   type CompanyState,
@@ -16,6 +17,7 @@ const fileSchema = z.object({
   version: z.literal(1),
   config: configSchema,
   session: sessionSchema,
+  shifts: z.array(personShiftSchema).default([]),
   seen: z.array(z.string()).max(5000).default([]),
   squareBootstrapped: z.boolean().default(false),
   rateSource: z.enum(["default", "manual", "square"]).default("default"),
@@ -65,6 +67,7 @@ export function loadState() {
     earnEngine.hydrate({
       config: parsed.config,
       session: parsed.session,
+      shifts: parsed.shifts,
       seen: parsed.seen,
       squareBootstrapped: parsed.squareBootstrapped,
       rateSource: parsed.rateSource,
