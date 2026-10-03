@@ -1,6 +1,7 @@
 import { earnEngine } from "../clock/engine";
 import { log } from "../vite";
 import { squareConfigured, squareFetch } from "./client";
+import { squareLocationId } from "./location";
 import {
   hourlyRateCents,
   snapshotFromInvoice,
@@ -9,7 +10,6 @@ import {
 } from "./parse";
 
 let timer: ReturnType<typeof setInterval> | null = null;
-let locationId: string | null = null;
 let teamMemberId: string | null = null;
 
 export function startSquareSync() {
@@ -29,23 +29,36 @@ export async function squarePayRoster(): Promise<
 > {
   if (!squareConfigured()) return null;
 
-  const body = await squareFetch<{
-    team_members?: Array<{
-      id?: string;
-      given_name?: string;
-      family_name?: string;
-      status?: string;
-    }>;
-  }>("/v2/team-members/search", {
-    method: "POST",
-    body: JSON.stringify({
-      query: { filter: { status: "ACTIVE" } },
-      limit: 25,
-    }),
-  });
+  const members: Array<{
+    id?: string;
+    given_name?: string;
+    family_name?: string;
+    status?: string;
+  }> = [];
+  let cursor: string | undefined;
+  do {
+    const body = await squareFetch<{
+      team_members?: Array<{
+        id?: string;
+        given_name?: string;
+        family_name?: string;
+        status?: string;
+      }>;
+      cursor?: string;
+    }>("/v2/team-members/search", {
+      method: "POST",
+      body: JSON.stringify({
+        query: { filter: { status: "ACTIVE" } },
+        limit: 25,
+        cursor,
+      }),
+    });
+    members.push(...(body.team_members ?? []));
+    cursor = body.cursor || undefined;
+  } while (cursor);
 
   const people = [];
-  for (const member of body.team_members ?? []) {
+  for (const member of members) {
     if (!member.id) continue;
     let hourlyCents: number | null = null;
     try {
@@ -117,7 +130,7 @@ async function resolveTeamMember(): Promise<string | null> {
 }
 
 async function syncInvoices() {
-  const location = await resolveLocation();
+  const location = await squareLocationId();
   if (!location) return;
 
   const body = await squareFetch<{ invoices?: unknown[] }>("/v2/invoices/search", {
@@ -141,18 +154,3 @@ async function syncInvoices() {
   if (bootstrapping) earnEngine.markSquareBootstrapped();
 }
 
-async function resolveLocation(): Promise<string | null> {
-  if (locationId) return locationId;
-  if (process.env.SQUARE_LOCATION_ID) {
-    locationId = process.env.SQUARE_LOCATION_ID;
-    return locationId;
-  }
-
-  const body = await squareFetch<{
-    locations?: Array<{ id?: string; status?: string }>;
-  }>("/v2/locations");
-  const locations = body.locations ?? [];
-  const active = locations.find((location) => location.status === "ACTIVE" && location.id);
-  locationId = active?.id ?? locations.find((location) => location.id)?.id ?? null;
-  return locationId;
-}

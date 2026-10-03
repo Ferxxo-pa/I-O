@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState, PrintEvent } from "@shared/schema";
 
+export const WHO_ID = "io.who";
+
+function personHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const who = localStorage.getItem(WHO_ID);
+  if (who) headers["x-person-id"] = who;
+  return headers;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: { ...personHeaders(), ...(init?.headers as Record<string, string> | undefined) },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -70,8 +79,18 @@ export function useIoState() {
     [ingest],
   );
 
-  const clockIn = () => run(() => api("/api/clock/in", { method: "POST" }));
-  const clockOut = () => run(() => api("/api/clock/out", { method: "POST" }));
+  const clockIn = () => {
+    const personId = localStorage.getItem(WHO_ID);
+    return run(() =>
+      api("/api/clock/in", { method: "POST", body: JSON.stringify({ personId }) }),
+    );
+  };
+  const clockOut = () => {
+    const personId = localStorage.getItem(WHO_ID);
+    return run(() =>
+      api("/api/clock/out", { method: "POST", body: JSON.stringify({ personId }) }),
+    );
+  };
   const recordInput = (type: "prompt" | "email") =>
     run(() => api(`/api/input/${type}`, { method: "POST" }));
   const reset = () =>
@@ -92,6 +111,7 @@ export function useIoState() {
     pending,
     freshEvents,
     dismissTick,
+    refresh,
     clockIn,
     clockOut,
     recordInput,

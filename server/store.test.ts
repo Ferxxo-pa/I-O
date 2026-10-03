@@ -24,8 +24,9 @@ const company = createCompany("North");
 assert.equal(company.name, "North");
 assert.match(company.code ?? "", /^[A-Z2-9]{6}$/);
 
-await earnEngine.clockIn();
-assert.equal(earnEngine.getState().session.clockedIn, true);
+await earnEngine.clockInPerson({ id: "ada", name: "Ada", hourlyCents: 2000 });
+assert.equal(earnEngine.getState("ada").session.clockedIn, true);
+assert.equal(earnEngine.getState("ben").session.clockedIn, false);
 
 earnEngine.markSquareInvoiceSeen({
   id: "inv_old",
@@ -51,7 +52,9 @@ flushState();
 const saved = JSON.parse(readFileSync(join(process.env.DATA_DIR, "io-state.json"), "utf8"));
 assert.equal(saved.version, 1);
 assert.equal(saved.company.name, "North");
-assert.equal(saved.session.clockedIn, true);
+assert.equal(saved.session.clockedIn, false);
+assert.equal(saved.shifts[0].personId, "ada");
+assert.equal(saved.shifts[0].clockedIn, true);
 assert.equal(saved.squareBootstrapped, true);
 assert.ok(saved.seen.includes("sale:inv_old"));
 
@@ -60,13 +63,13 @@ const { setCompanyListener } = await import("./company.ts");
 setCompanyListener(() => {});
 earnEngine.reset();
 hydrateCompany({ name: null, code: null, people: [] });
-assert.equal(earnEngine.getState().session.clockedIn, false);
+assert.equal(earnEngine.getState("ada").session.clockedIn, false);
 assert.equal(getCompany().name, null);
 
 const { loadState } = await import("./persist.ts");
 loadState();
 assert.equal(getCompany().name, "North");
-assert.equal(earnEngine.getState().session.clockedIn, true);
+assert.equal(earnEngine.getState("ada").session.clockedIn, true);
 assert.equal(earnEngine.isSquareBootstrapped(), true);
 
 console.log("store ok");

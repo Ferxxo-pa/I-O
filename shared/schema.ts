@@ -75,17 +75,39 @@ export const squareLinkSchema = z.object({
 });
 export type SquareLink = z.infer<typeof squareLinkSchema>;
 
+/** One person's open or closed shift. Wages from every shift add into the company total. */
+export const personShiftSchema = z.object({
+  personId: z.string(),
+  name: z.string(),
+  hourlyCents: z.number().int().positive(),
+  clockedIn: z.boolean(),
+  clockedInAt: z.number().nullable(),
+  hourSegmentStartedAt: z.number().nullable(),
+  outputCents: z.number().int().default(0),
+  timecardId: z.string().nullable().default(null),
+});
+export type PersonShift = z.infer<typeof personShiftSchema>;
+
+export const viewerSchema = z.object({
+  id: z.string().nullable(),
+  name: z.string().nullable(),
+  clockedIn: z.boolean(),
+});
+export type Viewer = z.infer<typeof viewerSchema>;
+
 export const appStateSchema = z.object({
   config: configSchema,
   square: squareLinkSchema,
   session: sessionSchema,
   events: z.array(printEventSchema),
-  /** Unrealized output accrued in the open hour. */
+  /** Unrealized output accrued across every open shift. */
   accruedOutputCents: z.number().int(),
   /** Ms of input time in the open shift (0 if idle). */
   inputMs: z.number().int(),
   msToNextPrint: z.number().int(),
   serverNow: z.number(),
+  /** The person this browser is linked to. The strip greys from their clock, not the company's. */
+  you: viewerSchema,
 });
 export type AppState = z.infer<typeof appStateSchema>;
 

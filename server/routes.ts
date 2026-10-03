@@ -5,12 +5,37 @@ import { addPerson, companyView, createCompany, joinCompany, setPersonRate } fro
 import { earnEngine } from "./clock/engine";
 import { startPersistence } from "./persist";
 import { squareConfigured } from "./square/client";
+import { timecardFromWebhook } from "./square/labor";
 import { signaturesMatch, squareSignature } from "./square/signature";
 import { applySquareWebhook, squarePayRoster, startSquareSync } from "./square/sync";
 
 function ownerKeyFrom(req: Request): string | null {
   const value = req.header("x-owner-key");
   return value?.trim() ? value.trim() : null;
+}
+
+function personIdFrom(req: Request): string | null {
+  const body = typeof req.body?.personId === "string" ? req.body.personId.trim() : "";
+  const header = req.header("x-person-id")?.trim() ?? "";
+  return body || header || null;
+}
+
+async function peopleOnTheBusiness(): Promise<
+  Array<{ id: string; name: string; hourlyCents: number | null }>
+> {
+  if (squareConfigured()) {
+    const squarePeople = await squarePayRoster();
+    return (squarePeople ?? []).map((person) => ({
+      id: person.id,
+      name: person.name,
+      hourlyCents: person.hourlyCents,
+    }));
+  }
+  return companyView(null).people.map((person) => ({
+    id: person.id,
+    name: person.name,
+    hourlyCents: person.hourlyCents,
+  }));
 }
 
 function requireOwner(req: Request) {
@@ -28,22 +53,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ ok: true });
   });
 
-  app.get("/api/state", (_req, res) => {
-    res.json(earnEngine.getState());
+  app.get("/api/state", (req, res) => {
+    res.json(earnEngine.getState(personIdFrom(req)));
   });
 
-  app.post("/api/clock/in", async (_req, res) => {
+  app.post("/api/clock/in", async (req, res) => {
     try {
-      res.json(await earnEngine.clockIn());
+      const personId = personIdFrom(req);
+      if (!personId) throw new Error("Choose who you are");
+      const person = (await peopleOnTheBusiness()).find((entry) => entry.id === personId);
+      if (!person) throw new Error("That person is not on this business");
+      if (!person.hourlyCents) throw new Error("Square has no hourly wage for that person");
+      res.json(
+        await earnEngine.clockInPerson({
+          id: person.id,
+          name: person.name,
+          hourlyCents: person.hourlyCents,
+        }),
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Clock-in failed";
       res.status(400).json({ message });
     }
   });
 
-  app.post("/api/clock/out", async (_req, res) => {
+  app.post("/api/clock/out", async (req, res) => {
     try {
-      res.json(await earnEngine.clockOut());
+      const personId = personIdFrom(req);
+      if (!personId) throw new Error("Choose who you are");
+      res.json(await earnEngine.clockOutPerson(personId));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Clock-out failed";
       res.status(400).json({ message });
@@ -109,6 +147,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/company/who", async (_req, res) => {
+    try {
+      const people = await peopleOnTheBusiness();
+      res.json({
+        source: squareConfigured() ? "square" : "manual",
+        people: people.map((person) => ({ id: person.id, name: person.name })),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Couldn't load the team";
+      res.status(400).json({ message });
+    }
+  });
+
   app.get("/api/company/roster", async (req, res) => {
     try {
       requireOwner(req);
@@ -168,6 +219,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
     if (!signaturesMatch(header, expected)) {
       return res.status(403).json({ message: "Invalid Square signature" });
+    }
+
+    const timecard = timecardFromWebhook(req.body);
+    if (timecard) {
+      earnEngine.syncRemoteTimecard(timecard);
+      return res.status(200).json({ ok: true, timecard: true });
     }
 
     const result = applySquareWebhook(req.body);
