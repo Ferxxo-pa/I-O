@@ -104,6 +104,58 @@ button {
   width: 6px;
   height: 6px;
   display: block;
+  animation: chip-wave 1.8s ease-in-out infinite;
+}
+
+.chips i:nth-child(1) {
+  animation-name: chip-wave-1;
+}
+
+.chips i:nth-child(2) {
+  animation-name: chip-wave-2;
+}
+
+.chips i:nth-child(3) {
+  animation-name: chip-wave-3;
+}
+
+@keyframes chip-wave-1 {
+  0%,
+  10%,
+  90%,
+  100% {
+    transform: translateY(0);
+  }
+  5%,
+  95% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes chip-wave-2 {
+  0%,
+  18%,
+  82%,
+  100% {
+    transform: translateY(0);
+  }
+  13%,
+  87% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes chip-wave-3 {
+  0%,
+  26%,
+  74%,
+  100% {
+    transform: translateY(0);
+  }
+  21%,
+  79% {
+    transform: translateY(-5px);
+  }
 }
 
 .mark {
@@ -284,8 +336,69 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.menu-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
 .menu button {
   font-size: 12px;
+  color: var(--ink);
+}
+
+.settings {
+  width: 280px;
+  margin-top: 8px;
+  margin-left: auto;
+  text-align: left;
+}
+
+.settings-head,
+.settings form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-head {
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.settings-label {
+  margin: 12px 0 6px;
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.settings input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 4px 0;
+}
+
+.settings form {
+  margin-top: 8px;
+}
+
+.board-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.4fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-row.you {
   color: var(--ink);
 }
 

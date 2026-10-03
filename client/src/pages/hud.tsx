@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
-import type { PrintEvent } from "@shared/schema";
+import type { CompanyState, PrintEvent } from "@shared/schema";
 
 function money(cents: number): string {
   const n = cents / 100;
@@ -33,14 +33,44 @@ function rateText(cents: number): string {
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
+  const [settings, setSettings] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [chips] = useState(threeColors);
+  const [company, setCompany] = useState<CompanyState | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const live = state?.session.clockedIn ?? false;
   const output = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
   const points = state?.session.inputUnits ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const shown = `$${money(Math.abs(output))}`;
+
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/company")
+      .then((res) => res.json())
+      .then((next: CompanyState) => {
+        if (!cancel) setCompany(next);
+      })
+      .catch(() => {
+        if (!cancel) setSettingsError("Couldn't load settings");
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  const saveCompany = async (path: string, body: unknown) => {
+    setSettingsError(null);
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const next = await res.json();
+    if (!res.ok) throw new Error(next.message || "Couldn't save that");
+    setCompany(next);
+  };
 
   const toggle = () => {
     if (pending || !state) return;
@@ -82,6 +112,7 @@ export default function Hud() {
             onClick={() => {
               setCollapsed((open) => !open);
               setMenu(false);
+              setSettings(false);
             }}
             aria-label={collapsed ? "Expand" : "Collapse"}
           >
@@ -110,15 +141,217 @@ export default function Hud() {
                 <span>Rate</span>
                 <span>${rateText(rateCents)}/hr</span>
               </div>
-              <button type="button" disabled={pending} onClick={() => reset()}>
-                Reset
-              </button>
+              <div className="menu-actions">
+                <button type="button" disabled={pending} onClick={() => reset()}>
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettings(true);
+                    setMenu(false);
+                  }}
+                >
+                  Settings
+                </button>
+              </div>
               {error && <div className="err">{error}</div>}
             </motion.div>
           )}
         </AnimatePresence>
+
+        <AnimatePresence>
+          {settings && (
+            <SettingsPanel
+              company={company}
+              squareOn={state?.square.connected ?? false}
+              made={shown}
+              points={points}
+              telegram={company?.integrations.find((item) => item.kind === "telegram")?.account ?? null}
+              error={settingsError}
+              onClose={() => setSettings(false)}
+              onSave={async (path, body) => {
+                try {
+                  await saveCompany(path, body);
+                } catch (err) {
+                  setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
+                }
+              }}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+function SettingsPanel({
+  company,
+  squareOn,
+  made,
+  points,
+  telegram,
+  error,
+  onClose,
+  onSave,
+}: {
+  company: CompanyState | null;
+  squareOn: boolean;
+  made: string;
+  points: number;
+  telegram: string | null;
+  error: string | null;
+  onClose: () => void;
+  onSave: (path: string, body: unknown) => Promise<void>;
+}) {
+  const [companyName, setCompanyName] = useState("");
+  const [personName, setPersonName] = useState("");
+  const [personTelegram, setPersonTelegram] = useState("");
+  const [handle, setHandle] = useState("");
+  const [integrationName, setIntegrationName] = useState("");
+  const [integrationAccount, setIntegrationAccount] = useState("");
+
+  const people = [...(company?.people ?? [])].sort(
+    (a, b) => b.madeCents - a.madeCents || b.points - a.points,
+  );
+
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Settings</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+
+      <p className="settings-label">Integrations</p>
+      <div className="menu-row">
+        <span>Telegram</span>
+        <span>{telegram ? `@${telegram}` : "Not connected"}</span>
+      </div>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSave("/api/integrations", { kind: "telegram", account: handle });
+          setHandle("");
+        }}
+      >
+        <input
+          value={handle}
+          onChange={(event) => setHandle(event.target.value)}
+          placeholder="@username"
+          aria-label="Telegram username"
+        />
+        <button type="submit">Connect</button>
+      </form>
+      <div className="menu-row">
+        <span>Square</span>
+        <span>{squareOn ? "Connected" : "Demo"}</span>
+      </div>
+      {(company?.integrations ?? [])
+        .filter((item) => item.kind === "custom")
+        .map((item) => (
+          <div className="menu-row" key={item.id}>
+            <span>{item.label}</span>
+            <span>{item.account}</span>
+          </div>
+        ))}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSave("/api/integrations", {
+            kind: "custom",
+            label: integrationName,
+            account: integrationAccount,
+          });
+          setIntegrationName("");
+          setIntegrationAccount("");
+        }}
+      >
+        <input
+          value={integrationName}
+          onChange={(event) => setIntegrationName(event.target.value)}
+          placeholder="Integration"
+          aria-label="Integration name"
+        />
+        <input
+          value={integrationAccount}
+          onChange={(event) => setIntegrationAccount(event.target.value)}
+          placeholder="Account"
+          aria-label="Integration account"
+        />
+        <button type="submit">Add</button>
+      </form>
+
+      <p className="settings-label">Company</p>
+      {company?.name ? (
+        <>
+          <div className="menu-row">
+            <span>{company.name}</span>
+            <span>Leaderboard</span>
+          </div>
+          <div className="board-row you">
+            <span>You</span>
+            <span>{made}</span>
+            <span>{points}</span>
+            <span>{telegram ? `@${telegram}` : ""}</span>
+          </div>
+          {people.map((person) => (
+            <div className="board-row" key={person.id}>
+              <span>{person.name}</span>
+              <span>${money(person.madeCents)}</span>
+              <span>{person.points}</span>
+              <span>{person.telegram ? `@${person.telegram}` : ""}</span>
+            </div>
+          ))}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onSave("/api/company/people", { name: personName, telegram: personTelegram });
+              setPersonName("");
+              setPersonTelegram("");
+            }}
+          >
+            <input
+              value={personName}
+              onChange={(event) => setPersonName(event.target.value)}
+              placeholder="Name"
+              aria-label="Person name"
+            />
+            <input
+              value={personTelegram}
+              onChange={(event) => setPersonTelegram(event.target.value)}
+              placeholder="@telegram"
+              aria-label="Person Telegram"
+            />
+            <button type="submit">Add</button>
+          </form>
+        </>
+      ) : (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onSave("/api/company", { name: companyName });
+            setCompanyName("");
+          }}
+        >
+          <input
+            value={companyName}
+            onChange={(event) => setCompanyName(event.target.value)}
+            placeholder="Company name"
+            aria-label="Company name"
+          />
+          <button type="submit">Create</button>
+        </form>
+      )}
+      {error && <div className="err">{error}</div>}
+    </motion.div>
   );
 }
 

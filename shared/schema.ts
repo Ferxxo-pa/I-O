@@ -96,6 +96,30 @@ export const DEFAULT_CONFIG: AppConfig = {
   clockSource: "local",
 };
 
+export const integrationSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["telegram", "custom"]),
+  label: z.string(),
+  account: z.string(),
+});
+export type Integration = z.infer<typeof integrationSchema>;
+
+export const boardPersonSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  telegram: z.string().nullable(),
+  points: z.number().int(),
+  madeCents: z.number().int(),
+});
+export type BoardPerson = z.infer<typeof boardPersonSchema>;
+
+export const companyStateSchema = z.object({
+  name: z.string().nullable(),
+  people: z.array(boardPersonSchema),
+  integrations: z.array(integrationSchema),
+});
+export type CompanyState = z.infer<typeof companyStateSchema>;
+
 export const DEFAULT_SESSION: Session = {
   clockedIn: false,
   clockedInAt: null,
