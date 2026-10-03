@@ -35,7 +35,12 @@ export default function Hud() {
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [chips] = useState(threeColors);
+  const [chips, setChips] = useState(threeColors);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setChips(threeColors()), 3200);
+    return () => window.clearInterval(id);
+  }, []);
   const [company, setCompany] = useState<CompanyState | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
@@ -85,8 +90,8 @@ export default function Hud() {
 
         <div className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}`}>
           <span className="chips" aria-hidden>
-            {chips.map((color) => (
-              <i key={color} style={{ background: color }} />
+            {chips.map((color, index) => (
+              <i key={index} style={{ background: color }} />
             ))}
           </span>
           <button
@@ -208,8 +213,6 @@ function SettingsPanel({
   const [personName, setPersonName] = useState("");
   const [personTelegram, setPersonTelegram] = useState("");
   const [handle, setHandle] = useState("");
-  const [integrationName, setIntegrationName] = useState("");
-  const [integrationAccount, setIntegrationAccount] = useState("");
 
   const people = [...(company?.people ?? [])].sort(
     (a, b) => b.madeCents - a.madeCents || b.points - a.points,
@@ -230,11 +233,7 @@ function SettingsPanel({
         </button>
       </div>
 
-      <p className="settings-label">Integrations</p>
-      <div className="menu-row">
-        <span>Telegram</span>
-        <span>{telegram ? `@${telegram}` : "Not connected"}</span>
-      </div>
+      <p className="settings-label">Telegram</p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -245,49 +244,17 @@ function SettingsPanel({
         <input
           value={handle}
           onChange={(event) => setHandle(event.target.value)}
-          placeholder="@username"
+          placeholder={telegram ? `@${telegram}` : "@username"}
           aria-label="Telegram username"
         />
-        <button type="submit">Connect</button>
+        <button type="submit">{telegram ? "Update" : "Connect"}</button>
       </form>
+
+      <p className="settings-label">Later</p>
       <div className="menu-row">
         <span>Square</span>
-        <span>{squareOn ? "Connected" : "Demo"}</span>
+        <span>{squareOn ? "Connected" : "Soon"}</span>
       </div>
-      {(company?.integrations ?? [])
-        .filter((item) => item.kind === "custom")
-        .map((item) => (
-          <div className="menu-row" key={item.id}>
-            <span>{item.label}</span>
-            <span>{item.account}</span>
-          </div>
-        ))}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void onSave("/api/integrations", {
-            kind: "custom",
-            label: integrationName,
-            account: integrationAccount,
-          });
-          setIntegrationName("");
-          setIntegrationAccount("");
-        }}
-      >
-        <input
-          value={integrationName}
-          onChange={(event) => setIntegrationName(event.target.value)}
-          placeholder="Integration"
-          aria-label="Integration name"
-        />
-        <input
-          value={integrationAccount}
-          onChange={(event) => setIntegrationAccount(event.target.value)}
-          placeholder="Account"
-          aria-label="Integration account"
-        />
-        <button type="submit">Add</button>
-      </form>
 
       <p className="settings-label">Company</p>
       {company?.name ? (
