@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
 import { ching, unlockChing } from "@/lib/ching";
-import type { CompanyState, PrintEvent } from "@shared/schema";
+import { signedMoney, type BookFlash } from "@shared/book";
+import type { CompanyState } from "@shared/schema";
 
 function money(cents: number): string {
   const n = cents / 100;
@@ -13,18 +14,6 @@ function money(cents: number): string {
   return n < 0 ? `-${abs}` : abs;
 }
 
-const CHIP_COLORS = ["#f83090", "#38b8f8", "#a8c838", "#f86020", "#d888f8", "#0048c8", "#00a850"];
-
-function threeColors(): string[] {
-  const pool = [...CHIP_COLORS];
-  const picked: string[] = [];
-  for (let i = 0; i < 3; i++) {
-    const index = Math.floor(Math.random() * pool.length);
-    picked.push(pool.splice(index, 1)[0]);
-  }
-  return picked;
-}
-
 function rateText(cents: number): string {
   const dollars = cents / 100;
   if (Number.isInteger(dollars)) return String(dollars);
@@ -32,19 +21,15 @@ function rateText(cents: number): string {
 }
 
 export default function Hud() {
-  const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut } = useIoState();
+  const { state, error, pending, clockIn, clockOut } = useIoState();
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [chips, setChips] = useState(threeColors);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setChips(threeColors()), 3200);
-    return () => window.clearInterval(id);
-  }, []);
   const [company, setCompany] = useState<CompanyState | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const heard = useRef(new Set<string>());
+  const [pops, setPops] = useState<BookFlash[]>([]);
+  const seenFlashes = useRef(new Set<string>());
+  const flashesReady = useRef(false);
 
   useEffect(() => {
     const unlock = () => unlockChing();
@@ -52,21 +37,29 @@ export default function Hud() {
     return () => window.removeEventListener("pointerdown", unlock);
   }, []);
 
+  const book = state?.book;
+  const balanceCents = book?.balanceCents ?? 0;
+  const shown = signedMoney(balanceCents);
+
   useEffect(() => {
-    for (const event of freshEvents) {
-      if (heard.current.has(event.id)) continue;
-      heard.current.add(event.id);
-      const paid = event.kind === "hour_print" || event.kind === "sale";
-      if (paid && event.outputCents > 0) ching();
+    const flashes = book?.flashes ?? [];
+    if (!flashesReady.current) {
+      flashes.forEach((flash) => seenFlashes.current.add(flash.id));
+      flashesReady.current = true;
+      return;
     }
-  }, [freshEvents]);
+    const fresh = flashes.filter((flash) => !seenFlashes.current.has(flash.id));
+    fresh.forEach((flash) => seenFlashes.current.add(flash.id));
+    if (!fresh.length) return;
+    fresh.forEach((flash) => {
+      if (flash.label.startsWith("+")) ching();
+    });
+    setPops((prev) => [...fresh, ...prev].slice(0, 4));
+  }, [book?.flashes]);
 
   const live = state?.session.clockedIn ?? false;
-  const moneyOut = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
-  const moneyIn = state?.session.collectedCents ?? 0;
-  const points = state?.session.inputUnits ?? 0;
+  const paycheck = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
-  const shown = `$${money(Math.abs(moneyOut))}`;
   const wide = (menu || settings) && !collapsed;
 
   useEffect(() => {
@@ -114,37 +107,29 @@ export default function Hud() {
     setCompany(next);
   };
 
-  const toggle = () => {
-    if (pending || !state) return;
-    if (live) clockOut();
-    else clockIn();
-  };
-
   return (
     <div className="stage">
       <div className="strip-anchor">
-        <PrintTape events={freshEvents} onDone={dismissTick} />
+        <PrintTape flashes={pops} onDone={(id) => setPops((prev) => prev.filter((flash) => flash.id !== id))} />
 
         <div
           className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
         >
-          <span className="chips" aria-hidden>
-            {chips.map((color, index) => (
-              <i key={index} style={{ background: color }} />
-            ))}
-          </span>
-          <button
-            type="button"
-            className="mark"
-            onClick={toggle}
-            disabled={pending || !state}
-            title={live ? "Clock out" : "Clock in"}
-          >
+          <span className="mark">
             I/O
             <span className="dot" />
-            <span className="tip">{live ? "Clock out" : "Clock in"}</span>
-          </button>
-          {!collapsed && <span className="num">{shown}</span>}
+          </span>
+          {!collapsed && (
+            <motion.span
+              key={balanceCents}
+              className={`num${balanceCents > 0 ? " up" : balanceCents < 0 ? " down" : ""}`}
+              initial={{ opacity: 0.35, y: 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.28 }}
+            >
+              {shown}
+            </motion.span>
+          )}
           {!collapsed && (
             <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
               +
@@ -162,6 +147,23 @@ export default function Hud() {
           >
             {collapsed ? "›" : "‹"}
           </button>
+          {!collapsed && (
+            <span
+              className={`balance-bar${book?.tie ? " tie" : ""}${book?.neutral !== false ? " neutral" : ""}`}
+              aria-label={
+                book && !book.neutral
+                  ? `Plus ${Math.round(book.green)} percent, minus ${Math.round(book.red)} percent`
+                  : "No money in or out today"
+              }
+            >
+              {book && !book.neutral && (
+                <>
+                  <i className="in" style={{ width: `${book.green}%` }} />
+                  <i className="out" style={{ width: `${book.red}%` }} />
+                </>
+              )}
+            </span>
+          )}
         </div>
 
         <AnimatePresence>
@@ -173,12 +175,25 @@ export default function Hud() {
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.12 }}
             >
-              <FlowBar inCents={moneyIn} outCents={moneyOut} />
               <div className="menu-row">
-                <span>Points</span>
-                <span>{points}</span>
+                <span>Pay</span>
+                <span>${money(paycheck)}</span>
+              </div>
+              <div className="menu-row">
+                <span>Rate</span>
+                <span>${rateText(rateCents)}/hr</span>
               </div>
               <div className="menu-actions">
+                <button
+                  type="button"
+                  disabled={pending || !state}
+                  onClick={() => {
+                    if (live) clockOut();
+                    else clockIn();
+                  }}
+                >
+                  {live ? "Clock out" : "Clock in"}
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -213,33 +228,6 @@ export default function Hud() {
             />
           )}
         </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-function FlowBar({ inCents, outCents }: { inCents: number; outCents: number }) {
-  const total = inCents + outCents;
-  let inShare = 0;
-  if (total > 0) {
-    inShare = inCents / total;
-    if (inCents > 0 && outCents > 0) inShare = Math.min(0.94, Math.max(0.06, inShare));
-  }
-  const outShare = total > 0 ? 1 - inShare : 0;
-
-  return (
-    <div className="flow">
-      <div className="flow-top">
-        <span className="in">In ${money(inCents)}</span>
-        <span className="out">Out ${money(outCents)}</span>
-      </div>
-      <div
-        className="track"
-        role="img"
-        aria-label={`In ${money(inCents)} dollars, out ${money(outCents)} dollars`}
-      >
-        {inShare > 0 && <span className="in" style={{ width: `${inShare * 100}%` }} />}
-        {outShare > 0 && <span className="out" style={{ width: `${outShare * 100}%` }} />}
       </div>
     </div>
   );
@@ -359,56 +347,35 @@ function SettingsPanel({
   );
 }
 
-function PrintTape({
-  events,
-  onDone,
-}: {
-  events: PrintEvent[];
-  onDone: (id: string) => void;
-}) {
+function PrintTape({ flashes, onDone }: { flashes: BookFlash[]; onDone: (id: string) => void }) {
   return (
     <div className="tape">
       <AnimatePresence>
-        {events.map((event) => (
-          <TapePrint key={event.id} event={event} onDone={onDone} />
+        {flashes.map((flash) => (
+          <TapePrint key={flash.id} flash={flash} onDone={onDone} />
         ))}
       </AnimatePresence>
     </div>
   );
 }
 
-function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) => void }) {
-  const point = event.kind === "input";
-  const sale = event.kind === "sale";
-  const moneyHit = event.kind === "hour_print" || (sale && event.outputCents > 0);
-  const big = moneyHit && event.outputCents >= 2000;
+function TapePrint({ flash, onDone }: { flash: BookFlash; onDone: (id: string) => void }) {
+  const minus = flash.label.startsWith("−");
 
   useEffect(() => {
-    const life = big ? 2600 : point ? 1800 : 1400;
-    const t = setTimeout(() => onDone(event.id), life);
+    const t = setTimeout(() => onDone(flash.id), 1600);
     return () => clearTimeout(t);
-  }, [event.id, big, point, onDone]);
-
-  const tone = sale
-    ? "sale"
-    : point
-      ? event.inputType === "email"
-        ? "email"
-        : event.inputType === "prompt"
-          ? "prompt"
-          : "message"
-      : "money";
-  const text = point ? `+${event.inputUnits || 1}` : event.label;
+  }, [flash.id, onDone]);
 
   return (
     <motion.div
-      className={`print ${tone}${big ? " big" : ""}`}
+      className={`print ${minus ? "down" : "up"}`}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.16 }}
     >
-      {text}
+      {flash.label}
     </motion.div>
   );
 }

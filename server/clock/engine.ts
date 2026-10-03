@@ -10,6 +10,7 @@ import {
   type SquareLink,
 } from "@shared/schema";
 import type { InvoiceSnapshot } from "../square/parse";
+import { companyBook } from "../book";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
 import { randomUUID } from "crypto";
 
@@ -40,6 +41,7 @@ export class EarnEngine {
   private adapter: ClockAdapter = createClockAdapter(this.config.clockSource);
   private timer: ReturnType<typeof setInterval> | null = null;
   private seenExternal = new Set<string>();
+  private outputAtShiftStart = 0;
 
   start() {
     if (this.timer) return;
@@ -79,6 +81,7 @@ export class EarnEngine {
 
     const shift = await this.adapter.clockIn();
     const t = now();
+    this.outputAtShiftStart = this.session.outputCents;
     this.session = {
       ...this.session,
       clockedIn: true,
@@ -103,10 +106,20 @@ export class EarnEngine {
   async clockOut(): Promise<AppState> {
     if (!this.session.clockedIn) return this.getState();
 
+    const shiftId = this.session.externalShiftId ?? `shift:${this.session.clockedInAt ?? now()}`;
     this.settlePartial(now());
+    const labor = this.session.outputCents - this.outputAtShiftStart;
+    const t = now();
+    if (labor > 0) {
+      companyBook.record({
+        sourceId: `labor:${shiftId}`,
+        contributionCents: -labor,
+        at: t,
+        category: "labor",
+      });
+    }
 
     await this.adapter.clockOut();
-    const t = now();
     this.session = {
       ...this.session,
       clockedIn: false,
@@ -170,6 +183,14 @@ export class EarnEngine {
     const sale = snapshot.collected
       ? this.celebrateSale(snapshot.id, snapshot.centsPaid, snapshot.title)
       : false;
+    if (snapshot.collected || snapshot.refundedCents > 0 || snapshot.netCents !== 0) {
+      const at = snapshot.updatedAt ? Date.parse(snapshot.updatedAt) : undefined;
+      companyBook.record({
+        sourceId: `square:${snapshot.id}`,
+        contributionCents: snapshot.netCents,
+        at: Number.isFinite(at) ? at : undefined,
+      });
+    }
     return { sale, points };
   }
 
