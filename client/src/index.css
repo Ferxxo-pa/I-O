@@ -91,6 +91,21 @@ button {
   padding: 0 8px 0 14px;
 }
 
+.chips {
+  position: absolute;
+  top: -12px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 3px;
+}
+
+.chips i {
+  width: 6px;
+  height: 6px;
+  display: block;
+}
+
 .mark {
   position: relative;
   display: inline-flex;

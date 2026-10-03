@@ -12,6 +12,18 @@ function money(cents: number): string {
   return n < 0 ? `-${abs}` : abs;
 }
 
+const CHIP_COLORS = ["#f83090", "#38b8f8", "#a8c838", "#f86020", "#d888f8", "#0048c8", "#00a850"];
+
+function threeColors(): string[] {
+  const pool = [...CHIP_COLORS];
+  const picked: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const index = Math.floor(Math.random() * pool.length);
+    picked.push(pool.splice(index, 1)[0]);
+  }
+  return picked;
+}
+
 function rateText(cents: number): string {
   const dollars = cents / 100;
   if (Number.isInteger(dollars)) return String(dollars);
@@ -22,9 +34,11 @@ export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut, reset } = useIoState();
   const [menu, setMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [chips] = useState(threeColors);
 
   const live = state?.session.clockedIn ?? false;
   const output = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
+  const points = state?.session.inputUnits ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const shown = `$${money(Math.abs(output))}`;
 
@@ -40,6 +54,11 @@ export default function Hud() {
         <PrintTape events={freshEvents} onDone={dismissTick} />
 
         <div className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}`}>
+          <span className="chips" aria-hidden>
+            {chips.map((color) => (
+              <i key={color} style={{ background: color }} />
+            ))}
+          </span>
           <button
             type="button"
             className="mark"
@@ -79,6 +98,14 @@ export default function Hud() {
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.12 }}
             >
+              <div className="menu-row">
+                <span>Made</span>
+                <span>{shown}</span>
+              </div>
+              <div className="menu-row">
+                <span>Points</span>
+                <span>{points}</span>
+              </div>
               <div className="menu-row">
                 <span>Rate</span>
                 <span>${rateText(rateCents)}/hr</span>
