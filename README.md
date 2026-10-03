@@ -6,7 +6,7 @@
 I/O   +4.00
 ```
 
-The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is the paycheck, ticking. Collapse it to just **I/O**. **+** opens a bar of money in against money out, plus points. **Settings** shows the hourly rate, a Telegram handle, and Company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the name sits beside Company and the code sits on the right. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. Wages float in green, a paid invoice in pink, a message in blue.
+The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is the paycheck, ticking. Collapse it to just **I/O**. **+** opens a bar of money in against money out, plus points. **Settings** shows the hourly rate, a Telegram handle, and Company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the company name replaces the word Company, and the code sits on the right. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. Wages float in green, a paid invoice in pink, a message in blue.
 - A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is money in. It is not added to the paycheck.
 
 ## Run

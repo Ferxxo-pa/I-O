@@ -320,8 +320,7 @@ function SettingsPanel({
 
       <div className="settings-line">
         <span className="company-id">
-          <span>Company</span>
-          {company?.name && <span className="settings-name">{company.name}</span>}
+          {company?.name ? <span className="settings-name">{company.name}</span> : <span>Company</span>}
         </span>
         {company?.code ? (
           <a className="company-code" href={invite}>
