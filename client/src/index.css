@@ -429,43 +429,62 @@ button {
   font-size: 13px;
 }
 
-.settings-block {
+.settings-rate {
+  margin: 14px 0 0;
+  font-size: 13px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+
+.settings-line {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
 }
 
-.settings-block .menu-row,
-.settings-block form,
-.settings-label,
-.settings-name,
-.settings-note {
-  margin: 0;
-}
-
-.settings-label {
+.company-id {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   color: var(--mute);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .settings-name {
   color: var(--ink);
-  font-size: 13px;
   font-weight: 560;
   letter-spacing: -0.02em;
 }
 
-.menu-row span.company-code {
-  color: var(--mute);
-  letter-spacing: 0.08em;
+.settings-actions {
+  display: flex;
+  gap: 14px;
 }
 
-.settings button.quiet {
-  align-self: flex-start;
+.settings-actions button {
   color: var(--mute);
+}
+
+.settings-actions button[aria-pressed="true"] {
+  color: var(--ink);
+}
+
+a.company-code {
+  color: var(--mute);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.settings form {
+  margin-top: 14px;
+}
+
+.settings form.ask {
+  margin-top: 8px;
 }
 
 .settings input {
@@ -478,23 +497,6 @@ button {
   border: 0;
   border-bottom: 1px solid var(--line);
   padding: 4px 0;
-}
-
-.settings form.stack {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-.settings .form-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.settings-note {
-  color: var(--mute);
-  font-size: 11px;
-  line-height: 1.35;
 }
 
 .menu button:disabled {

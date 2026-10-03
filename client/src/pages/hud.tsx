@@ -71,13 +71,31 @@ export default function Hud() {
 
   useEffect(() => {
     let cancel = false;
-    fetch("/api/company")
-      .then((res) => res.json())
-      .then((next: CompanyState) => {
-        if (!cancel) setCompany(next);
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("join");
+    const load = code
+      ? fetch("/api/company/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        })
+      : fetch("/api/company");
+    void load
+      .then(async (res) => {
+        const next = await res.json();
+        if (!res.ok) throw new Error(next.message || "Couldn't load settings");
+        if (cancel) return;
+        setCompany(next);
+        if (code) setSettings(true);
       })
-      .catch(() => {
-        if (!cancel) setSettingsError("Couldn't load settings");
+      .catch((err) => {
+        if (!cancel) setSettingsError(err instanceof Error ? err.message : "Couldn't load settings");
+      })
+      .finally(() => {
+        if (!code) return;
+        params.delete("join");
+        const rest = params.toString();
+        window.history.replaceState({}, "", rest ? `/?${rest}` : "/");
       });
     return () => {
       cancel = true;
@@ -180,7 +198,6 @@ export default function Hud() {
           {settings && (
             <SettingsPanel
               company={company}
-              squareOn={state?.square.connected ?? false}
               rate={rateText(rateCents)}
               telegram={company?.integrations.find((item) => item.kind === "telegram")?.account ?? null}
               error={settingsError}
@@ -230,7 +247,6 @@ function FlowBar({ inCents, outCents }: { inCents: number; outCents: number }) {
 
 function SettingsPanel({
   company,
-  squareOn,
   rate,
   telegram,
   error,
@@ -238,20 +254,36 @@ function SettingsPanel({
   onSave,
 }: {
   company: CompanyState | null;
-  squareOn: boolean;
   rate: string;
   telegram: string | null;
   error: string | null;
   onClose: () => void;
   onSave: (path: string, body: unknown) => Promise<void>;
 }) {
-  const [personName, setPersonName] = useState("");
-  const [personTelegram, setPersonTelegram] = useState("");
   const [handle, setHandle] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [mode, setMode] = useState<"join" | "create" | null>(null);
   const [draft, setDraft] = useState("");
+  const invite = company?.code ? `${window.location.origin}/?join=${company.code}` : "";
 
-  const people = [...(company?.people ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  const submit = (next: "join" | "create", value: string) => {
+    const save =
+      next === "create"
+        ? onSave("/api/company", { name: value })
+        : onSave("/api/company/join", { code: value });
+    void save.then(() => {
+      setDraft("");
+      setMode(null);
+    });
+  };
+
+  const pick = (next: "join" | "create") => {
+    if (mode === next && draft.trim()) {
+      submit(next, draft);
+      return;
+    }
+    setMode((current) => (current === next ? null : next));
+    setDraft("");
+  };
 
   return (
     <motion.div
@@ -268,123 +300,61 @@ function SettingsPanel({
         </button>
       </div>
 
-      <section className="settings-block">
-        <p className="settings-label">Pay</p>
-        <div className="menu-row">
-          <span>Rate</span>
-          <span>${rate}/hr</span>
-        </div>
-      </section>
+      <p className="settings-rate">${rate}/hr</p>
 
-      <section className="settings-block">
-        <p className="settings-label">Telegram</p>
-        {telegram && (
-          <div className="menu-row">
-            <span>@{telegram}</span>
-            <span>Connected</span>
-          </div>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSave("/api/integrations", { kind: "telegram", account: handle });
+          setHandle("");
+        }}
+      >
+        <input
+          value={handle}
+          onChange={(event) => setHandle(event.target.value)}
+          placeholder={telegram ? `@${telegram}` : "@username"}
+          aria-label="Telegram username"
+        />
+        <button type="submit">{telegram ? "Update" : "Connect"}</button>
+      </form>
+
+      <div className="settings-line">
+        <span className="company-id">
+          <span>Company</span>
+          {company?.name && <span className="settings-name">{company.name}</span>}
+        </span>
+        {company?.code ? (
+          <a className="company-code" href={invite}>
+            {company.code}
+          </a>
+        ) : (
+          <span className="settings-actions">
+            <button type="button" aria-pressed={mode === "join"} onClick={() => pick("join")}>
+              Join
+            </button>
+            <button type="button" aria-pressed={mode === "create"} onClick={() => pick("create")}>
+              Create
+            </button>
+          </span>
         )}
+      </div>
+      {mode && !company?.name && (
         <form
+          className="ask"
           onSubmit={(event) => {
             event.preventDefault();
-            void onSave("/api/integrations", { kind: "telegram", account: handle });
-            setHandle("");
+            submit(mode, draft);
           }}
         >
           <input
-            value={handle}
-            onChange={(event) => setHandle(event.target.value)}
-            placeholder="@username"
-            aria-label="Telegram username"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={mode === "create" ? "Name" : "Code"}
+            aria-label={mode === "create" ? "Company name" : "Company code"}
+            autoFocus
           />
-          <button type="submit">{telegram ? "Update" : "Connect"}</button>
         </form>
-        <p className="settings-note">Group chat later. Each message is a point.</p>
-      </section>
-
-      <section className="settings-block">
-        <p className="settings-label">Company</p>
-        {company?.name ? (
-          <>
-            <div className="menu-row">
-              <span className="settings-name">{company.name}</span>
-              {company.code && <span className="company-code">{company.code}</span>}
-            </div>
-            <div className="menu-row">
-              <span>You</span>
-            </div>
-            {people.map((person) => (
-              <div className="menu-row" key={person.id}>
-                <span>{person.name}</span>
-                <span>{person.telegram ? `@${person.telegram}` : ""}</span>
-              </div>
-            ))}
-            <form
-              className="stack"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void onSave("/api/company/people", { name: personName, telegram: personTelegram });
-                setPersonName("");
-                setPersonTelegram("");
-              }}
-            >
-              <input
-                value={personName}
-                onChange={(event) => setPersonName(event.target.value)}
-                placeholder="Name"
-                aria-label="Person name"
-              />
-              <div className="form-line">
-                <input
-                  value={personTelegram}
-                  onChange={(event) => setPersonTelegram(event.target.value)}
-                  placeholder="@telegram"
-                  aria-label="Person Telegram"
-                />
-                <button type="submit">Add</button>
-              </div>
-            </form>
-          </>
-        ) : (
-          <>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const save = creating
-                  ? onSave("/api/company", { name: draft })
-                  : onSave("/api/company/join", { code: draft });
-                void save.then(() => setDraft(""));
-              }}
-            >
-              <input
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder={creating ? "Name" : "Code"}
-                aria-label={creating ? "Company name" : "Company code"}
-              />
-              <button type="submit">{creating ? "Create" : "Join"}</button>
-            </form>
-            <button
-              type="button"
-              className="quiet"
-              onClick={() => {
-                setCreating((open) => !open);
-                setDraft("");
-              }}
-            >
-              {creating ? "Join" : "Create"}
-            </button>
-          </>
-        )}
-      </section>
-
-      <section className="settings-block">
-        <p className="settings-label">Later</p>
-        <div className="menu-row">
-          <span>Square</span>
-          <span>{squareOn ? "Connected" : "Soon"}</span>
-        </div>
-      </section>
+      )}
       {error && <div className="err">{error}</div>}
     </motion.div>
   );
