@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIoState } from "@/hooks/useEarnState";
+import { ching, unlockChing } from "@/lib/ching";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 function money(cents: number): string {
@@ -43,6 +44,22 @@ export default function Hud() {
   }, []);
   const [company, setCompany] = useState<CompanyState | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const heard = useRef(new Set<string>());
+
+  useEffect(() => {
+    const unlock = () => unlockChing();
+    window.addEventListener("pointerdown", unlock);
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
+
+  useEffect(() => {
+    for (const event of freshEvents) {
+      if (heard.current.has(event.id)) continue;
+      heard.current.add(event.id);
+      const paid = event.kind === "hour_print" || event.kind === "sale";
+      if (paid && event.outputCents > 0) ching();
+    }
+  }, [freshEvents]);
 
   const live = state?.session.clockedIn ?? false;
   const moneyOut = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
@@ -228,12 +245,11 @@ function SettingsPanel({
   onClose: () => void;
   onSave: (path: string, body: unknown) => Promise<void>;
 }) {
-  const [companyName, setCompanyName] = useState("");
   const [personName, setPersonName] = useState("");
   const [personTelegram, setPersonTelegram] = useState("");
   const [handle, setHandle] = useState("");
-  const [joining, setJoining] = useState(false);
-  const [companyCode, setCompanyCode] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState("");
 
   const people = [...(company?.people ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -287,48 +303,13 @@ function SettingsPanel({
       </section>
 
       <section className="settings-block">
-        <div className="settings-label-row">
-          <p className="settings-label">Company</p>
-          <button type="button" onClick={() => setJoining((open) => !open)}>
-            Join
-          </button>
-        </div>
-        <AnimatePresence>
-          {joining && (
-            <motion.form
-              className="join-pop"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.12 }}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void onSave("/api/company/join", { code: companyCode }).then(() => {
-                  setJoining(false);
-                  setCompanyCode("");
-                });
-              }}
-            >
-              <input
-                value={companyCode}
-                onChange={(event) => setCompanyCode(event.target.value)}
-                placeholder="Company code"
-                aria-label="Company code"
-                autoFocus
-              />
-              <button type="submit">Join</button>
-            </motion.form>
-          )}
-        </AnimatePresence>
+        <p className="settings-label">Company</p>
         {company?.name ? (
           <>
-            <p className="settings-name">{company.name}</p>
-            {company.code && (
-              <div className="menu-row">
-                <span>Code</span>
-                <span>{company.code}</span>
-              </div>
-            )}
+            <div className="menu-row">
+              <span className="settings-name">{company.name}</span>
+              {company.code && <span className="company-code">{company.code}</span>}
+            </div>
             <div className="menu-row">
               <span>You</span>
             </div>
@@ -365,21 +346,35 @@ function SettingsPanel({
             </form>
           </>
         ) : (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void onSave("/api/company", { name: companyName });
-              setCompanyName("");
-            }}
-          >
-            <input
-              value={companyName}
-              onChange={(event) => setCompanyName(event.target.value)}
-              placeholder="Company name"
-              aria-label="Company name"
-            />
-            <button type="submit">Create</button>
-          </form>
+          <>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const save = creating
+                  ? onSave("/api/company", { name: draft })
+                  : onSave("/api/company/join", { code: draft });
+                void save.then(() => setDraft(""));
+              }}
+            >
+              <input
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder={creating ? "Name" : "Code"}
+                aria-label={creating ? "Company name" : "Company code"}
+              />
+              <button type="submit">{creating ? "Create" : "Join"}</button>
+            </form>
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => {
+                setCreating((open) => !open);
+                setDraft("");
+              }}
+            >
+              {creating ? "Join" : "Create"}
+            </button>
+          </>
         )}
       </section>
 
