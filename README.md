@@ -6,7 +6,7 @@
 I/O   +4.00
 ```
 
-The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The numbers are the shared book: green is Square money collected, red is wages. A thin bar under them shows which side is winning, green from the left and red from the right. A change flashes only `+$200` or `−$20`. Collapse it to just **I/O**. **+** opens points and Settings. **Settings** sets the hourly rate and Company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the company name replaces the word Company, and the code sits on the right. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. A collected invoice flashes green. Wages flash red. A sent invoice flashes blue.
+The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The three squares above the strip stay gray until you clock in. Then they bounce back and forth at one tempo and change color. The numbers are the shared book: green is Square money collected, red is wages. A thin bar under them shows which side is winning, green from the left and red from the right. A change flashes only `+$200` or `−$20`. Collapse it to just **I/O**. **+** opens points and Settings. **Settings** is the company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the company name replaces the word Company, and the code sits on the right. The person who created the company can open **Change**, see everyone, and set what each person makes per hour. When Square is connected, those rates come from Square. A collected invoice flashes green. Wages flash red. A sent invoice flashes blue.
 - A paid invoice, like `+$200`, is money in. Wages are money out.
 
 ## Run
@@ -38,7 +38,7 @@ git push -u origin main
 
 ## Square
 
-Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). Until you save a rate in Settings, the server uses that team member's wage as **$/HR**. Every 15 seconds it checks invoices. The first check remembers invoices that already exist so history is not replayed. After that, and on the webhook, a new invoice counts even if the process restarted while it was paid:
+Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). Square then sets **$/HR** from the team, and Change shows those rates instead of asking for them again. Every 15 seconds it checks invoices. The first check remembers invoices that already exist so history is not replayed. After that, and on the webhook, a new invoice counts even if the process restarted while it was paid:
 
 - Sent to a customer (unpaid or paid) → **+1** point
 - Paid → a floating **+$200** (or whatever was collected)

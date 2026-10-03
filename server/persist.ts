@@ -9,7 +9,7 @@ import {
   type CompanyState,
 } from "@shared/schema";
 import { earnEngine } from "./clock/engine";
-import { getCompany, hydrateCompany, setCompanyListener } from "./company";
+import { getCompany, getOwnerKey, hydrateCompany, setCompanyListener } from "./company";
 import { log } from "./vite";
 
 const fileSchema = z.object({
@@ -21,6 +21,7 @@ const fileSchema = z.object({
   rateSource: z.enum(["default", "manual", "square"]).default("default"),
   square: squareLinkSchema,
   company: companyStateSchema,
+  ownerKey: z.string().nullable().default(null),
 });
 
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -69,7 +70,7 @@ export function loadState() {
       rateSource: parsed.rateSource,
       square: parsed.square,
     });
-    hydrateCompany(parsed.company);
+    hydrateCompany(parsed.company, parsed.ownerKey);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unreadable state";
     log(`keeping a fresh book, saved state was unreadable: ${message}`, "store");
@@ -92,6 +93,7 @@ function writeState() {
         version: 1 as const,
         ...earnEngine.toPersist(),
         company: getCompany() satisfies CompanyState,
+        ownerKey: getOwnerKey(),
       },
       null,
       2,

@@ -18,7 +18,7 @@ earnEngine.applyWage(3000);
 assert.equal(earnEngine.getState().config.hourlyOutputCents, 3000);
 earnEngine.setConfig({ hourlyOutputCents: 2500 });
 earnEngine.applyWage(4000);
-assert.equal(earnEngine.getState().config.hourlyOutputCents, 2500);
+assert.equal(earnEngine.getState().config.hourlyOutputCents, 4000);
 
 const company = createCompany("North");
 assert.equal(company.name, "North");

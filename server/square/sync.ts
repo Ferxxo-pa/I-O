@@ -24,6 +24,44 @@ export function startSquareSync() {
   run();
 }
 
+export async function squarePayRoster(): Promise<
+  Array<{ id: string; name: string; hourlyCents: number | null }> | null
+> {
+  if (!squareConfigured()) return null;
+
+  const body = await squareFetch<{
+    team_members?: Array<{
+      id?: string;
+      given_name?: string;
+      family_name?: string;
+      status?: string;
+    }>;
+  }>("/v2/team-members/search", {
+    method: "POST",
+    body: JSON.stringify({
+      query: { filter: { status: "ACTIVE" } },
+      limit: 25,
+    }),
+  });
+
+  const people = [];
+  for (const member of body.team_members ?? []) {
+    if (!member.id) continue;
+    let hourlyCents: number | null = null;
+    try {
+      const extra = await squareFetch<{ wage_setting?: WageSetting }>(
+        `/v2/team-members/${encodeURIComponent(member.id)}/wage-setting`,
+      );
+      hourlyCents = hourlyRateCents(extra.wage_setting);
+    } catch {
+      hourlyCents = null;
+    }
+    const name = [member.given_name, member.family_name].filter(Boolean).join(" ") || "Team";
+    people.push({ id: member.id, name, hourlyCents });
+  }
+  return people;
+}
+
 export function applySquareWebhook(body: unknown): { sale: boolean; points: boolean } {
   const snapshot = snapshotFromWebhook(body);
   if (!snapshot) return { sale: false, points: false };

@@ -136,56 +136,63 @@ button {
   width: 6px;
   height: 6px;
   display: block;
-  animation: chip-wave 1.8s ease-in-out infinite;
+  background: #c7c7cc;
 }
 
-.chips i:nth-child(1) {
-  animation-name: chip-wave-1;
+.strip.live .chips i {
+  animation: chip-beat-1 3.6s linear infinite;
 }
 
-.chips i:nth-child(2) {
-  animation-name: chip-wave-2;
+.strip.live .chips i:nth-child(1) {
+  animation-name: chip-beat-1;
 }
 
-.chips i:nth-child(3) {
-  animation-name: chip-wave-3;
+.strip.live .chips i:nth-child(2) {
+  animation-name: chip-beat-2;
 }
 
-@keyframes chip-wave-1 {
+.strip.live .chips i:nth-child(3) {
+  animation-name: chip-beat-3;
+}
+
+@keyframes chip-beat-1 {
   0%,
-  10%,
-  90%,
-  100% {
-    transform: translateY(0);
-  }
   5%,
-  95% {
+  11%,
+  85%,
+  91%,
+  100% {
+    transform: translateY(0);
+  }
+  8%,
+  88% {
     transform: translateY(-5px);
   }
 }
 
-@keyframes chip-wave-2 {
+@keyframes chip-beat-2 {
   0%,
-  18%,
-  82%,
+  25%,
+  31%,
+  65%,
+  71%,
   100% {
     transform: translateY(0);
   }
-  13%,
-  87% {
+  28%,
+  68% {
     transform: translateY(-5px);
   }
 }
 
-@keyframes chip-wave-3 {
+@keyframes chip-beat-3 {
   0%,
-  26%,
-  74%,
+  45%,
+  51%,
   100% {
     transform: translateY(0);
   }
-  21%,
-  79% {
+  48% {
     transform: translateY(-5px);
   }
 }
@@ -194,38 +201,9 @@ button {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   font-weight: 560;
   letter-spacing: -0.03em;
   font-size: 14px;
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #c7c7cc;
-}
-
-.strip.live .dot {
-  background: #34c759;
-  animation: hop 0.85s ease-in-out infinite;
-}
-
-@keyframes hop {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  30% {
-    transform: translateY(-4px);
-  }
-  50% {
-    transform: translateY(0);
-  }
-  70% {
-    transform: translateY(-2px);
-  }
 }
 
 .nums {
@@ -487,11 +465,32 @@ button {
   font-size: 13px;
 }
 
-.settings form.rate span {
+.pay-source {
+  margin: 12px 0 0;
   color: var(--mute);
+  font-size: 12px;
+}
+
+.pay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
   font-size: 13px;
-  font-weight: 560;
-  letter-spacing: -0.03em;
+}
+
+.pay-rate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mute);
+}
+
+.pay-rate input {
+  width: 52px;
+  flex: none;
+  text-align: right;
 }
 
 .settings-line {
@@ -555,6 +554,12 @@ a.company-code {
   border: 0;
   border-bottom: 1px solid var(--line);
   padding: 4px 0;
+}
+
+.settings .pay-rate input {
+  width: 52px;
+  flex: none;
+  text-align: right;
 }
 
 .menu button:disabled {

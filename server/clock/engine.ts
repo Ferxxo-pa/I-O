@@ -213,22 +213,19 @@ export class EarnEngine {
     return this.getState();
   }
 
-  /** Square wage becomes the rate, unless someone set the rate in Settings. */
+  /** A Square wage replaces whatever was typed in. Square is the rate once it is connected. */
   applyWage(cents: number) {
     if (!Number.isInteger(cents) || cents <= 0) return;
-    const was = this.square.source;
+    const changed =
+      this.square.source !== "square" ||
+      this.rateSource !== "square" ||
+      this.config.hourlyOutputCents !== cents;
     this.square = { connected: true, source: "square" };
-    if (this.rateSource === "manual") {
-      if (was !== "square") this.touch();
-      return;
-    }
     this.rateSource = "square";
     if (this.config.hourlyOutputCents !== cents) {
       this.config = { ...this.config, hourlyOutputCents: cents };
-      this.touch();
-    } else if (was !== "square") {
-      this.touch();
     }
+    if (changed) this.touch();
   }
 
   /**

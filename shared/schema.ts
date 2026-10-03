@@ -100,6 +100,8 @@ export const boardPersonSchema = z.object({
   name: z.string(),
   points: z.number().int(),
   madeCents: z.number().int(),
+  /** What this person earns per hour, in cents. Square replaces this when connected. */
+  hourlyCents: z.number().int().positive().default(2000),
 });
 export type BoardPerson = z.infer<typeof boardPersonSchema>;
 

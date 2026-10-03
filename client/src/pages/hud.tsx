@@ -4,6 +4,17 @@ import { useIoState } from "@/hooks/useEarnState";
 import { ching, unlockChing } from "@/lib/ching";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
+type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
+
+const OWNER_STORE = "io.owner";
+
+function ownerHeaders(): Record<string, string> {
+  const key = localStorage.getItem(OWNER_STORE);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (key) headers["x-owner-key"] = key;
+  return headers;
+}
+
 function money(cents: number): string {
   const n = cents / 100;
   const abs = Math.abs(n).toLocaleString("en-US", {
@@ -35,14 +46,10 @@ export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, clockIn, clockOut } = useIoState();
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [change, setChange] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [chips, setChips] = useState(threeColors);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setChips(threeColors()), 3200);
-    return () => window.clearInterval(id);
-  }, []);
-  const [company, setCompany] = useState<CompanyState | null>(null);
+  const [company, setCompany] = useState<CompanyView | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const heard = useRef(new Set<string>());
 
@@ -64,7 +71,6 @@ export default function Hud() {
   const moneyOut = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
   const moneyIn = state?.session.collectedCents ?? 0;
   const points = state?.session.inputUnits ?? 0;
-  const rateCents = state?.config.hourlyOutputCents ?? 2000;
   const combined = moneyIn + moneyOut;
   const barFloor = 16;
   let greenShare = 0;
@@ -81,7 +87,19 @@ export default function Hud() {
       redShare = 100 - greenShare;
     }
   }
-  const wide = (menu || settings) && !collapsed;
+  const wide = (menu || settings || change) && !collapsed;
+
+  useEffect(() => {
+    if (!live) return;
+    setChips(threeColors());
+    const id = window.setInterval(() => setChips(threeColors()), 3600);
+    return () => window.clearInterval(id);
+  }, [live]);
+
+  const takeCompany = (next: CompanyView) => {
+    if (next.ownerKey) localStorage.setItem(OWNER_STORE, next.ownerKey);
+    setCompany(next);
+  };
 
   useEffect(() => {
     let cancel = false;
@@ -90,16 +108,16 @@ export default function Hud() {
     const load = code
       ? fetch("/api/company/join", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: ownerHeaders(),
           body: JSON.stringify({ code }),
         })
-      : fetch("/api/company");
+      : fetch("/api/company", { headers: ownerHeaders() });
     void load
       .then(async (res) => {
-        const next = await res.json();
-        if (!res.ok) throw new Error(next.message || "Couldn't load settings");
+        const next = (await res.json()) as CompanyView;
+        if (!res.ok) throw new Error((next as { message?: string }).message || "Couldn't load settings");
         if (cancel) return;
-        setCompany(next);
+        takeCompany(next);
         if (code) setSettings(true);
       })
       .catch((err) => {
@@ -120,12 +138,12 @@ export default function Hud() {
     setSettingsError(null);
     const res = await fetch(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: ownerHeaders(),
       body: JSON.stringify(body),
     });
-    const next = await res.json();
+    const next = (await res.json()) as CompanyView & { message?: string };
     if (!res.ok) throw new Error(next.message || "Couldn't save that");
-    setCompany(next);
+    takeCompany(next);
   };
 
   const toggle = () => {
@@ -144,7 +162,7 @@ export default function Hud() {
         >
           <span className="chips" aria-hidden>
             {chips.map((color, index) => (
-              <i key={index} style={{ background: color }} />
+              <i key={index} style={live ? { background: color } : undefined} />
             ))}
           </span>
           <button
@@ -155,7 +173,6 @@ export default function Hud() {
             title={live ? "Clock out" : "Clock in"}
           >
             I/O
-            <span className="dot" />
             <span className="tip">{live ? "Clock out" : "Clock in"}</span>
           </button>
           {!collapsed && (
@@ -177,6 +194,7 @@ export default function Hud() {
                 setCollapsed((open) => !open);
                 setMenu(false);
                 setSettings(false);
+                setChange(false);
               }}
               aria-label={collapsed ? "Expand" : "Collapse"}
             >
@@ -213,11 +231,24 @@ export default function Hud() {
                   type="button"
                   onClick={() => {
                     setSettings(true);
+                    setChange(false);
                     setMenu(false);
                   }}
                 >
                   Settings
                 </button>
+                {company?.owner && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChange(true);
+                      setSettings(false);
+                      setMenu(false);
+                    }}
+                  >
+                    Change
+                  </button>
+                )}
               </div>
               {error && <div className="err">{error}</div>}
             </motion.div>
@@ -228,7 +259,6 @@ export default function Hud() {
           {settings && (
             <SettingsPanel
               company={company}
-              rate={rateText(rateCents)}
               error={settingsError}
               onClose={() => setSettings(false)}
               onSave={async (path, body) => {
@@ -239,26 +269,12 @@ export default function Hud() {
                   throw err;
                 }
               }}
-              onRate={async (raw) => {
-                const dollars = Number(raw);
-                const cents = Math.round(dollars * 100);
-                if (!raw.trim() || !Number.isFinite(dollars) || cents <= 0) {
-                  setSettingsError("Enter an hourly rate");
-                  return;
-                }
-                setSettingsError(null);
-                const res = await fetch("/api/config", {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ hourlyOutputCents: cents }),
-                });
-                const body = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                  setSettingsError(body.message || "Couldn't save the rate");
-                }
-              }}
             />
           )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {change && <ChangePanel onClose={() => setChange(false)} onCompany={takeCompany} />}
         </AnimatePresence>
       </div>
     </div>
@@ -267,28 +283,18 @@ export default function Hud() {
 
 function SettingsPanel({
   company,
-  rate,
   error,
   onClose,
   onSave,
-  onRate,
 }: {
   company: CompanyState | null;
-  rate: string;
   error: string | null;
   onClose: () => void;
   onSave: (path: string, body: unknown) => Promise<void>;
-  onRate: (raw: string) => Promise<void>;
 }) {
-  const [rateDraft, setRateDraft] = useState(rate);
-  const [editingRate, setEditingRate] = useState(false);
   const [mode, setMode] = useState<"join" | "create" | null>(null);
   const [draft, setDraft] = useState("");
   const invite = company?.code ? `${window.location.origin}/?join=${company.code}` : "";
-
-  useEffect(() => {
-    if (!editingRate) setRateDraft(rate);
-  }, [rate, editingRate]);
 
   const submit = (next: "join" | "create", value: string) => {
     const save =
@@ -325,26 +331,6 @@ function SettingsPanel({
         </button>
       </div>
 
-      <form
-        className="rate"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void onRate(rateDraft);
-        }}
-      >
-        <span>$</span>
-        <input
-          value={rateDraft}
-          inputMode="decimal"
-          aria-label="Hourly rate"
-          onFocus={() => setEditingRate(true)}
-          onBlur={() => setEditingRate(false)}
-          onChange={(event) => setRateDraft(event.target.value)}
-        />
-        <span>/hr</span>
-        <button type="submit">Save</button>
-      </form>
-
       <div className="settings-line">
         <span className="company-id">
           {company?.name ? <span className="settings-name">{company.name}</span> : <span>Company</span>}
@@ -378,6 +364,154 @@ function SettingsPanel({
             placeholder={mode === "create" ? "Name" : "Code"}
             aria-label={mode === "create" ? "Company name" : "Company code"}
             autoFocus
+          />
+        </form>
+      )}
+      {error && <div className="err">{error}</div>}
+    </motion.div>
+  );
+}
+
+function ChangePanel({
+  onClose,
+  onCompany,
+}: {
+  onClose: () => void;
+  onCompany: (next: CompanyView) => void;
+}) {
+  const [people, setPeople] = useState<Array<{ id: string; name: string; hourlyCents: number | null }>>([]);
+  const [source, setSource] = useState<"square" | "manual">("manual");
+  const [name, setName] = useState("");
+  const [rate, setRate] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    void fetch("/api/company/roster", { headers: ownerHeaders() })
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.message || "Couldn't load people");
+        if (cancel) return;
+        setSource(body.source === "square" ? "square" : "manual");
+        setPeople(body.people ?? []);
+      })
+      .catch((err) => {
+        if (!cancel) setError(err instanceof Error ? err.message : "Couldn't load people");
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  const saveRate = async (id: string, raw: string) => {
+    const dollars = Number(raw);
+    const cents = Math.round(dollars * 100);
+    if (!raw.trim() || !Number.isFinite(dollars) || cents <= 0) {
+      setError("Enter an hourly rate");
+      return;
+    }
+    setError(null);
+    const res = await fetch(`/api/company/people/${id}`, {
+      method: "PATCH",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ hourlyCents: cents }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      setError(body.message || "Couldn't save that rate");
+      return;
+    }
+    onCompany(body);
+    setPeople(body.people ?? []);
+  };
+
+  const add = async () => {
+    const dollars = Number(rate);
+    const cents = Math.round(dollars * 100);
+    if (!name.trim() || !rate.trim() || !Number.isFinite(dollars) || cents <= 0) {
+      setError("Enter a name and an hourly rate");
+      return;
+    }
+    setError(null);
+    const res = await fetch("/api/company/people", {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ name, hourlyCents: cents }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      setError(body.message || "Couldn't add that person");
+      return;
+    }
+    onCompany(body);
+    setPeople(body.people ?? []);
+    setName("");
+    setRate("");
+  };
+
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Change</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {source === "square" && <p className="pay-source">Square</p>}
+      {people.map((person) => (
+        <div className="pay-row" key={person.id}>
+          <span>{person.name}</span>
+          {source === "square" ? (
+            <span>{person.hourlyCents ? `$${rateText(person.hourlyCents)}/hr` : "—"}</span>
+          ) : (
+            <span className="pay-rate">
+              <span>$</span>
+              <input
+                aria-label={`${person.name} hourly rate`}
+                defaultValue={rateText(person.hourlyCents ?? 2000)}
+                inputMode="decimal"
+                onBlur={(event) => void saveRate(person.id, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+                }}
+              />
+              <span>/hr</span>
+            </span>
+          )}
+        </div>
+      ))}
+      {source === "manual" && (
+        <form
+          className="ask"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void add();
+          }}
+        >
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Name"
+            aria-label="Person"
+          />
+          <input
+            value={rate}
+            onChange={(event) => setRate(event.target.value)}
+            placeholder="20"
+            inputMode="decimal"
+            aria-label="Hourly rate"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void add();
+              }
+            }}
           />
         </form>
       )}
