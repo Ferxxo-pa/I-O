@@ -346,11 +346,13 @@ button {
   pointer-events: none;
   position: absolute;
   right: 4px;
-  bottom: calc(100% + 36px);
+  bottom: calc(100% + 28px);
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   align-items: flex-end;
   gap: 6px;
+  max-height: min(32vh, 180px);
+  overflow: hidden;
 }
 
 .print {
@@ -485,8 +487,8 @@ button {
   font-size: 13px;
 }
 
-.settings-rate {
-  margin: 14px 0 0;
+.settings form.rate span {
+  color: var(--mute);
   font-size: 13px;
   font-weight: 560;
   letter-spacing: -0.03em;

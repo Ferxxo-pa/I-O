@@ -1,14 +1,20 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { configSchema, inputTypeSchema } from "@shared/schema";
-import { addPerson, connectIntegration, createCompany, getCompany, joinCompany } from "./company";
+import { addPerson, createCompany, getCompany, joinCompany } from "./company";
 import { earnEngine } from "./clock/engine";
+import { startPersistence } from "./persist";
 import { signaturesMatch, squareSignature } from "./square/signature";
 import { applySquareWebhook, startSquareSync } from "./square/sync";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  startPersistence();
   earnEngine.start();
   startSquareSync();
+
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true });
+  });
 
   app.get("/api/state", (_req, res) => {
     res.json(earnEngine.getState());
@@ -61,6 +67,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/reset", (_req, res) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(404).json({ message: "Not found" });
+    }
     res.json(earnEngine.reset());
   });
 
@@ -91,22 +100,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/company/people", (req, res) => {
     try {
       const name = typeof req.body?.name === "string" ? req.body.name : "";
-      const telegram = typeof req.body?.telegram === "string" ? req.body.telegram : "";
-      res.json(addPerson(name, telegram));
+      res.json(addPerson(name));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not add that person";
-      res.status(400).json({ message });
-    }
-  });
-
-  app.post("/api/integrations", (req, res) => {
-    try {
-      const kind = req.body?.kind === "telegram" ? "telegram" : "custom";
-      const account = typeof req.body?.account === "string" ? req.body.account : "";
-      const label = typeof req.body?.label === "string" ? req.body.label : undefined;
-      res.json(connectIntegration(kind, account, label));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not connect that";
       res.status(400).json({ message });
     }
   });
@@ -131,6 +127,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const result = applySquareWebhook(req.body);
     res.status(200).json({ ok: true, ...result });
+  });
+
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ message: "Not found" });
   });
 
   return createServer(app);

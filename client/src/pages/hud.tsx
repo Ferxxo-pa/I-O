@@ -229,7 +229,6 @@ export default function Hud() {
             <SettingsPanel
               company={company}
               rate={rateText(rateCents)}
-              telegram={company?.integrations.find((item) => item.kind === "telegram")?.account ?? null}
               error={settingsError}
               onClose={() => setSettings(false)}
               onSave={async (path, body) => {
@@ -238,6 +237,24 @@ export default function Hud() {
                 } catch (err) {
                   setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
                   throw err;
+                }
+              }}
+              onRate={async (raw) => {
+                const dollars = Number(raw);
+                const cents = Math.round(dollars * 100);
+                if (!raw.trim() || !Number.isFinite(dollars) || cents <= 0) {
+                  setSettingsError("Enter an hourly rate");
+                  return;
+                }
+                setSettingsError(null);
+                const res = await fetch("/api/config", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ hourlyOutputCents: cents }),
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  setSettingsError(body.message || "Couldn't save the rate");
                 }
               }}
             />
@@ -251,22 +268,27 @@ export default function Hud() {
 function SettingsPanel({
   company,
   rate,
-  telegram,
   error,
   onClose,
   onSave,
+  onRate,
 }: {
   company: CompanyState | null;
   rate: string;
-  telegram: string | null;
   error: string | null;
   onClose: () => void;
   onSave: (path: string, body: unknown) => Promise<void>;
+  onRate: (raw: string) => Promise<void>;
 }) {
-  const [handle, setHandle] = useState("");
+  const [rateDraft, setRateDraft] = useState(rate);
+  const [editingRate, setEditingRate] = useState(false);
   const [mode, setMode] = useState<"join" | "create" | null>(null);
   const [draft, setDraft] = useState("");
   const invite = company?.code ? `${window.location.origin}/?join=${company.code}` : "";
+
+  useEffect(() => {
+    if (!editingRate) setRateDraft(rate);
+  }, [rate, editingRate]);
 
   const submit = (next: "join" | "create", value: string) => {
     const save =
@@ -303,22 +325,24 @@ function SettingsPanel({
         </button>
       </div>
 
-      <p className="settings-rate">${rate}/hr</p>
-
       <form
+        className="rate"
         onSubmit={(event) => {
           event.preventDefault();
-          void onSave("/api/integrations", { kind: "telegram", account: handle });
-          setHandle("");
+          void onRate(rateDraft);
         }}
       >
+        <span>$</span>
         <input
-          value={handle}
-          onChange={(event) => setHandle(event.target.value)}
-          placeholder={telegram ? `@${telegram}` : "@username"}
-          aria-label="Telegram username"
+          value={rateDraft}
+          inputMode="decimal"
+          aria-label="Hourly rate"
+          onFocus={() => setEditingRate(true)}
+          onBlur={() => setEditingRate(false)}
+          onChange={(event) => setRateDraft(event.target.value)}
         />
-        <button type="submit">{telegram ? "Update" : "Connect"}</button>
+        <span>/hr</span>
+        <button type="submit">Save</button>
       </form>
 
       <div className="settings-line">

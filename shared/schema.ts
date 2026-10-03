@@ -47,11 +47,8 @@ export type PrintEvent = z.infer<typeof printEventSchema>;
 export const configSchema = z.object({
   /** Output print per completed hour segment. Default $20. */
   hourlyOutputCents: z.number().int().positive().default(2000),
-  /**
-   * Length of one hour segment in ms.
-   * Demo: 10_000. Real: 3_600_000.
-   */
-  hourDurationMs: z.number().int().positive().default(10_000),
+  /** Length of one paid hour in ms. A real hour is 3_600_000. */
+  hourDurationMs: z.number().int().positive().default(3_600_000),
   clockSource: clockSourceSchema.default("local"),
 });
 export type AppConfig = z.infer<typeof configSchema>;
@@ -94,22 +91,13 @@ export type AppState = z.infer<typeof appStateSchema>;
 
 export const DEFAULT_CONFIG: AppConfig = {
   hourlyOutputCents: 2000,
-  hourDurationMs: 10_000,
+  hourDurationMs: 3_600_000,
   clockSource: "local",
 };
-
-export const integrationSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["telegram", "custom"]),
-  label: z.string(),
-  account: z.string(),
-});
-export type Integration = z.infer<typeof integrationSchema>;
 
 export const boardPersonSchema = z.object({
   id: z.string(),
   name: z.string(),
-  telegram: z.string().nullable(),
   points: z.number().int(),
   madeCents: z.number().int(),
 });
@@ -119,7 +107,6 @@ export const companyStateSchema = z.object({
   name: z.string().nullable(),
   code: z.string().nullable(),
   people: z.array(boardPersonSchema),
-  integrations: z.array(integrationSchema),
 });
 export type CompanyState = z.infer<typeof companyStateSchema>;
 

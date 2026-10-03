@@ -10,7 +10,6 @@ import {
   type SquareLink,
 } from "@shared/schema";
 import type { InvoiceSnapshot } from "../square/parse";
-import { mirrorSignedUpdate } from "../telegram";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
 import { randomUUID } from "crypto";
 
@@ -33,6 +32,17 @@ function makeEvent(
  * Input accrues while clocked in (time) + manual inputs (prompt/email).
  * Output prints on each completed hour segment — the dopamine fill.
  */
+export type RateSource = "default" | "manual" | "square";
+
+export type BookSnapshot = {
+  config: AppConfig;
+  session: Session;
+  seen: string[];
+  squareBootstrapped: boolean;
+  rateSource: RateSource;
+  square: SquareLink;
+};
+
 export class EarnEngine {
   config: AppConfig = { ...DEFAULT_CONFIG };
   session: Session = { ...DEFAULT_SESSION };
@@ -41,6 +51,15 @@ export class EarnEngine {
   private adapter: ClockAdapter = createClockAdapter(this.config.clockSource);
   private timer: ReturnType<typeof setInterval> | null = null;
   private seenExternal = new Set<string>();
+  private seenOrder: string[] = [];
+  private squareBootstrapped = false;
+  private rateSource: RateSource = "default";
+  private onChange: (() => void) | null = null;
+  private silent = false;
+
+  setBookListener(fn: () => void) {
+    this.onChange = fn;
+  }
 
   start() {
     if (this.timer) return;
@@ -57,7 +76,47 @@ export class EarnEngine {
     if (patch.clockSource && patch.clockSource !== this.config.clockSource) {
       this.adapter = createClockAdapter(patch.clockSource);
     }
+    if (patch.hourlyOutputCents !== undefined) this.rateSource = "manual";
     this.config = next;
+    this.touch();
+  }
+
+  hydrate(snapshot: BookSnapshot) {
+    this.silent = true;
+    try {
+      this.config = { ...DEFAULT_CONFIG, ...snapshot.config };
+      this.session = { ...DEFAULT_SESSION, ...snapshot.session };
+      this.square = { ...snapshot.square };
+      this.rateSource = snapshot.rateSource;
+      this.squareBootstrapped = snapshot.squareBootstrapped;
+      this.seenOrder = snapshot.seen.slice(-4000);
+      this.seenExternal = new Set(this.seenOrder);
+      this.events = [];
+      this.adapter = createClockAdapter(this.config.clockSource);
+    } finally {
+      this.silent = false;
+    }
+  }
+
+  toPersist(): BookSnapshot {
+    return {
+      config: { ...this.config },
+      session: { ...this.session },
+      seen: this.seenOrder.slice(),
+      squareBootstrapped: this.squareBootstrapped,
+      rateSource: this.rateSource,
+      square: { ...this.square },
+    };
+  }
+
+  isSquareBootstrapped(): boolean {
+    return this.squareBootstrapped;
+  }
+
+  markSquareBootstrapped() {
+    if (this.squareBootstrapped) return;
+    this.squareBootstrapped = true;
+    this.touch();
   }
 
   getState(): AppState {
@@ -150,15 +209,25 @@ export class EarnEngine {
   reset(): AppState {
     this.session = { ...DEFAULT_SESSION };
     this.events = [];
+    this.touch();
     return this.getState();
   }
 
-  /** Square wage becomes the rate the strip accrues at. */
+  /** Square wage becomes the rate, unless someone set the rate in Settings. */
   applyWage(cents: number) {
     if (!Number.isInteger(cents) || cents <= 0) return;
+    const was = this.square.source;
     this.square = { connected: true, source: "square" };
+    if (this.rateSource === "manual") {
+      if (was !== "square") this.touch();
+      return;
+    }
+    this.rateSource = "square";
     if (this.config.hourlyOutputCents !== cents) {
       this.config = { ...this.config, hourlyOutputCents: cents };
+      this.touch();
+    } else if (was !== "square") {
+      this.touch();
     }
   }
 
@@ -176,14 +245,14 @@ export class EarnEngine {
 
   /** Remember invoices that already existed so startup does not replay them. */
   markSquareInvoiceSeen(snapshot: InvoiceSnapshot) {
-    if (snapshot.sent) this.seenExternal.add(`msg:${snapshot.id}`);
-    if (snapshot.collected) this.seenExternal.add(`sale:${snapshot.id}`);
+    if (snapshot.sent) this.remember(`msg:${snapshot.id}`);
+    if (snapshot.collected) this.remember(`sale:${snapshot.id}`);
   }
 
   private awardMessage(id: string): boolean {
     const key = `msg:${id}`;
     if (this.seenExternal.has(key)) return false;
-    this.seenExternal.add(key);
+    this.remember(key);
     this.session = {
       ...this.session,
       inputUnits: this.session.inputUnits + 1,
@@ -203,13 +272,12 @@ export class EarnEngine {
   private celebrateSale(id: string, cents: number, title?: string): boolean {
     const key = `sale:${id}`;
     if (this.seenExternal.has(key)) return false;
-    this.seenExternal.add(key);
+    this.remember(key);
     this.session = {
       ...this.session,
       collectedCents: this.session.collectedCents + Math.max(0, cents),
     };
     const label = signedLabel(cents);
-    void mirrorSignedUpdate(label);
     this.pushEvent(
       makeEvent({
         kind: "sale",
@@ -242,7 +310,6 @@ export class EarnEngine {
       hoursPrinted: this.session.hoursPrinted + 1,
     };
     const label = signedLabel(-amount);
-    void mirrorSignedUpdate(label);
     this.pushEvent(
       makeEvent({
         kind: "hour_print",
@@ -262,7 +329,6 @@ export class EarnEngine {
       outputCents: this.session.outputCents + accruedOutputCents,
     };
     const label = signedLabel(-accruedOutputCents);
-    void mirrorSignedUpdate(label);
     this.pushEvent(
       makeEvent({
         kind: "hour_print",
@@ -294,6 +360,21 @@ export class EarnEngine {
 
   private pushEvent(event: PrintEvent) {
     this.events = [event, ...this.events].slice(0, 100);
+    this.touch();
+  }
+
+  private remember(key: string) {
+    if (this.seenExternal.has(key)) return;
+    this.seenExternal.add(key);
+    this.seenOrder.push(key);
+    if (this.seenOrder.length > 4000) {
+      const drop = this.seenOrder.splice(0, this.seenOrder.length - 4000);
+      for (const id of drop) this.seenExternal.delete(id);
+    }
+  }
+
+  private touch() {
+    if (!this.silent) this.onChange?.();
   }
 }
 

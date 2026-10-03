@@ -5,11 +5,9 @@ import {
   hourlyRateCents,
   snapshotFromInvoice,
   snapshotFromWebhook,
-  type InvoiceSnapshot,
   type WageSetting,
 } from "./parse";
 
-const bootedAt = Date.now();
 let timer: ReturnType<typeof setInterval> | null = null;
 let locationId: string | null = null;
 let teamMemberId: string | null = null;
@@ -95,18 +93,14 @@ async function syncInvoices() {
     }),
   });
 
+  const bootstrapping = !earnEngine.isSquareBootstrapped();
   for (const raw of body.invoices ?? []) {
     const snapshot = snapshotFromInvoice(raw);
     if (!snapshot) continue;
-    if (isLive(snapshot)) earnEngine.ingestSquareInvoice(snapshot);
-    else earnEngine.markSquareInvoiceSeen(snapshot);
+    if (bootstrapping) earnEngine.markSquareInvoiceSeen(snapshot);
+    else earnEngine.ingestSquareInvoice(snapshot);
   }
-}
-
-function isLive(snapshot: InvoiceSnapshot): boolean {
-  if (!snapshot.updatedAt) return false;
-  const updated = Date.parse(snapshot.updatedAt);
-  return Number.isFinite(updated) && updated >= bootedAt;
+  if (bootstrapping) earnEngine.markSquareBootstrapped();
 }
 
 async function resolveLocation(): Promise<string | null> {

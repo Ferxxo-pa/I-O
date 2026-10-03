@@ -6,7 +6,7 @@
 I/O   +4.00
 ```
 
-The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is the shared balance: Square collected minus wages. It moves as money moves. A thin bar under it shows which side is winning, green from the left and red from the right. A change flashes only `+$200` or `−$20`, and that same text goes to the company Telegram group when `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set. Collapse it to just **I/O**. **+** opens points and Settings. **Settings** shows the hourly rate, a Telegram handle, and Company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the company name replaces the word Company, and the code sits on the right. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. A collected invoice flashes green. Wages flash red. A message flashes blue.
+The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The numbers are the shared book: green is Square money collected, red is wages. A thin bar under them shows which side is winning, green from the left and red from the right. A change flashes only `+$200` or `−$20`. Collapse it to just **I/O**. **+** opens points and Settings. **Settings** sets the hourly rate and Company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the company name replaces the word Company, and the code sits on the right. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. A collected invoice flashes green. Wages flash red. A sent invoice flashes blue.
 - A paid invoice, like `+$200`, is money in. Wages are money out.
 
 ## Run
@@ -18,13 +18,12 @@ npm run dev
 
 Open http://localhost:5000 — click the strip to clock in/out.
 
-Demo hour = 10s. Real hour:
-
 ```bash
-curl -X PATCH localhost:5000/api/config \
-  -H 'content-type: application/json' \
-  -d '{"hourDurationMs":3600000}'
+npm run build
+npm start
 ```
+
+A paid hour is a real hour. Wages, collected money, the rate, and the company are written to `data/io-state.json` (or `DATA_DIR`) and survive a restart. Copy `.env.example` for Square and the port. `GET /api/health` is the process check.
 
 ## Push to your empty GitHub repo
 
@@ -39,10 +38,10 @@ git push -u origin main
 
 ## Square
 
-Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). The server reads that team member's wage into **$/HR**. Every 15 seconds it checks invoices:
+Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). Until you save a rate in Settings, the server uses that team member's wage as **$/HR**. Every 15 seconds it checks invoices. The first check remembers invoices that already exist so history is not replayed. After that, and on the webhook, a new invoice counts even if the process restarted while it was paid:
 
 - Sent to a customer (unpaid or paid) → **+1** point
-- Paid → a floating **+$200** (or whatever was collected), with the invoice title
+- Paid → a floating **+$200** (or whatever was collected)
 
 Subscribe Square webhooks to `POST /api/square/webhook` for `invoice.published` and `invoice.payment_made`, and set `SQUARE_WEBHOOK_SIGNATURE_KEY` plus `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL.
 
