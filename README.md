@@ -6,8 +6,8 @@
 I/O   +4.00
 ```
 
-The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is the money collected, ticking. Collapse it to just **I/O**. **+** shows what you've made, your points, the hourly rate, and reset. **Settings**, beside reset, connects Telegram and creates a company leaderboard. Square and other integrations come later. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. Wages float in green, a paid invoice in pink, a message in blue.
-- A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is not added to your wages.
+The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is the paycheck, ticking. Collapse it to just **I/O**. **+** opens a bar of money in against money out, plus points and the hourly rate. **Settings**, beside reset, connects Telegram. A group chat can come later, and those messages are points, separate from the money. People in the company are listed there, not ranked. Square and other integrations come later. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. Wages float in green, a paid invoice in pink, a message in blue.
+- A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is money in. It is not added to the paycheck.
 
 ## Run
 

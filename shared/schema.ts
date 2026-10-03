@@ -60,8 +60,10 @@ export const sessionSchema = z.object({
   clockedIn: z.boolean(),
   clockedInAt: z.number().nullable(),
   hourSegmentStartedAt: z.number().nullable(),
-  /** Lifetime output printed (cents). */
+  /** Lifetime output printed (cents). The paycheck. */
   outputCents: z.number().int(),
+  /** Square invoices collected for the company. Money in. */
+  collectedCents: z.number().int().default(0),
   /** Lifetime input units (actions + optional later weights). */
   inputUnits: z.number().int(),
   /** Completed hour prints this session. */
@@ -125,6 +127,7 @@ export const DEFAULT_SESSION: Session = {
   clockedInAt: null,
   hourSegmentStartedAt: null,
   outputCents: 0,
+  collectedCents: 0,
   inputUnits: 0,
   hoursPrinted: 0,
   externalShiftId: null,

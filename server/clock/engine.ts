@@ -203,6 +203,10 @@ export class EarnEngine {
     const key = `sale:${id}`;
     if (this.seenExternal.has(key)) return false;
     this.seenExternal.add(key);
+    this.session = {
+      ...this.session,
+      collectedCents: this.session.collectedCents + Math.max(0, cents),
+    };
     const name = title?.trim();
     const short = name && name.length > 22 ? `${name.slice(0, 21)}…` : name;
     this.pushEvent(

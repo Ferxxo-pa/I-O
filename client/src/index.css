@@ -244,17 +244,17 @@ button {
   font-size: 12px;
 }
 
-.strip.with-settings .num {
+.strip.with-panel .num {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
 }
 
-.strip.with-settings .plus {
+.strip.with-panel .plus {
   margin-left: auto;
 }
 
-.strip.with-settings .fold {
+.strip.with-panel .fold {
   margin-right: 2px;
   opacity: 1;
 }
@@ -333,8 +333,55 @@ button {
 }
 
 .menu {
+  width: 280px;
   margin-top: 8px;
+  margin-left: auto;
   padding: 12px 14px;
+}
+
+.flow {
+  margin-bottom: 14px;
+}
+
+.flow-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-top .in {
+  color: #12c45a;
+}
+
+.flow-top .out {
+  color: #f86020;
+}
+
+.track {
+  display: flex;
+  height: 8px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.track span {
+  display: block;
+  height: 100%;
+  transition: width 0.35s ease;
+}
+
+.track .in {
+  background: #12c45a;
+}
+
+.track .out {
+  background: #f86020;
 }
 
 .menu-row {
@@ -404,17 +451,11 @@ button {
   margin-top: 8px;
 }
 
-.board-row {
-  display: grid;
-  grid-template-columns: 1.2fr 0.8fr 0.4fr 1fr;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.board-row.you {
-  color: var(--ink);
+.settings-note {
+  margin: 6px 0 0;
+  color: var(--mute);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .menu button:disabled {

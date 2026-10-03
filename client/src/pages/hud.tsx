@@ -45,10 +45,12 @@ export default function Hud() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const live = state?.session.clockedIn ?? false;
-  const output = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
+  const moneyOut = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
+  const moneyIn = state?.session.collectedCents ?? 0;
   const points = state?.session.inputUnits ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
-  const shown = `$${money(Math.abs(output))}`;
+  const shown = `$${money(Math.abs(moneyOut))}`;
+  const wide = (menu || settings) && !collapsed;
 
   useEffect(() => {
     let cancel = false;
@@ -89,7 +91,7 @@ export default function Hud() {
         <PrintTape events={freshEvents} onDone={dismissTick} />
 
         <div
-          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${settings ? " with-settings" : ""}`}
+          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
         >
           <span className="chips" aria-hidden>
             {chips.map((color, index) => (
@@ -136,10 +138,7 @@ export default function Hud() {
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.12 }}
             >
-              <div className="menu-row">
-                <span>Made</span>
-                <span>{shown}</span>
-              </div>
+              <FlowBar inCents={moneyIn} outCents={moneyOut} />
               <div className="menu-row">
                 <span>Points</span>
                 <span>{points}</span>
@@ -172,8 +171,6 @@ export default function Hud() {
             <SettingsPanel
               company={company}
               squareOn={state?.square.connected ?? false}
-              made={shown}
-              points={points}
               telegram={company?.integrations.find((item) => item.kind === "telegram")?.account ?? null}
               error={settingsError}
               onClose={() => setSettings(false)}
@@ -192,11 +189,36 @@ export default function Hud() {
   );
 }
 
+function FlowBar({ inCents, outCents }: { inCents: number; outCents: number }) {
+  const total = inCents + outCents;
+  let inShare = 0;
+  if (total > 0) {
+    inShare = inCents / total;
+    if (inCents > 0 && outCents > 0) inShare = Math.min(0.94, Math.max(0.06, inShare));
+  }
+  const outShare = total > 0 ? 1 - inShare : 0;
+
+  return (
+    <div className="flow">
+      <div className="flow-top">
+        <span className="in">In ${money(inCents)}</span>
+        <span className="out">Out ${money(outCents)}</span>
+      </div>
+      <div
+        className="track"
+        role="img"
+        aria-label={`In ${money(inCents)} dollars, out ${money(outCents)} dollars`}
+      >
+        {inShare > 0 && <span className="in" style={{ width: `${inShare * 100}%` }} />}
+        {outShare > 0 && <span className="out" style={{ width: `${outShare * 100}%` }} />}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPanel({
   company,
   squareOn,
-  made,
-  points,
   telegram,
   error,
   onClose,
@@ -204,8 +226,6 @@ function SettingsPanel({
 }: {
   company: CompanyState | null;
   squareOn: boolean;
-  made: string;
-  points: number;
   telegram: string | null;
   error: string | null;
   onClose: () => void;
@@ -216,9 +236,7 @@ function SettingsPanel({
   const [personTelegram, setPersonTelegram] = useState("");
   const [handle, setHandle] = useState("");
 
-  const people = [...(company?.people ?? [])].sort(
-    (a, b) => b.madeCents - a.madeCents || b.points - a.points,
-  );
+  const people = [...(company?.people ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <motion.div
@@ -251,6 +269,7 @@ function SettingsPanel({
         />
         <button type="submit">{telegram ? "Update" : "Connect"}</button>
       </form>
+      <p className="settings-note">Group chat later. Each message is a point.</p>
 
       <p className="settings-label">Later</p>
       <div className="menu-row">
@@ -263,19 +282,14 @@ function SettingsPanel({
         <>
           <div className="menu-row">
             <span>{company.name}</span>
-            <span>Leaderboard</span>
           </div>
-          <div className="board-row you">
+          <div className="menu-row">
             <span>You</span>
-            <span>{made}</span>
-            <span>{points}</span>
             <span>{telegram ? `@${telegram}` : ""}</span>
           </div>
           {people.map((person) => (
-            <div className="board-row" key={person.id}>
+            <div className="menu-row" key={person.id}>
               <span>{person.name}</span>
-              <span>${money(person.madeCents)}</span>
-              <span>{person.points}</span>
               <span>{person.telegram ? `@${person.telegram}` : ""}</span>
             </div>
           ))}

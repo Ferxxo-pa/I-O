@@ -83,6 +83,7 @@ const first = earnEngine.ingestSquareInvoice({
 assert.deepEqual(first, { sale: true, points: true });
 const state = earnEngine.getState();
 assert.equal(state.session.outputCents, 0);
+assert.equal(state.session.collectedCents, 20000);
 assert.equal(state.session.inputUnits, 1);
 assert.equal(state.events[0]?.kind, "sale");
 assert.equal(state.events[0]?.label, "+$200 Booth rental");
