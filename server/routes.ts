@@ -1,7 +1,7 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { configSchema, inputTypeSchema } from "@shared/schema";
-import { addPerson, connectIntegration, createCompany, getCompany } from "./company";
+import { addPerson, connectIntegration, createCompany, getCompany, joinCompany } from "./company";
 import { earnEngine } from "./clock/engine";
 import { signaturesMatch, squareSignature } from "./square/signature";
 import { applySquareWebhook, startSquareSync } from "./square/sync";
@@ -74,6 +74,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(createCompany(name));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not create the company";
+      res.status(400).json({ message });
+    }
+  });
+
+  app.post("/api/company/join", (req, res) => {
+    try {
+      const code = typeof req.body?.code === "string" ? req.body.code : "";
+      res.json(joinCompany(code));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not join that company";
       res.status(400).json({ message });
     }
   });

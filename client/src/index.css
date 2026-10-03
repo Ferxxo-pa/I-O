@@ -451,6 +451,21 @@ button {
   font-size: 11px;
 }
 
+.settings-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.join-pop {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
+}
+
 .settings-name {
   font-size: 13px;
   font-weight: 560;

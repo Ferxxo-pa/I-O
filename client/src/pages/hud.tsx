@@ -173,6 +173,7 @@ export default function Hud() {
                   await saveCompany(path, body);
                 } catch (err) {
                   setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
+                  throw err;
                 }
               }}
             />
@@ -231,6 +232,8 @@ function SettingsPanel({
   const [personName, setPersonName] = useState("");
   const [personTelegram, setPersonTelegram] = useState("");
   const [handle, setHandle] = useState("");
+  const [joining, setJoining] = useState(false);
+  const [companyCode, setCompanyCode] = useState("");
 
   const people = [...(company?.people ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -284,13 +287,50 @@ function SettingsPanel({
       </section>
 
       <section className="settings-block">
-        <p className="settings-label">Company</p>
+        <div className="settings-label-row">
+          <p className="settings-label">Company</p>
+          <button type="button" onClick={() => setJoining((open) => !open)}>
+            Join
+          </button>
+        </div>
+        <AnimatePresence>
+          {joining && (
+            <motion.form
+              className="join-pop"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.12 }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void onSave("/api/company/join", { code: companyCode }).then(() => {
+                  setJoining(false);
+                  setCompanyCode("");
+                });
+              }}
+            >
+              <input
+                value={companyCode}
+                onChange={(event) => setCompanyCode(event.target.value)}
+                placeholder="Company code"
+                aria-label="Company code"
+                autoFocus
+              />
+              <button type="submit">Join</button>
+            </motion.form>
+          )}
+        </AnimatePresence>
         {company?.name ? (
           <>
             <p className="settings-name">{company.name}</p>
+            {company.code && (
+              <div className="menu-row">
+                <span>Code</span>
+                <span>{company.code}</span>
+              </div>
+            )}
             <div className="menu-row">
               <span>You</span>
-              <span>{telegram ? `@${telegram}` : ""}</span>
             </div>
             {people.map((person) => (
               <div className="menu-row" key={person.id}>

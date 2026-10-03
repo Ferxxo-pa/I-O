@@ -3,6 +3,7 @@ import type { CompanyState } from "@shared/schema";
 
 let company: CompanyState = {
   name: null,
+  code: null,
   people: [],
   integrations: [],
 };
@@ -14,7 +15,14 @@ export function getCompany(): CompanyState {
 export function createCompany(name: string): CompanyState {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Name the company");
-  company = { ...company, name: trimmed };
+  company = { ...company, name: trimmed, code: company.code ?? makeCode() };
+  return company;
+}
+
+export function joinCompany(code: string): CompanyState {
+  const entered = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!entered) throw new Error("Enter the company code");
+  if (!company.code || entered !== company.code) throw new Error("No company with that code");
   return company;
 }
 
@@ -66,6 +74,13 @@ export function connectIntegration(
     ],
   };
   return company;
+}
+
+function makeCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return code;
 }
 
 function cleanHandle(value: string): string | null {

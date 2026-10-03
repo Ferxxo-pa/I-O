@@ -117,6 +117,7 @@ export type BoardPerson = z.infer<typeof boardPersonSchema>;
 
 export const companyStateSchema = z.object({
   name: z.string().nullable(),
+  code: z.string().nullable(),
   people: z.array(boardPersonSchema),
   integrations: z.array(integrationSchema),
 });
