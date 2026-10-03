@@ -88,7 +88,9 @@ export default function Hud() {
       <div className="strip-anchor">
         <PrintTape events={freshEvents} onDone={dismissTick} />
 
-        <div className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}`}>
+        <div
+          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${settings ? " with-settings" : ""}`}
+        >
           <span className="chips" aria-hidden>
             {chips.map((color, index) => (
               <i key={index} style={{ background: color }} />

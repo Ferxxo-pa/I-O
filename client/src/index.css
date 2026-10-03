@@ -244,6 +244,21 @@ button {
   font-size: 12px;
 }
 
+.strip.with-settings .num {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.strip.with-settings .plus {
+  margin-left: auto;
+}
+
+.strip.with-settings .fold {
+  margin-right: 2px;
+  opacity: 1;
+}
+
 .tip {
   display: none;
   position: absolute;
