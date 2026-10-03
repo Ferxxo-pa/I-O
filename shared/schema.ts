@@ -89,18 +89,6 @@ export const appStateSchema = z.object({
   inputMs: z.number().int(),
   msToNextPrint: z.number().int(),
   serverNow: z.number(),
-  book: z
-    .object({
-      plusCents: z.number().int(),
-      minusCents: z.number().int(),
-      balanceCents: z.number().int(),
-      green: z.number(),
-      red: z.number(),
-      tie: z.boolean(),
-      neutral: z.boolean(),
-      flashes: z.array(z.object({ id: z.string(), label: z.string() })),
-    })
-    .optional(),
 });
 export type AppState = z.infer<typeof appStateSchema>;
 

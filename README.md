@@ -6,8 +6,8 @@
 I/O   +4.00
 ```
 
-The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is today's shared balance: money in minus money out, for the America/Chicago day. The thin bar is green from the left for what came in and red from the right for what went out. Collapse it to just **I/O**. **+** opens personal pay, the clock, and Settings. **Settings** shows the hourly rate, a Telegram handle, and Company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the company name replaces the word Company, and the code sits on the right. A new amount flashes as `+$300` or `−$60` and, when a bot is configured, the same text goes to the company Telegram group.
-- A completed Square payment counts after its processing fee, once. Cash and check income count too. Closed-shift labor and operating expenses count against the day. Investment activity does not. A refund or correction replaces the original amount instead of adding a second one.
+The strip is a glass widget on the right, meant to sit on a Mac or Windows desktop. **I/O** clocks you in and out. Hover it to see Clock in or Clock out. The green dot hops while you are in. The number is the paycheck, ticking. Collapse it to just **I/O**. **+** opens a bar of money in against money out, plus points. **Settings** shows the hourly rate, a Telegram handle, and Company. Join takes a code. Create takes a name and spins up a code that is also an invite link. Once you are in, the company name replaces the word Company, and the code sits on the right. Three small color squares sit just outside the top-right of the widget, hop in a wave, and change color. Wages float in green, a paid invoice in pink, a message in blue.
+- A paid invoice prints the amount, like `+$200`, for everyone watching. That sale is money in. It is not added to the paycheck.
 
 ## Run
 

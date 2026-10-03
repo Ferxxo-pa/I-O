@@ -1,7 +1,6 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { configSchema, inputTypeSchema } from "@shared/schema";
-import { companyBook } from "./book";
 import { addPerson, connectIntegration, createCompany, getCompany, joinCompany } from "./company";
 import { earnEngine } from "./clock/engine";
 import { signaturesMatch, squareSignature } from "./square/signature";
@@ -12,36 +11,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   startSquareSync();
 
   app.get("/api/state", (_req, res) => {
-    res.json({ ...earnEngine.getState(), book: companyBook.view() });
-  });
-
-  app.post("/api/book/income", (req, res) => {
-    const method = req.body?.method === "check" ? "check" : req.body?.method === "cash" ? "cash" : "";
-    const cents = req.body?.cents;
-    const id = typeof req.body?.id === "string" && req.body.id.trim() ? req.body.id.trim() : "";
-    if (!method || !Number.isInteger(cents) || cents <= 0) {
-      return res.status(400).json({ message: "Log cash or check income in cents" });
-    }
-    companyBook.record({
-      sourceId: `${method}:${id || randomBookId()}`,
-      contributionCents: cents,
-    });
-    res.json(companyBook.view());
-  });
-
-  app.post("/api/book/expense", (req, res) => {
-    const cents = req.body?.cents;
-    const category = typeof req.body?.category === "string" ? req.body.category : "operating";
-    const id = typeof req.body?.id === "string" && req.body.id.trim() ? req.body.id.trim() : "";
-    if (!Number.isInteger(cents) || cents <= 0) {
-      return res.status(400).json({ message: "Log an expense in cents" });
-    }
-    companyBook.record({
-      sourceId: `expense:${id || randomBookId()}`,
-      contributionCents: -cents,
-      category,
-    });
-    res.json(companyBook.view());
+    res.json(earnEngine.getState());
   });
 
   app.post("/api/clock/in", async (_req, res) => {
@@ -164,8 +134,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   return createServer(app);
-}
-
-function randomBookId(): string {
-  return Math.random().toString(36).slice(2, 10);
 }

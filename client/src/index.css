@@ -87,50 +87,75 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 44px;
-  padding: 0 8px 8px 14px;
+  min-height: 40px;
+  padding: 0 8px 0 14px;
 }
 
-.balance-bar {
+.chips {
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 6px;
-  z-index: 1;
+  top: -12px;
+  right: 8px;
+  z-index: 2;
   display: flex;
-  height: 3px;
-  border-radius: 99px;
-  background: rgba(0, 0, 0, 0.06);
+  gap: 3px;
 }
 
-.balance-bar i {
+.chips i {
+  width: 6px;
+  height: 6px;
   display: block;
-  height: 100%;
-  transition: width 0.45s ease;
+  animation: chip-wave 1.8s ease-in-out infinite;
 }
 
-.balance-bar .in {
-  background: #12c45a;
-  border-radius: 99px 0 0 99px;
+.chips i:nth-child(1) {
+  animation-name: chip-wave-1;
 }
 
-.balance-bar .out {
-  background: #ff3b30;
-  border-radius: 0 99px 99px 0;
+.chips i:nth-child(2) {
+  animation-name: chip-wave-2;
 }
 
-.balance-bar i:only-child {
-  border-radius: 99px;
+.chips i:nth-child(3) {
+  animation-name: chip-wave-3;
 }
 
-.balance-bar.tie::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: -1px;
-  bottom: -1px;
-  width: 1px;
-  background: rgba(0, 0, 0, 0.28);
+@keyframes chip-wave-1 {
+  0%,
+  10%,
+  90%,
+  100% {
+    transform: translateY(0);
+  }
+  5%,
+  95% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes chip-wave-2 {
+  0%,
+  18%,
+  82%,
+  100% {
+    transform: translateY(0);
+  }
+  13%,
+  87% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes chip-wave-3 {
+  0%,
+  26%,
+  74%,
+  100% {
+    transform: translateY(0);
+  }
+  21%,
+  79% {
+    transform: translateY(-5px);
+  }
 }
 
 .mark {
@@ -179,12 +204,8 @@ button {
   color: var(--mute);
 }
 
-.num.up {
-  color: #12c45a;
-}
-
-.num.down {
-  color: #ff3b30;
+.strip.live .num {
+  color: var(--ink);
 }
 
 .plus {
@@ -285,14 +306,6 @@ button {
   font-weight: 600;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
-}
-
-.print.up {
-  color: #12c45a;
-}
-
-.print.down {
-  color: #ff3b30;
 }
 
 .print.money {

@@ -1,10 +1,8 @@
-import { companyBook } from "../book";
 import { earnEngine } from "../clock/engine";
 import { log } from "../vite";
 import { squareConfigured, squareFetch } from "./client";
 import {
   hourlyRateCents,
-  netFromPayment,
   snapshotFromInvoice,
   snapshotFromWebhook,
   type InvoiceSnapshot,
@@ -29,16 +27,6 @@ export function startSquareSync() {
 }
 
 export function applySquareWebhook(body: unknown): { sale: boolean; points: boolean } {
-  const payment = (body as { data?: { object?: { payment?: unknown } } } | null)?.data?.object?.payment;
-  const net = netFromPayment(payment);
-  if (net) {
-    const at = net.at ? Date.parse(net.at) : undefined;
-    companyBook.record({
-      sourceId: net.sourceId,
-      contributionCents: net.netCents,
-      at: Number.isFinite(at) ? at : undefined,
-    });
-  }
   const snapshot = snapshotFromWebhook(body);
   if (!snapshot) return { sale: false, points: false };
   return earnEngine.ingestSquareInvoice(snapshot);
