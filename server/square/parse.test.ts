@@ -86,7 +86,7 @@ assert.equal(state.session.outputCents, 0);
 assert.equal(state.session.collectedCents, 20000);
 assert.equal(state.session.inputUnits, 1);
 assert.equal(state.events[0]?.kind, "sale");
-assert.equal(state.events[0]?.label, "+$200 Booth rental");
+assert.equal(state.events[0]?.label, "+$200");
 assert.equal(state.events[1]?.label, "+1");
 
 const replay = earnEngine.ingestSquareInvoice({

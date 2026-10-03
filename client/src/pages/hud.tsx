@@ -56,8 +56,7 @@ export default function Hud() {
     for (const event of freshEvents) {
       if (heard.current.has(event.id)) continue;
       heard.current.add(event.id);
-      const paid = event.kind === "hour_print" || event.kind === "sale";
-      if (paid && event.outputCents > 0) ching();
+      if (event.kind === "sale" && event.outputCents > 0) ching();
     }
   }, [freshEvents]);
 
@@ -66,7 +65,9 @@ export default function Hud() {
   const moneyIn = state?.session.collectedCents ?? 0;
   const points = state?.session.inputUnits ?? 0;
   const rateCents = state?.config.hourlyOutputCents ?? 2000;
-  const shown = `$${money(Math.abs(moneyOut))}`;
+  const balance = moneyIn - moneyOut;
+  const shown = balance === 0 ? "$0.00" : `${balance > 0 ? "+" : "−"}$${money(Math.abs(balance))}`;
+  const combined = moneyIn + moneyOut;
   const wide = (menu || settings) && !collapsed;
 
   useEffect(() => {
@@ -144,7 +145,9 @@ export default function Hud() {
             <span className="dot" />
             <span className="tip">{live ? "Clock out" : "Clock in"}</span>
           </button>
-          {!collapsed && <span className="num">{shown}</span>}
+          {!collapsed && (
+            <span className={`num${balance > 0 ? " up" : balance < 0 ? " down" : ""}`}>{shown}</span>
+          )}
           {!collapsed && (
             <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
               +
@@ -162,6 +165,16 @@ export default function Hud() {
           >
             {collapsed ? "›" : "‹"}
           </button>
+          {!collapsed && (
+            <span className="balance-bar" aria-hidden>
+              {combined > 0 && (
+                <>
+                  <i className="in" style={{ width: `${(moneyIn / combined) * 100}%` }} />
+                  <i className="out" style={{ width: `${(moneyOut / combined) * 100}%` }} />
+                </>
+              )}
+            </span>
+          )}
         </div>
 
         <AnimatePresence>
@@ -173,7 +186,6 @@ export default function Hud() {
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.12 }}
             >
-              <FlowBar inCents={moneyIn} outCents={moneyOut} />
               <div className="menu-row">
                 <span>Points</span>
                 <span>{points}</span>
@@ -213,33 +225,6 @@ export default function Hud() {
             />
           )}
         </AnimatePresence>
-      </div>
-    </div>
-  );
-}
-
-function FlowBar({ inCents, outCents }: { inCents: number; outCents: number }) {
-  const total = inCents + outCents;
-  let inShare = 0;
-  if (total > 0) {
-    inShare = inCents / total;
-    if (inCents > 0 && outCents > 0) inShare = Math.min(0.94, Math.max(0.06, inShare));
-  }
-  const outShare = total > 0 ? 1 - inShare : 0;
-
-  return (
-    <div className="flow">
-      <div className="flow-top">
-        <span className="in">In ${money(inCents)}</span>
-        <span className="out">Out ${money(outCents)}</span>
-      </div>
-      <div
-        className="track"
-        role="img"
-        aria-label={`In ${money(inCents)} dollars, out ${money(outCents)} dollars`}
-      >
-        {inShare > 0 && <span className="in" style={{ width: `${inShare * 100}%` }} />}
-        {outShare > 0 && <span className="out" style={{ width: `${outShare * 100}%` }} />}
       </div>
     </div>
   );
@@ -389,9 +374,7 @@ function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) 
     return () => clearTimeout(t);
   }, [event.id, big, point, onDone]);
 
-  const tone = sale
-    ? "sale"
-    : point
+  const tone = event.kind === "hour_print" ? "down" : sale ? "up" : point
       ? event.inputType === "email"
         ? "email"
         : event.inputType === "prompt"

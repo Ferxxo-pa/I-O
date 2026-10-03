@@ -10,6 +10,7 @@ import {
   type SquareLink,
 } from "@shared/schema";
 import type { InvoiceSnapshot } from "../square/parse";
+import { mirrorSignedUpdate } from "../telegram";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
 import { randomUUID } from "crypto";
 
@@ -207,14 +208,14 @@ export class EarnEngine {
       ...this.session,
       collectedCents: this.session.collectedCents + Math.max(0, cents),
     };
-    const name = title?.trim();
-    const short = name && name.length > 22 ? `${name.slice(0, 21)}…` : name;
+    const label = signedLabel(cents);
+    void mirrorSignedUpdate(label);
     this.pushEvent(
       makeEvent({
         kind: "sale",
         outputCents: cents,
         inputUnits: 0,
-        label: short ? `+$${formatDollars(cents)} ${short}` : `+$${formatDollars(cents)}`,
+        label,
       }),
     );
     return true;
@@ -240,12 +241,14 @@ export class EarnEngine {
       outputCents: this.session.outputCents + amount,
       hoursPrinted: this.session.hoursPrinted + 1,
     };
+    const label = signedLabel(-amount);
+    void mirrorSignedUpdate(label);
     this.pushEvent(
       makeEvent({
         kind: "hour_print",
         outputCents: amount,
         inputUnits: 0,
-        label: `+$${formatDollars(amount)}`,
+        label,
         createdAt: at,
       }),
     );
@@ -258,12 +261,14 @@ export class EarnEngine {
       ...this.session,
       outputCents: this.session.outputCents + accruedOutputCents,
     };
+    const label = signedLabel(-accruedOutputCents);
+    void mirrorSignedUpdate(label);
     this.pushEvent(
       makeEvent({
         kind: "hour_print",
         outputCents: accruedOutputCents,
         inputUnits: 0,
-        label: `+$${formatDollars(accruedOutputCents)}`,
+        label,
         createdAt: at,
       }),
     );
@@ -290,6 +295,11 @@ export class EarnEngine {
   private pushEvent(event: PrintEvent) {
     this.events = [event, ...this.events].slice(0, 100);
   }
+}
+
+function signedLabel(cents: number): string {
+  const body = formatDollars(Math.abs(cents));
+  return cents < 0 ? `−$${body}` : `+$${body}`;
 }
 
 export function formatDollars(cents: number): string {
