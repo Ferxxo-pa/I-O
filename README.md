@@ -38,7 +38,7 @@ git push -u origin main
 
 ## Square
 
-Put a Square access token in the environment (`SQUARE_ACCESS_TOKEN`, and optionally location and team member ids). Square then sets **$/HR** from the team, and Change shows those rates instead of asking for them again. Each person picks their own name from that Square team. **I/O** opens and closes that person's timecard. Every open wage still adds into the one red number, and collected invoices stay the one green number.
+Put a production Square access token in `SQUARE_ACCESS_TOKEN`. Square then sets each person's rate, and Change shows those rates instead of asking for them again. Each person picks their own name from that Square team. **I/O** opens and closes that person's timecard at their Square job and wage, at a location they are assigned to. Every open wage still adds into the one red number, and collected invoices stay the one green number. Every 15 seconds the app also reads open timecards, so a clock-in made in Square joins the same total.
 
 Every 15 seconds it checks invoices. The first check remembers invoices that already exist so history is not replayed. After that, and on the webhook, a new invoice counts even if the process restarted while it was paid:
 

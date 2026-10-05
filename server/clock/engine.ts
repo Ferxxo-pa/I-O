@@ -242,6 +242,26 @@ export class EarnEngine {
     return this.getState(personId);
   }
 
+  /**
+   * Drop local shifts whose Square timecard is no longer open.
+   * A shift that just opened is left alone so a slow search cannot clock them out.
+   */
+  closeShiftsExcept(openTimecardIds: Set<string>, at = now()): void {
+    for (const shift of [...this.shifts]) {
+      if (!shift.clockedIn || !shift.timecardId) continue;
+      if (openTimecardIds.has(shift.timecardId)) continue;
+      if (shift.clockedInAt && at - shift.clockedInAt < 20_000) continue;
+      this.syncRemoteTimecard({
+        personId: shift.personId,
+        name: shift.name,
+        hourlyCents: shift.hourlyCents,
+        timecardId: shift.timecardId,
+        open: false,
+        startedAt: shift.clockedInAt ?? at,
+      });
+    }
+  }
+
   /** A Square timecard opened or closed somewhere else still joins this book. */
   syncRemoteTimecard(card: RemoteTimecard): void {
     const existing = this.shifts.find((shift) => shift.personId === card.personId);

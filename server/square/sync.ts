@@ -1,6 +1,7 @@
 import { earnEngine } from "../clock/engine";
 import { log } from "../vite";
 import { squareConfigured, squareFetch } from "./client";
+import { listOpenTimecards } from "./labor";
 import { squareLocationId } from "./location";
 import {
   hourlyRateCents,
@@ -84,6 +85,13 @@ export function applySquareWebhook(body: unknown): { sale: boolean; points: bool
 async function pollSquare() {
   await syncWage();
   await syncInvoices();
+  await syncTimecards();
+}
+
+async function syncTimecards() {
+  const open = await listOpenTimecards();
+  for (const card of open) earnEngine.syncRemoteTimecard(card);
+  earnEngine.closeShiftsExcept(new Set(open.map((card) => card.timecardId)));
 }
 
 async function syncWage() {

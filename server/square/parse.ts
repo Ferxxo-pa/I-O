@@ -1,8 +1,17 @@
 export type SquareMoney = { amount?: number; currency?: string };
 
 export type JobAssignment = {
+  job_title?: string;
   pay_type?: string;
   hourly_rate?: SquareMoney;
+  tip_eligible?: boolean;
+};
+
+export type JobWage = {
+  title: string;
+  hourlyCents: number;
+  tipEligible: boolean;
+  currency: string;
 };
 
 export type WageSetting = {
@@ -31,15 +40,32 @@ function positive(amount: unknown): amount is number {
   return typeof amount === "number" && Number.isFinite(amount) && amount > 0;
 }
 
-/** Primary hourly wage in cents. Prefers an HOURLY job, then any job's hourly rate. */
-export function hourlyRateCents(wage: WageSetting | null | undefined): number | null {
+function primaryJob(wage: WageSetting | null | undefined): JobAssignment | undefined {
   const jobs = wage?.job_assignments ?? [];
   const hourly = jobs.find(
     (job) => job.pay_type === "HOURLY" && positive(job.hourly_rate?.amount),
   );
-  const fallback = jobs.find((job) => positive(job.hourly_rate?.amount));
-  const amount = (hourly ?? fallback)?.hourly_rate?.amount;
+  return hourly ?? jobs.find((job) => positive(job.hourly_rate?.amount));
+}
+
+/** Primary hourly wage in cents. Prefers an HOURLY job, then any job's hourly rate. */
+export function hourlyRateCents(wage: WageSetting | null | undefined): number | null {
+  const amount = primaryJob(wage)?.hourly_rate?.amount;
   return positive(amount) ? amount : null;
+}
+
+/** Job title, rate, and tip flag Square needs on a timecard so labor cost is recorded. */
+export function primaryJobWage(wage: WageSetting | null | undefined): JobWage | null {
+  const job = primaryJob(wage);
+  const amount = job?.hourly_rate?.amount;
+  if (!positive(amount)) return null;
+  const title = job?.job_title?.trim();
+  return {
+    title: title || "Hourly",
+    hourlyCents: amount,
+    tipEligible: Boolean(job?.tip_eligible),
+    currency: job?.hourly_rate?.currency || "USD",
+  };
 }
 
 export function snapshotFromInvoice(invoice: unknown): InvoiceSnapshot | null {

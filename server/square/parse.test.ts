@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { earnEngine } from "../clock/engine";
-import { hourlyRateCents, snapshotFromInvoice, snapshotFromWebhook } from "./parse";
+import { hourlyRateCents, primaryJobWage, snapshotFromInvoice, snapshotFromWebhook } from "./parse";
 import { signaturesMatch, squareSignature } from "./signature";
 
 const wage = hourlyRateCents({
@@ -23,6 +23,20 @@ const salaryOnly = hourlyRateCents({
   ],
 });
 assert.equal(salaryOnly, 2164);
+
+const job = primaryJobWage({
+  job_assignments: [
+    {
+      job_title: "Bar",
+      pay_type: "HOURLY",
+      hourly_rate: { amount: 1800, currency: "USD" },
+      tip_eligible: true,
+    },
+  ],
+});
+assert.equal(job?.title, "Bar");
+assert.equal(job?.hourlyCents, 1800);
+assert.equal(job?.tipEligible, true);
 
 const paid = snapshotFromInvoice({
   id: "inv_booth",

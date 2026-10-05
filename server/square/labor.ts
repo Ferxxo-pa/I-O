@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { squareFetch } from "./client";
 import { squareLocationId } from "./location";
+import { primaryJobWage, type JobWage, type WageSetting } from "./parse";
 
 export type RemoteTimecard = {
   personId: string;
@@ -22,14 +23,26 @@ type SquareTimecard = {
   wage?: {
     title?: string;
     hourly_rate?: { amount?: number; currency?: string };
+    tip_eligible?: boolean;
   };
+  breaks?: SquareBreak[];
+};
+
+type SquareBreak = {
+  id?: string;
+  start_at?: string;
+  end_at?: string;
+  break_type_id?: string;
+  name?: string;
+  expected_duration?: string;
+  is_paid?: boolean;
 };
 
 export function timecardCreateBody(input: {
   locationId: string;
   teamMemberId: string;
   startAt: string;
-  hourlyCents: number;
+  wage: JobWage;
   idempotencyKey: string;
 }) {
   return {
@@ -39,14 +52,16 @@ export function timecardCreateBody(input: {
       team_member_id: input.teamMemberId,
       start_at: input.startAt,
       wage: {
-        title: "Hourly",
-        hourly_rate: { amount: input.hourlyCents, currency: "USD" },
+        title: input.wage.title,
+        hourly_rate: { amount: input.wage.hourlyCents, currency: input.wage.currency },
+        tip_eligible: input.wage.tipEligible,
       },
     },
   };
 }
 
 export function timecardCloseBody(card: SquareTimecard, endAt: string) {
+  const breaks = card.breaks?.map((entry) => (entry.end_at ? entry : { ...entry, end_at: endAt }));
   return {
     timecard: {
       team_member_id: card.team_member_id,
@@ -54,6 +69,7 @@ export function timecardCloseBody(card: SquareTimecard, endAt: string) {
       start_at: card.start_at,
       end_at: endAt,
       wage: card.wage,
+      breaks,
       status: "CLOSED",
       version: card.version,
     },
@@ -83,9 +99,8 @@ export async function openTimecard(teamMemberId: string, hourlyCents: number): P
   const existing = await findOpenTimecard(teamMemberId);
   if (existing) return existing;
 
-  const locationId = await squareLocationId();
-  if (!locationId) throw new Error("Square has no location for this business");
-
+  const locationId = await locationForMember(teamMemberId);
+  const wage = await wageForMember(teamMemberId, hourlyCents);
   const body = await squareFetch<{ timecard?: { id?: string } }>("/v2/labor/timecards", {
     method: "POST",
     body: JSON.stringify(
@@ -93,7 +108,7 @@ export async function openTimecard(teamMemberId: string, hourlyCents: number): P
         locationId,
         teamMemberId,
         startAt: new Date().toISOString(),
-        hourlyCents,
+        wage,
         idempotencyKey: randomUUID(),
       }),
     ),
@@ -101,6 +116,76 @@ export async function openTimecard(teamMemberId: string, hourlyCents: number): P
   const id = body.timecard?.id;
   if (!id) throw new Error("Square did not open a timecard");
   return id;
+}
+
+/** Open Square timecards, so a clock-in from Square itself joins the book without a webhook. */
+export async function listOpenTimecards(): Promise<RemoteTimecard[]> {
+  const locationId = await squareLocationId();
+  const cards: SquareTimecard[] = [];
+  let cursor: string | undefined;
+  do {
+    const body = await squareFetch<{ timecards?: SquareTimecard[]; cursor?: string }>(
+      "/v2/labor/timecards/search",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          query: {
+            filter: {
+              status: "OPEN",
+              ...(locationId ? { location_ids: [locationId] } : {}),
+            },
+          },
+          limit: 50,
+          cursor,
+        }),
+      },
+    );
+    cards.push(...(body.timecards ?? []));
+    cursor = body.cursor || undefined;
+  } while (cursor);
+
+  return cards.flatMap((card) => {
+    if (!card.id || !card.team_member_id) return [];
+    const started = card.start_at ? Date.parse(card.start_at) : Date.now();
+    return [
+      {
+        personId: card.team_member_id,
+        name: card.wage?.title || "Square",
+        hourlyCents: card.wage?.hourly_rate?.amount ?? 0,
+        timecardId: card.id,
+        open: true,
+        startedAt: Number.isFinite(started) ? started : Date.now(),
+      },
+    ];
+  });
+}
+
+async function wageForMember(teamMemberId: string, fallbackCents: number): Promise<JobWage> {
+  try {
+    const extra = await squareFetch<{ wage_setting?: WageSetting }>(
+      `/v2/team-members/${encodeURIComponent(teamMemberId)}/wage-setting`,
+    );
+    const job = primaryJobWage(extra.wage_setting);
+    if (job) return job;
+  } catch {
+    // The rate already chosen for this person is enough to record the timecard.
+  }
+  return { title: "Hourly", hourlyCents: fallbackCents, tipEligible: false, currency: "USD" };
+}
+
+async function locationForMember(teamMemberId: string): Promise<string> {
+  try {
+    const body = await squareFetch<{
+      team_member?: { assigned_locations?: { location_ids?: string[] } };
+    }>(`/v2/team-members/${encodeURIComponent(teamMemberId)}`);
+    const assigned = body.team_member?.assigned_locations?.location_ids?.find((id) => id);
+    if (assigned) return assigned;
+  } catch {
+    // Fall through to the business location.
+  }
+  const locationId = await squareLocationId();
+  if (!locationId) throw new Error("Square has no location for this business");
+  return locationId;
 }
 
 export async function closeTimecard(id: string): Promise<void> {

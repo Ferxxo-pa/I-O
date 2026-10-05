@@ -70,5 +70,27 @@ earnEngine.syncRemoteTimecard({
 assert.equal(earnEngine.getState("TM1").session.clockedIn, false);
 assert.equal(earnEngine.getState("ada").session.clockedIn, false);
 
+earnEngine.syncRemoteTimecard({
+  personId: "TM2",
+  name: "Square",
+  hourlyCents: 1500,
+  timecardId: "card-fresh",
+  open: true,
+  startedAt: Date.now(),
+});
+earnEngine.closeShiftsExcept(new Set());
+assert.equal(earnEngine.getState("TM2").session.clockedIn, true);
+earnEngine.syncRemoteTimecard({
+  personId: "TM3",
+  name: "Square",
+  hourlyCents: 1500,
+  timecardId: "card-old",
+  open: true,
+  startedAt: Date.now() - 60_000,
+});
+earnEngine.closeShiftsExcept(new Set(["card-fresh"]));
+assert.equal(earnEngine.getState("TM2").session.clockedIn, true);
+assert.equal(earnEngine.getState("TM3").session.clockedIn, false);
+
 earnEngine.stop();
 console.log("shifts ok");
