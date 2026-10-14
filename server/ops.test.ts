@@ -5,6 +5,7 @@ import {
   applyWeekStreak,
   buildWeekPips,
   demoOps,
+  levelRaiseLine,
   levelReward,
   markPaid,
   mondayOf,
@@ -16,6 +17,7 @@ import {
   suggestQuest,
   summarizeWeek,
   weeklyBreakEven,
+  weekWonFriday,
   type Payout,
 } from "@shared/ops";
 import { FightBook } from "./fight/book.ts";
@@ -30,6 +32,12 @@ for (let day = 0; day < 5; day++) {
   if (next.event) events.push(next.event);
 }
 assert.equal(level, 1);
+assert.equal(levelRaiseLine(1, 3, 5), "Lv 1 · 2 days to a raise");
+assert.equal(levelRaiseLine(1, 4, 5), "Lv 1 · 1 day to a raise");
+assert.equal(levelRaiseLine(2, 5, 5), "Lv 2 · 5 days to a raise");
+assert.equal(weekWonFriday("2026-10-16", true), true);
+assert.equal(weekWonFriday("2026-10-14", true), false);
+assert.equal(weekWonFriday("2026-10-16", false), false);
 assert.equal(run, 5);
 assert.equal(events.length, 1);
 assert.equal(events[0]?.reason, "5 open days cleared");

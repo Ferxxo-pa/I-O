@@ -102,6 +102,20 @@ export function advanceLevel(input: {
   };
 }
 
+/** Small line under the streak. Days left are the rest of the current run. */
+export function levelRaiseLine(level: number, consecutive: number, clearsInARow: number): string {
+  const every = Math.max(1, clearsInARow);
+  const into = ((consecutive % every) + every) % every;
+  const left = into === 0 ? every : every - into;
+  const day = left === 1 ? "day" : "days";
+  return `Lv ${Math.max(0, level)} · ${left} ${day} to a raise`;
+}
+
+/** The week celebration is Friday only, and only after the week is already won. */
+export function weekWonFriday(date: string, weekCleared: boolean): boolean {
+  return weekCleared && weekdayOfKey(date) === 5;
+}
+
 export function mondayOf(key: string): string {
   const weekday = weekdayOfKey(key);
   const delta = weekday === 0 ? -6 : 1 - weekday;
