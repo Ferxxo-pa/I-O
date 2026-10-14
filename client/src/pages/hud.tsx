@@ -85,32 +85,14 @@ function readPanel(): "menu" | "levels" | "payout" | "checklist" | null {
   return null;
 }
 
-function StreakCount({ days, weeks }: { days: number; weeks: number }) {
-  const weeksLabel = weeks === 1 ? "1 week" : `${weeks} weeks`;
-  const daysLabel = days === 1 ? "1 day" : `${days} days`;
-  return (
-    <span className={`streak${days === 0 ? " cold" : ""}`} aria-label={weeks > 0 ? `${daysLabel}, ${weeksLabel}` : daysLabel}>
-      <span className="fire" aria-hidden>
-        🔥
-      </span>
-      {days}
-      {weeks > 0 && (
-        <small>
-          <span className="fire" aria-hidden>
-            🔥
-          </span>
-          {weeks}w
-        </small>
-      )}
-    </span>
-  );
-}
-
-function levelText(ops: OpsView): string {
-  const bump = ops.payBumpCents > 0 ? `+$${compact(ops.payBumpCents)}/hr` : "";
-  const pot = ops.potBonusBps > 0 ? `+${ops.potBonusBps / 100}% pot` : "";
-  const extra = [bump, pot].filter(Boolean).join(" ");
-  return extra ? `${ops.level} · ${extra}` : String(ops.level);
+function levelLine(ops: OpsView): string {
+  const every = Math.max(1, ops.rules.clearsInARow);
+  const into = ops.consecutiveClears % every;
+  const left = into === 0 ? every : every - into;
+  const dayWord = left === 1 ? "day" : "days";
+  const next = ops.level + 1;
+  if (ops.level <= 0) return `${left} more ${dayWord} to Level ${next}`;
+  return `Level ${ops.level} · ${left} more ${dayWord} to Level ${next}`;
 }
 
 const OPEN_DAYS: Array<[number, string, string]> = [
@@ -179,7 +161,6 @@ export default function Hud() {
   const ops = demo ? demoOps(demo.scene) : (state?.ops ?? null);
   const streakOverride = demo ? readStreakOverride() : null;
   const dayStreak = streakOverride ?? fight?.streak ?? 0;
-  const weekStreak = streakOverride === 0 ? 0 : (ops?.weekStreak ?? 0);
   const pinSet = state?.fight.pinSet ?? false;
 
   useEffect(() => {
@@ -209,7 +190,6 @@ export default function Hud() {
   const live = demo ? demo.clockedIn : (state?.session.clockedIn ?? false);
   const moneyOut = fight ? fight.todayWageCents : (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
   const moneyIn = fight ? fight.todayCollectedCents : (state?.session.collectedCents ?? 0);
-  const points = state?.session.inputUnits ?? 0;
   const combined = moneyIn + moneyOut;
   const barFloor = 16;
   let greenShare = 0;
@@ -480,107 +460,55 @@ export default function Hud() {
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.12 }}
             >
-              <div className="menu-row">
-                <span>Points</span>
-                <span>{points}</span>
-              </div>
               {fight && (
                 <div className="menu-row">
-                  <span>Streak</span>
-                  <StreakCount days={dayStreak} weeks={weekStreak} />
+                  <span>Today</span>
+                  <span>{fight.cleared ? "Goal hit 🎉" : `$${whole(fight.toBreakEvenCents)} to go`}</span>
                 </div>
               )}
               {ops && (
                 <div className="menu-row">
-                  <span>Level</span>
-                  <span>{levelText(ops)}</span>
-                </div>
-              )}
-              {ops && (
-                <div className="menu-row">
-                  <span>Week</span>
+                  <span>This week</span>
                   <span>
-                    ${whole(ops.week.collectedCents)} / ${whole(ops.week.breakEvenCents)}
+                    {ops.week.cleared
+                      ? "Week goal hit"
+                      : `$${whole(Math.max(0, ops.week.breakEvenCents - ops.week.collectedCents))} to go`}
+                  </span>
+                </div>
+              )}
+              {fight && (
+                <div className="menu-row">
+                  <span className={`streak${dayStreak === 0 ? " cold" : ""}`}>
+                    <span className="fire" aria-hidden>
+                      🔥
+                    </span>
+                    {dayStreak === 1 ? "1 day in a row" : `${dayStreak} days in a row`}
                   </span>
                 </div>
               )}
               {ops && (
                 <div className="menu-row">
-                  <span>Pot</span>
-                  <span>
-                    {ops.payout
-                      ? `$${compact(ops.payout.potCents)} ${ops.payout.status}`
-                      : `$${compact(ops.week.potCents)}`}
-                  </span>
+                  <span>{levelLine(ops)}</span>
+                </div>
+              )}
+              {ops && (
+                <div className="menu-row">
+                  <span>Team bonus</span>
+                  <span>${whole(ops.week.potCents)}</span>
                 </div>
               )}
               {ops?.nudge && <p className="menu-note">{ops.nudge}</p>}
-              {fight && (
-                <div className="menu-row">
-                  <span>Avg</span>
-                  <span>
-                    {fight.avgSaleCents == null ? "—" : `$${compact(fight.avgSaleCents)}`}/${compact(fight.goalCents)}
-                  </span>
-                </div>
-              )}
-              {fight?.cleared &&
-                fight.shares.map((share) => (
-                  <div className="menu-row" key={share.id}>
-                    <span>{share.name.split(" ")[0]}</span>
-                    <span>${compact(share.cents)}</span>
-                  </div>
-                ))}
-              <div className="menu-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    closePanels();
-                    if (!guard("settings")) return;
-                    setSettings(true);
-                  }}
-                >
-                  Settings
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closePanels();
-                    setLevelsOpen(true);
-                  }}
-                >
-                  Levels
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closePanels();
-                    setPayoutOpen(true);
-                  }}
-                >
-                  Payout
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closePanels();
-                    setChecklistOpen(true);
-                  }}
-                >
-                  Ready
-                </button>
-                {company?.owner && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      closePanels();
-                      if (!guard("change")) return;
-                      setChange(true);
-                    }}
-                  >
-                    Change
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                className="menu-settings"
+                onClick={() => {
+                  closePanels();
+                  if (!guard("settings")) return;
+                  setSettings(true);
+                }}
+              >
+                Settings
+              </button>
               {error && <div className="err">{error}</div>}
             </motion.div>
           )}
@@ -628,6 +556,23 @@ export default function Hud() {
               error={settingsError}
               onLink={() => void openWho("link")}
               onClose={() => setSettings(false)}
+              onLevels={() => {
+                closePanels();
+                setLevelsOpen(true);
+              }}
+              onPayout={() => {
+                closePanels();
+                setPayoutOpen(true);
+              }}
+              onReady={() => {
+                closePanels();
+                setChecklistOpen(true);
+              }}
+              onChange={() => {
+                closePanels();
+                if (!guard("change")) return;
+                setChange(true);
+              }}
               onFight={async (path, body) => {
                 try {
                   await saveFight(path, body);
@@ -766,6 +711,10 @@ function SettingsPanel({
   onClose,
   onFight,
   onSave,
+  onLevels,
+  onPayout,
+  onReady,
+  onChange,
 }: {
   company: CompanyView | null;
   youName: string | null;
@@ -777,6 +726,10 @@ function SettingsPanel({
   onClose: () => void;
   onFight: (path: string, body: unknown) => Promise<void>;
   onSave: (path: string, body: unknown) => Promise<void>;
+  onLevels: () => void;
+  onPayout: () => void;
+  onReady: () => void;
+  onChange: () => void;
 }) {
   const [mode, setMode] = useState<"join" | "create" | null>(null);
   const [draft, setDraft] = useState("");
@@ -967,6 +920,22 @@ function SettingsPanel({
           ))}
         </div>
       )}
+      <div className="menu-actions">
+        <button type="button" onClick={onLevels}>
+          Levels
+        </button>
+        <button type="button" onClick={onPayout}>
+          Team bonus
+        </button>
+        <button type="button" onClick={onReady}>
+          Checklist
+        </button>
+        {company?.owner && (
+          <button type="button" onClick={onChange}>
+            Pay rates
+          </button>
+        )}
+      </div>
       {error && <div className="err">{error}</div>}
     </motion.div>
   );
@@ -1171,6 +1140,10 @@ function LevelsPanel({
         </button>
       </div>
       <p className="menu-note">Clear open days in a row. Square wages stay put.</p>
+      <div className="menu-row">
+        <span>Weeks in a row</span>
+        <span>{ops.weekStreak}</span>
+      </div>
       <label className="settings-line">
         <span>Days</span>
         <input value={days} onChange={(event) => setDays(event.target.value)} inputMode="numeric" aria-label="Open days in a row" />

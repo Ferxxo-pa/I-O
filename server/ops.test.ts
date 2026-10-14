@@ -148,7 +148,7 @@ assert.equal(
     breakEvenCents: 39_265,
     invoices: [{ id: "inv", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: null }],
   }),
-  "Chase $420 · Booth",
+  "Tip: chase Booth invoice $420",
 );
 assert.equal(
   suggestMove({
@@ -157,7 +157,7 @@ assert.equal(
     breakEvenCents: 39_265,
     invoices: [{ id: "q", title: "Patio", status: "DRAFT", dueCents: 0, quote: true, teamMemberId: null }],
   }),
-  "Follow up · Patio",
+  "Tip: follow up on the Patio quote",
 );
 assert.equal(suggestMove({ hour: 16, collectedCents: 200_000, breakEvenCents: 39_265, invoices: [] }), null);
 assert.equal(ownLoginPct(3, 2), 67);
@@ -201,7 +201,7 @@ const thursday = atChicago("2026-10-15", 16);
 book.addHours("ada", "Ada", 5 * hour, { now: thursday, lifetimeCollected: 0, lifetimeSettled: 0 });
 book.replaceInvoices([{ id: "inv", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: "ada" }]);
 book.sync({ now: thursday, lifetimeCollected: 24_000, lifetimeSettled: 18_000, saleCents: 24_000, ...quiet });
-assert.equal(book.opsView().nudge, "Chase $420 · Booth");
+assert.equal(book.opsView().nudge, "Tip: chase Booth invoice $420");
 book.sync({ now: thursday, lifetimeCollected: 50_000, lifetimeSettled: 18_000, saleCents: 26_000, ...quiet });
 assert.equal(book.opsView().level, 0);
 assert.equal(book.opsView().nudge, null);
@@ -242,7 +242,7 @@ assert.equal(book.payoutCsv().includes("Ada"), true);
 assert.equal(book.payoutCsv().includes("paid"), true);
 assert.throws(() => book.approvePayout("2026-09-28", 90), /not closed/);
 assert.equal(JSON.stringify(book.toPersist()).includes("scrypt$"), false);
-assert.equal(demoOps("morning").nudge, "Chase $420 · Booth");
+assert.equal(demoOps("morning").nudge, "Tip: chase Booth invoice $420");
 assert.equal(demoOps("cleared").nudge, null);
 
 console.log("ops ok");

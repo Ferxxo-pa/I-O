@@ -568,19 +568,6 @@ button {
   opacity: 0.4;
 }
 
-.menu-row span.streak small {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 6px;
-  color: var(--mute);
-  font-size: 11px;
-}
-
-.menu-row span.streak small .fire {
-  font-size: 11px;
-}
-
 .menu-actions {
   display: flex;
   justify-content: flex-end;
@@ -591,8 +578,15 @@ button {
 
 .menu-note {
   margin: 0 0 10px;
-  color: var(--mute);
+  color: var(--ink);
   font-size: 12px;
+}
+
+.menu-settings {
+  display: block;
+  margin: 2px 0 0 auto;
+  font-size: 11px;
+  color: var(--mute);
 }
 
 .menu-row.soft span:last-child {

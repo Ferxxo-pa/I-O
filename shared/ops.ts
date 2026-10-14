@@ -295,13 +295,21 @@ export function suggestMove(input: {
   const chase = input.invoices
     .filter((invoice) => !invoice.quote && invoice.dueCents > 0)
     .sort((a, b) => b.dueCents - a.dueCents)[0];
-  if (chase) return `Chase $${wholeDollars(chase.dueCents)} · ${shortTitle(chase.title, "Invoice")}`;
+  if (chase) {
+    const name = chase.title.trim();
+    const who = name && name !== "Invoice" ? name : "an open";
+    return `Tip: chase ${who} invoice $${wholeDollars(chase.dueCents)}`;
+  }
 
   const quote = input.invoices.find((invoice) => invoice.quote);
-  if (quote) return `Follow up · ${shortTitle(quote.title, "Quote")}`;
+  if (quote) {
+    const name = quote.title.trim();
+    const who = name && name !== "Quote" ? `the ${name}` : "an open";
+    return `Tip: follow up on ${who} quote`;
+  }
 
-  const left = Math.max(1, Math.ceil((input.breakEvenCents - input.collectedCents) / 100));
-  return `Behind pace · $${left.toLocaleString("en-US")} to go`;
+  const left = Math.max(1, Math.round((input.breakEvenCents - input.collectedCents) / 100));
+  return `Tip: $${left.toLocaleString("en-US")} more closes today`;
 }
 
 export function ownLoginPct(roster: number, linked: number): number | null {
