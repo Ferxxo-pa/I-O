@@ -85,22 +85,25 @@ button {
 
 .strip {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
-  min-height: 44px;
-  padding: 0 8px 8px 14px;
+  height: 44px;
+  padding: 2px 8px 6px 14px;
 }
 
 .balance-bar {
   position: absolute;
   left: 12px;
   right: 12px;
-  bottom: 6px;
+  top: 20px;
   z-index: 1;
   display: flex;
   height: 3px;
+  min-height: 3px;
+  max-height: 3px;
   border-radius: 99px;
   background: rgba(0, 0, 0, 0.06);
+  transform: none;
 }
 
 .balance-bar i {
@@ -207,10 +210,53 @@ button {
   transition: color 0.35s ease;
 }
 
+.fight-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  height: 34px;
+}
+
+.size-lock {
+  display: flex;
+  gap: 8px;
+  height: 0;
+  visibility: hidden;
+  min-width: max-content;
+  font-size: 14px;
+  font-weight: 560;
+  line-height: 14px;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fight-cta {
+  height: 16px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 560;
+  line-height: 16px;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.fight-cta.won {
+  color: #d6b03a;
+}
+
 .nums {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 4px;
+  height: 11px;
+  margin-top: 7px;
+  white-space: nowrap;
 }
 
 .actions {
@@ -227,7 +273,8 @@ button {
   font-variant-numeric: tabular-nums;
   font-weight: 560;
   letter-spacing: -0.03em;
-  font-size: 14px;
+  font-size: 9px;
+  line-height: 11px;
   color: var(--mute);
 }
 
@@ -280,59 +327,28 @@ button {
   background: #d6b03a;
 }
 
-.balance-bar.crit .in {
-  animation: crit-flash 0.6s ease;
+.print.tier-small,
+.print.tier-solid,
+.print.tier-big,
+.print.tier-crit {
+  transform-origin: center bottom;
 }
 
-@keyframes crit-flash {
-  0%,
-  100% {
-    filter: brightness(1);
-  }
-  40% {
-    filter: brightness(1.65);
-  }
-}
-
-.fight-cta {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 9px;
-  z-index: 2;
-  height: 9px;
-  overflow: hidden;
-  color: var(--mute);
-  font-size: 9px;
-  font-weight: 560;
-  line-height: 9px;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.fight-cta.won {
-  color: #d6b03a;
+.print.tier-small {
+  font-size: 16px;
 }
 
 .print.tier-solid {
-  font-size: 15px;
-}
-
-.print.tier-big {
-  font-size: 18px;
-}
-
-.print.tier-crit {
   font-size: 22px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .balance-bar.crit .in {
-    animation: none;
-  }
+.print.tier-big {
+  font-size: 30px;
+}
+
+.print.tier-crit {
+  font-size: 40px;
+  text-shadow: 0 10px 22px rgba(18, 196, 90, 0.35);
 }
 
 .plus {
@@ -363,7 +379,8 @@ button {
 
 .strip.collapsed {
   gap: 2px;
-  min-height: 32px;
+  height: 32px;
+  align-items: center;
   padding: 0 4px 0 12px;
 }
 
@@ -371,9 +388,10 @@ button {
   font-size: 12px;
 }
 
-.strip.with-panel .nums {
+.strip.with-panel .fight-stack {
   position: absolute;
   left: 50%;
+  top: 1px;
   transform: translateX(-50%);
 }
 
@@ -420,14 +438,14 @@ button {
 .tape {
   pointer-events: none;
   position: absolute;
-  right: 4px;
-  bottom: calc(100% + 28px);
+  left: 50%;
+  bottom: calc(100% + 16px);
+  z-index: 3;
   display: flex;
   flex-direction: column-reverse;
-  align-items: flex-end;
-  gap: 6px;
-  max-height: min(32vh, 180px);
-  overflow: hidden;
+  align-items: center;
+  width: max-content;
+  transform: translateX(-50%);
 }
 
 .print {

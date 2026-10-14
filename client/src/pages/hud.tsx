@@ -105,7 +105,6 @@ export default function Hud() {
   const [demoScene] = useState<DemoScene | null>(readDemo);
   const [pinOpen, setPinOpen] = useState(false);
   const [afterPin, setAfterPin] = useState<"clock" | "settings" | "change" | null>(null);
-  const [shake, setShake] = useState(false);
   const heard = useRef(new Set<string>());
   const wasCleared = useRef<boolean | null>(null);
   const demo = demoScene ? demoModel(demoScene) : null;
@@ -122,12 +121,7 @@ export default function Hud() {
       if (heard.current.has(event.id)) continue;
       heard.current.add(event.id);
       if (event.kind === "sale" && event.outputCents > 0) {
-        const tier = hitTier(event.outputCents);
-        ching(tier);
-        if (tier === "crit") {
-          setShake(true);
-          window.setTimeout(() => setShake(false), 600);
-        }
+        ching(hitTier(event.outputCents));
       }
     }
   }, [freshEvents, demo]);
@@ -135,9 +129,6 @@ export default function Hud() {
   useEffect(() => {
     if (demo?.scene !== "crit") return;
     ching("crit");
-    setShake(true);
-    const timer = window.setTimeout(() => setShake(false), 600);
-    return () => window.clearTimeout(timer);
   }, [demo?.scene]);
 
   const fight = demo?.view ?? state?.fight ?? null;
@@ -377,14 +368,18 @@ export default function Hud() {
             <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
           </button>
           {!collapsed && (
-            <span className="nums">
-              <span className="num up">+${money(moneyIn)}</span>
-              <span className="num down">−${money(moneyOut)}</span>
-            </span>
-          )}
-          {!collapsed && fight && (fight.cleared || fight.toBreakEvenCents > 0) && (
-            <span className={`fight-cta${fight.cleared ? " won" : ""}`}>
-              {fight.cleared ? `pot $${whole(fight.potCents)}` : toGo(fight.toBreakEvenCents)}
+            <span className="fight-stack">
+              <span className="size-lock" aria-hidden>
+                <span>+$0.00</span>
+                <span>−$0.00</span>
+              </span>
+              <span className={`fight-cta${fight?.cleared && live ? " won" : ""}`}>
+                {fight?.cleared ? `pot $${whole(fight.potCents)}` : fight && fight.toBreakEvenCents > 0 ? toGo(fight.toBreakEvenCents) : ""}
+              </span>
+              <span className="nums">
+                <span className="num up">+${money(moneyIn)}</span>
+                <span className="num down">−${money(moneyOut)}</span>
+              </span>
             </span>
           )}
           <span className="actions">
@@ -410,7 +405,7 @@ export default function Hud() {
             </button>
           </span>
           {!collapsed && (
-            <span className={`balance-bar${fight?.cleared && live ? " won" : ""}${shake ? " crit" : ""}`} aria-hidden>
+            <span className={`balance-bar${fight?.cleared && live ? " won" : ""}`} aria-hidden>
               {combined > 0 && (
                 <>
                   <i className="in" style={{ width: `${greenShare}%` }} />
@@ -1010,17 +1005,17 @@ function TapePrint({
   hold?: boolean;
 }) {
   const point = event.kind === "input";
-  const sale = event.kind === "sale";
+  const sale = event.kind === "sale" && event.outputCents > 0;
   const tier = sale ? hitTier(event.outputCents) : null;
-  const moneyHit = event.kind === "hour_print" || (sale && event.outputCents > 0);
-  const big = !tier && moneyHit && event.outputCents >= 2000;
+  const big = !tier && event.kind === "hour_print" && event.outputCents >= 2000;
+  const life = tier === "crit" ? 1900 : tier === "big" ? 1500 : tier === "solid" ? 1200 : tier === "small" ? 900 : big ? 1600 : point ? 1400 : 1200;
+  const peak = tier === "crit" ? 1.65 : tier === "big" ? 1.42 : tier === "solid" ? 1.28 : 1.12;
 
   useEffect(() => {
     if (hold) return;
-    const life = tier === "crit" ? 2800 : tier === "big" ? 2200 : big ? 2600 : point ? 1800 : 1400;
     const t = setTimeout(() => onDone(event.id), life);
     return () => clearTimeout(t);
-  }, [event.id, big, point, onDone, hold, tier]);
+  }, [event.id, onDone, hold, life]);
 
   const tone = event.kind === "hour_print" ? "down" : sale ? "up" : point
       ? event.inputType === "email"
@@ -1031,9 +1026,30 @@ function TapePrint({
       : "money";
   const text = point ? `+${event.inputUnits || 1}` : event.label;
 
+  if (tier) {
+    return (
+      <motion.div
+        className={`print up tier-${tier}`}
+        initial={{ opacity: 0, y: 14, scale: 0.35 }}
+        animate={
+          hold
+            ? { opacity: 1, y: -12, scale: peak }
+            : { opacity: [0, 1, 1, 0], y: [14, -8, -18, -40], scale: [0.35, peak, peak * 0.94, 0.8] }
+        }
+        transition={
+          hold
+            ? { duration: 0.72, ease: [0.16, 1, 0.3, 1] }
+            : { duration: life / 1000, times: [0, 0.16, 0.4, 1], ease: [0.16, 1, 0.3, 1] }
+        }
+      >
+        {text}
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
-      className={`print ${tone}${big ? " big" : ""}${tier ? ` tier-${tier}` : ""}`}
+      className={`print ${tone}${big ? " big" : ""}`}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
