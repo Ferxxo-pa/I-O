@@ -24,10 +24,7 @@ import {
   payoutCsv,
   sameScope,
   scopeKey,
-  suggestMove,
-  suggestQuest,
   summarizeWeek,
-  type ChaseInvoice,
   type DayPot,
   type LevelRules,
   type LevelStep,
@@ -74,7 +71,6 @@ export type FightPersist = {
   lastWeekScope: string | null;
   weekStreak: number;
   webhookSeenAt: number | null;
-  invoices: ChaseInvoice[];
 };
 
 export type FightSync = {
@@ -121,7 +117,6 @@ function blank(): FightPersist {
     lastWeekScope: null,
     weekStreak: 0,
     webhookSeenAt: null,
-    invoices: [],
   };
 }
 
@@ -189,25 +184,6 @@ export class FightBook {
     this.touch();
   }
 
-  invoices(): ChaseInvoice[] {
-    return this.data.invoices.map((row) => ({ ...row }));
-  }
-
-  replaceInvoices(list: ChaseInvoice[]) {
-    const next = list.slice(0, 40).map(cleanInvoice);
-    if (JSON.stringify(next) === JSON.stringify(this.data.invoices)) return;
-    this.data.invoices = next;
-    this.touch();
-  }
-
-  mergeInvoice(invoice: ChaseInvoice) {
-    const cleaned = cleanInvoice(invoice);
-    const rest = this.data.invoices.filter((row) => row.id !== cleaned.id);
-    const keep = cleaned.quote || cleaned.dueCents > 0;
-    this.data.invoices = (keep ? [cleaned, ...rest] : rest).slice(0, 40);
-    this.touch();
-  }
-
   toPersist(): FightPersist {
     return {
       settings: { ...this.data.settings, openWeekdays: [...this.data.settings.openWeekdays] },
@@ -235,7 +211,6 @@ export class FightBook {
       lastWeekScope: this.data.lastWeekScope,
       weekStreak: this.data.weekStreak,
       webhookSeenAt: this.data.webhookSeenAt,
-      invoices: this.data.invoices.map((row) => ({ ...row })),
     };
   }
 
@@ -273,7 +248,6 @@ export class FightBook {
           shares: row.shares.map((share) => ({ ...share })),
         })),
         resolvedWeeks: next.resolvedWeeks?.slice() ?? [],
-        invoices: (next.invoices ?? []).map((row) => ({ ...row })),
       };
     } finally {
       this.silent = false;
@@ -364,16 +338,6 @@ export class FightBook {
         .sort((a, b) => b.weekStart.localeCompare(a.weekStart))[0] ?? null;
     const liveTarget = this.live ? this.target(this.live.date, this.live.wages) : 0;
     const todayCleared = Boolean(this.live && liveTarget > 0 && this.live.collected >= liveTarget);
-    const chase = this.live
-      ? {
-          hour: zonedParts(this.live.now, SHOP_ZONE).hour,
-          collectedCents: this.live.collected,
-          breakEvenCents: liveTarget,
-          invoices: this.data.invoices,
-        }
-      : null;
-    const nudge = chase ? suggestMove(chase) : null;
-    const quest = chase ? suggestQuest(chase) : null;
     const pips = buildWeekPips({
       today,
       openWeekdays: this.data.settings.openWeekdays,
@@ -405,8 +369,6 @@ export class FightBook {
       payout: payout
         ? { ...payout, shares: payout.shares.map((share) => ({ ...share })) }
         : null,
-      nudge,
-      quest,
       pips,
     };
   }
@@ -649,17 +611,6 @@ function toDayPot(day: ClosedDay): DayPot {
     potCents: day.potCents,
     payoutPotCents: day.payoutPotCents,
     hours: day.hours.map((row) => ({ id: row.personId, name: row.name, ms: row.ms })),
-  };
-}
-
-function cleanInvoice(invoice: ChaseInvoice): ChaseInvoice {
-  return {
-    id: invoice.id.slice(0, 80),
-    title: invoice.title.trim().slice(0, 80) || (invoice.quote ? "Quote" : "Invoice"),
-    status: invoice.status.slice(0, 40),
-    dueCents: Math.max(0, Math.round(invoice.dueCents)),
-    quote: invoice.quote,
-    teamMemberId: invoice.teamMemberId ? invoice.teamMemberId.slice(0, 80) : null,
   };
 }
 

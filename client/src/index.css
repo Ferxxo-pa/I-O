@@ -736,40 +736,6 @@ button {
   transform: rotate(-32deg);
 }
 
-.menu.game .quest {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  margin-top: 12px;
-  padding: 8px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 99px;
-  background: rgba(255, 255, 255, 0.55);
-  color: var(--ink);
-  font-size: 12px;
-  text-align: left;
-}
-
-.menu.game .quest .label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.menu.game .quest .gain {
-  margin-left: auto;
-  color: #12c45a;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.menu.game .quest.done .label {
-  color: var(--mute);
-  text-decoration: line-through;
-}
-
 .menu.game .err {
   margin-top: 8px;
 }

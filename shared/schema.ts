@@ -112,7 +112,7 @@ export const appStateSchema = z.object({
   you: viewerSchema,
   /** Today's fight-the-bar snapshot. No secrets. */
   fight: fightViewSchema,
-  /** Levels, week target, pot payout, and the late-day nudge. The strip does not read this. */
+  /** Levels, week target, and pot payout. The strip does not read this. */
   ops: opsViewSchema,
 });
 export type AppState = z.infer<typeof appStateSchema>;

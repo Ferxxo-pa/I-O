@@ -19,15 +19,8 @@ export function healthReport(): HealthReport {
   const rated = people.filter((person) => person.hourlyCents > 0).length;
   const linkedIds = new Set(earnEngine.linkedPersonIds());
   const linked = people.filter((person) => linkedIds.has(person.id)).length;
-  const invoices = fightBook.invoices();
-  const attributed = invoices.filter((invoice) => invoice.teamMemberId).length;
-  const fromInvoices = invoices.length > 0 && attributed > 0;
-  const pct = fromInvoices ? ownLoginPct(invoices.length, attributed) : ownLoginPct(roster, linked);
-  const ownLoginDetail = fromInvoices
-    ? `${attributed} of ${invoices.length} · ${pct}%`
-    : pct == null
-      ? "Add the team"
-      : `${linked} of ${roster} · ${pct}%`;
+  const pct = ownLoginPct(roster, linked);
+  const ownLoginDetail = pct == null ? "Add the team" : `${linked} of ${roster} · ${pct}%`;
 
   const square = squareConfigured();
   const ratesOk = square

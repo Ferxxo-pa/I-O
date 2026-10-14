@@ -1,5 +1,3 @@
-import type { ChaseInvoice } from "@shared/ops";
-
 export type SquareMoney = { amount?: number; currency?: string };
 
 export type JobAssignment = {
@@ -131,22 +129,4 @@ export function snapshotFromWebhook(body: unknown): InvoiceSnapshot | null {
     body as { data?: { object?: { invoice?: unknown } } }
   ).data?.object?.invoice;
   return snapshotFromInvoice(invoice);
-}
-
-const CLOSED = new Set(["PAID", "CANCELED", "CANCELLED", "REFUNDED", "FAILED"]);
-
-/** Open invoice or quote the nudge can mention. Paid invoices drop out. */
-export function chaseFromSnapshot(snapshot: InvoiceSnapshot): ChaseInvoice | null {
-  if (CLOSED.has(snapshot.status)) return null;
-  const quote = snapshot.status === "DRAFT" || snapshot.status === "SCHEDULED";
-  const dueCents = Math.max(0, snapshot.dueCents ?? 0);
-  if (!quote && dueCents <= 0) return null;
-  return {
-    id: snapshot.id,
-    title: snapshot.title?.trim() || (quote ? "Quote" : "Invoice"),
-    status: snapshot.status,
-    dueCents,
-    quote,
-    teamMemberId: snapshot.teamMemberId ?? null,
-  };
 }

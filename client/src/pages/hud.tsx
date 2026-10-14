@@ -192,8 +192,6 @@ function GameMenu({
   const ringRef = useRef<HTMLDivElement>(null);
   const heardSale = useRef<Set<string> | null>(null);
   const [bump, setBump] = useState(0);
-  const [questDone, setQuestDone] = useState(false);
-  const [xp, setXp] = useState(false);
   const prevLevel = useRef(ops?.level ?? 0);
   const [chestPop, setChestPop] = useState(false);
 
@@ -314,23 +312,6 @@ function GameMenu({
             ))}
           </span>
         </div>
-      )}
-      {ops?.quest && (
-        <button
-          type="button"
-          className={`quest${questDone ? " done" : ""}`}
-          onClick={() => {
-            if (questDone) return;
-            setQuestDone(true);
-            window.setTimeout(() => setXp(true), 320);
-          }}
-        >
-          <span aria-hidden>⚡</span>
-          <span className="label">{ops.quest.label}</span>
-          <span className="gain">
-            {xp ? "+XP" : ops.quest.cents > 0 ? `+$${whole(ops.quest.cents)}` : ""}
-          </span>
-        </button>
       )}
       {ops && (
         <div className="raise">

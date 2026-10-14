@@ -264,129 +264,6 @@ export function payoutCsv(payouts: Payout[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-export type ChaseInvoice = {
-  id: string;
-  title: string;
-  status: string;
-  dueCents: number;
-  quote: boolean;
-  teamMemberId: string | null;
-};
-
-function shortTitle(title: string, fallback: string): string {
-  const text = title.trim() || fallback;
-  return text.length > 22 ? `${text.slice(0, 21)}…` : text;
-}
-
-function wholeDollars(cents: number): string {
-  return Math.max(0, Math.round(cents / 100)).toLocaleString("en-US");
-}
-
-/**
- * One line when the day is behind a straight pace from open to close.
- * Late means the shop hour is at or after `lateHour`.
- */
-export function suggestMove(input: {
-  hour: number;
-  collectedCents: number;
-  breakEvenCents: number;
-  invoices: ChaseInvoice[];
-  openHour?: number;
-  closeHour?: number;
-  lateHour?: number;
-}): string | null {
-  const openHour = input.openHour ?? 8;
-  const closeHour = input.closeHour ?? 17;
-  const lateHour = input.lateHour ?? 15;
-  if (input.hour < lateHour) return null;
-  if (input.breakEvenCents <= 0) return null;
-  if (input.collectedCents >= input.breakEvenCents) return null;
-  const span = Math.max(1, closeHour - openHour);
-  const progress = Math.min(1, Math.max(0, (input.hour - openHour) / span));
-  const expected = input.breakEvenCents * progress;
-  if (input.collectedCents >= expected) return null;
-
-  const chase = input.invoices
-    .filter((invoice) => !invoice.quote && invoice.dueCents > 0)
-    .sort((a, b) => b.dueCents - a.dueCents)[0];
-  if (chase) {
-    const name = chase.title.trim();
-    const who = name && name !== "Invoice" ? name : "an open";
-    return `Tip: chase ${who} invoice $${wholeDollars(chase.dueCents)}`;
-  }
-
-  const quote = input.invoices.find((invoice) => invoice.quote);
-  if (quote) {
-    const name = quote.title.trim();
-    const who = name && name !== "Quote" ? `the ${name}` : "an open";
-    return `Tip: follow up on ${who} quote`;
-  }
-
-  const left = Math.max(1, Math.round((input.breakEvenCents - input.collectedCents) / 100));
-  return `Tip: $${left.toLocaleString("en-US")} more closes today`;
-}
-
-export type Quest = {
-  id: string;
-  label: string;
-  cents: number;
-};
-
-function firstWord(title: string, fallback: string): string {
-  const word = title.trim().split(/\s+/).filter(Boolean)[0];
-  return word && word.length <= 16 ? word : fallback;
-}
-
-/**
- * One quest when the day is behind a straight pace. Labels stay within four words
- * and never name a teammate.
- */
-export function suggestQuest(input: {
-  hour: number;
-  collectedCents: number;
-  breakEvenCents: number;
-  invoices: ChaseInvoice[];
-  openHour?: number;
-  closeHour?: number;
-  lateHour?: number;
-}): Quest | null {
-  const openHour = input.openHour ?? 8;
-  const closeHour = input.closeHour ?? 17;
-  const lateHour = input.lateHour ?? 15;
-  if (input.hour < lateHour) return null;
-  if (input.breakEvenCents <= 0) return null;
-  if (input.collectedCents >= input.breakEvenCents) return null;
-  const span = Math.max(1, closeHour - openHour);
-  const progress = Math.min(1, Math.max(0, (input.hour - openHour) / span));
-  if (input.collectedCents >= input.breakEvenCents * progress) return null;
-
-  const chase = input.invoices
-    .filter((invoice) => !invoice.quote && invoice.dueCents > 0)
-    .sort((a, b) => b.dueCents - a.dueCents)[0];
-  if (chase) {
-    return {
-      id: chase.id,
-      label: `Chase ${firstWord(chase.title, "open")} invoice`,
-      cents: chase.dueCents,
-    };
-  }
-
-  const quote = input.invoices.find((invoice) => invoice.quote);
-  if (quote) {
-    return {
-      id: quote.id,
-      label: `Follow ${firstWord(quote.title, "open")} quote`,
-      cents: Math.max(0, quote.dueCents),
-    };
-  }
-
-  return {
-    id: "close-today",
-    label: "Sell one more",
-    cents: Math.max(0, input.breakEvenCents - input.collectedCents),
-  };
-}
-
 export type PipState = "hit" | "miss" | "today" | "ahead" | "off";
 
 export type DayPip = {
@@ -540,14 +417,6 @@ export const opsViewSchema = z.object({
     shares: z.array(weekShareSchema),
   }),
   payout: payoutSchema.nullable(),
-  nudge: z.string().nullable(),
-  quest: z
-    .object({
-      id: z.string(),
-      label: z.string(),
-      cents: z.number().int(),
-    })
-    .nullable(),
   pips: z.array(
     z.object({
       date: z.string(),
@@ -585,17 +454,6 @@ export function demoOps(scene: "morning" | "crit" | "cleared" | "idle"): OpsView
     DEFAULT_FIGHT_SETTINGS,
   );
   const reward = levelReward(1, DEFAULT_LEVEL_RULES);
-  const chaseInput = {
-    hour: scene === "cleared" ? 11 : 16,
-    collectedCents: collected,
-    breakEvenCents: scene === "cleared" ? 78_550 : scene === "crit" ? 400_000 : 39_265,
-    invoices: [
-      { id: "inv_booth", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: "ada" },
-      { id: "inv_patio", title: "Patio", status: "DRAFT", dueCents: 0, quote: true, teamMemberId: null },
-    ],
-  };
-  const nudge = suggestMove(chaseInput);
-  const quest = suggestQuest(chaseInput);
   const todayCleared = scene === "cleared";
   const pips = buildWeekPips({
     today: "2026-10-14",
@@ -636,8 +494,6 @@ export function demoOps(scene: "morning" | "crit" | "cleared" | "idle"): OpsView
       status: scene === "cleared" ? "paid" : "open",
       approvedAt: scene === "cleared" ? Date.UTC(2026, 9, 12, 18, 0, 0) : null,
     },
-    nudge,
-    quest,
     pips,
   };
 }

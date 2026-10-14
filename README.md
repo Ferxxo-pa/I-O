@@ -61,8 +61,8 @@ Do these before you leave it on the counter:
 4. Point Square webhooks at `POST /api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Set `SQUARE_WEBHOOK_SIGNATURE_KEY` and `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL. Ready stays open until a signed delivery arrives.
 5. Create the company, set the shop PIN, and set each person's hourly rate. When Square is connected, Square keeps the rates. This app never writes wages back.
 6. Put rent into **Fixed / month**, then check **Rent included**.
-7. Each person clocks in under their own name. **Own login** is the share of the roster that has clocked, or the share of open invoices that name a team member when Square sends one.
-8. Open **+**. Levels, the week target, and the pot summary live there. A late day that is behind pace shows one line, such as an unpaid invoice to chase.
+7. Each person clocks in under their own name. **Own login** is the share of the roster that has clocked.
+8. Open **+**. It shows today's ring, the streak, and the level line. Levels, the pot, and the checklist live in Settings.
 9. On Monday, **Payout** shows last week's Mon–Fri pot, split by timecard hours. Approve it with the shop PIN, then export CSV. Approving only marks it paid here.
 
 `npm test` and `npm run check` should pass before you leave it running.

@@ -120,19 +120,6 @@ const fileSchema = z.object({
       lastWeekScope: z.string().nullable().default(null),
       weekStreak: z.number().int().min(0).max(100_000).default(0),
       webhookSeenAt: z.number().int().nullable().default(null),
-      invoices: z
-        .array(
-          z.object({
-            id: z.string().max(80),
-            title: z.string().max(80),
-            status: z.string().max(40),
-            dueCents: z.number().int().nonnegative(),
-            quote: z.boolean(),
-            teamMemberId: z.string().max(80).nullable(),
-          }),
-        )
-        .max(40)
-        .default([]),
     })
     .optional(),
 });

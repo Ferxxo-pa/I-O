@@ -13,8 +13,6 @@ import {
   payoutCsv,
   readiness,
   splitPotWithHours,
-  suggestMove,
-  suggestQuest,
   summarizeWeek,
   weeklyBreakEven,
   weekWonFriday,
@@ -150,46 +148,6 @@ assert.equal(csv.includes("42.50"), true);
 assert.equal(csv.includes("paid"), true);
 assert.equal(csv.includes("other"), false);
 
-assert.equal(suggestMove({ hour: 14, collectedCents: 1_000, breakEvenCents: 39_265, invoices: [] }), null);
-assert.equal(
-  suggestMove({
-    hour: 16,
-    collectedCents: 24_000,
-    breakEvenCents: 39_265,
-    invoices: [{ id: "inv", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: null }],
-  }),
-  "Tip: chase Booth invoice $420",
-);
-assert.equal(
-  suggestMove({
-    hour: 16,
-    collectedCents: 24_000,
-    breakEvenCents: 39_265,
-    invoices: [{ id: "q", title: "Patio", status: "DRAFT", dueCents: 0, quote: true, teamMemberId: null }],
-  }),
-  "Tip: follow up on the Patio quote",
-);
-assert.equal(suggestMove({ hour: 16, collectedCents: 200_000, breakEvenCents: 39_265, invoices: [] }), null);
-const questChase = suggestQuest({
-  hour: 16,
-  collectedCents: 24_000,
-  breakEvenCents: 39_265,
-  invoices: [{ id: "inv", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: null }],
-});
-assert.equal(questChase?.label, "Chase Booth invoice");
-assert.equal(questChase?.cents, 42_000);
-assert.ok((questChase?.label.split(/\s+/).length ?? 9) <= 4);
-const questQuote = suggestQuest({
-  hour: 16,
-  collectedCents: 24_000,
-  breakEvenCents: 39_265,
-  invoices: [{ id: "q", title: "Patio", status: "DRAFT", dueCents: 0, quote: true, teamMemberId: null }],
-});
-assert.equal(questQuote?.label, "Follow Patio quote");
-assert.ok((questQuote?.label.split(/\s+/).length ?? 9) <= 4);
-const questSell = suggestQuest({ hour: 16, collectedCents: 24_000, breakEvenCents: 39_265, invoices: [] });
-assert.equal(questSell?.label, "Sell one more");
-assert.equal(suggestQuest({ hour: 14, collectedCents: 1_000, breakEvenCents: 39_265, invoices: [] }), null);
 const pips = buildWeekPips({
   today: "2026-10-14",
   openWeekdays: DEFAULT_FIGHT_SETTINGS.openWeekdays,
@@ -253,17 +211,12 @@ book.updateLevelRules({
 });
 const thursday = atChicago("2026-10-15", 16);
 book.addHours("ada", "Ada", 5 * hour, { now: thursday, lifetimeCollected: 0, lifetimeSettled: 0 });
-book.replaceInvoices([{ id: "inv", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: "ada" }]);
 book.sync({ now: thursday, lifetimeCollected: 24_000, lifetimeSettled: 18_000, saleCents: 24_000, ...quiet });
-assert.equal(book.opsView().nudge, "Tip: chase Booth invoice $420");
-assert.equal(book.opsView().quest?.label, "Chase Booth invoice");
 assert.equal(book.opsView().pips.length, 7);
 assert.equal(book.opsView().pips.find((pip) => pip.date === "2026-10-15")?.state, "today");
 assert.equal(book.opsView().pips.find((pip) => pip.date === "2026-10-15")?.filled, false);
 book.sync({ now: thursday, lifetimeCollected: 50_000, lifetimeSettled: 18_000, saleCents: 26_000, ...quiet });
 assert.equal(book.opsView().level, 0);
-assert.equal(book.opsView().nudge, null);
-assert.equal(book.opsView().quest, null);
 assert.equal(book.opsView().pips.find((pip) => pip.date === "2026-10-15")?.filled, true);
 
 const friday = atChicago("2026-10-16", 16);
@@ -302,12 +255,9 @@ assert.equal(book.payoutCsv().includes("Ada"), true);
 assert.equal(book.payoutCsv().includes("paid"), true);
 assert.throws(() => book.approvePayout("2026-09-28", 90), /not closed/);
 assert.equal(JSON.stringify(book.toPersist()).includes("scrypt$"), false);
-assert.equal(demoOps("morning").nudge, "Tip: chase Booth invoice $420");
-assert.equal(demoOps("morning").quest?.label, "Chase Booth invoice");
-assert.equal(demoOps("morning").quest?.cents, 42_000);
 assert.equal(demoOps("morning").pips.filter((pip) => pip.filled).length, 2);
-assert.equal(demoOps("cleared").nudge, null);
-assert.equal(demoOps("cleared").quest, null);
 assert.equal(demoOps("cleared").pips.find((pip) => pip.state === "today")?.filled, true);
+assert.equal("quest" in demoOps("morning"), false);
+assert.equal("nudge" in demoOps("morning"), false);
 
 console.log("ops ok");

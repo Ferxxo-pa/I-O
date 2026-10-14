@@ -1,11 +1,9 @@
 import { earnEngine } from "../clock/engine";
-import { fightBook } from "../fight/book";
 import { log } from "../vite";
 import { squareConfigured, squareFetch } from "./client";
 import { listOpenTimecards } from "./labor";
 import { squareLocationId } from "./location";
 import {
-  chaseFromSnapshot,
   hourlyRateCents,
   snapshotFromInvoice,
   snapshotFromWebhook,
@@ -81,17 +79,6 @@ export async function squarePayRoster(): Promise<
 export function applySquareWebhook(body: unknown): { sale: boolean; points: boolean } {
   const snapshot = snapshotFromWebhook(body);
   if (!snapshot) return { sale: false, points: false };
-  const chase = chaseFromSnapshot(snapshot);
-  fightBook.mergeInvoice(
-    chase ?? {
-      id: snapshot.id,
-      title: snapshot.title || "Invoice",
-      status: snapshot.status,
-      dueCents: 0,
-      quote: false,
-      teamMemberId: snapshot.teamMemberId ?? null,
-    },
-  );
   return earnEngine.ingestSquareInvoice(snapshot);
 }
 
@@ -166,16 +153,12 @@ async function syncInvoices() {
   });
 
   const bootstrapping = !earnEngine.isSquareBootstrapped();
-  const open = [];
   for (const raw of body.invoices ?? []) {
     const snapshot = snapshotFromInvoice(raw);
     if (!snapshot) continue;
     if (bootstrapping) earnEngine.markSquareInvoiceSeen(snapshot);
     else earnEngine.ingestSquareInvoice(snapshot);
-    const chase = chaseFromSnapshot(snapshot);
-    if (chase) open.push(chase);
   }
-  fightBook.replaceInvoices(open);
   if (bootstrapping) earnEngine.markSquareBootstrapped();
 }
 
