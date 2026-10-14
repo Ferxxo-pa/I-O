@@ -1,7 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { WHO_ID, useIoState } from "@/hooks/useEarnState";
-import { ching, unlockChing } from "@/lib/ching";
+import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
+import { ching, clearedChime, unlockChing } from "@/lib/ching";
+import {
+  DEFAULT_FIGHT_SETTINGS,
+  demoModel,
+  hitTier,
+  saleTapeLabel,
+  type DemoScene,
+  type FightSettings,
+} from "@shared/fight";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -15,6 +23,8 @@ function ownerHeaders(): Record<string, string> {
   const key = localStorage.getItem(OWNER_STORE);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (key) headers["x-owner-key"] = key;
+  const pin = sessionStorage.getItem(PIN_KEY);
+  if (pin) headers["x-shop-pin"] = pin;
   return headers;
 }
 
@@ -39,6 +49,30 @@ function threeColors(): string[] {
   return picked;
 }
 
+function compact(cents: number): string {
+  const n = cents / 100;
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function readDemo(): DemoScene | null {
+  const value = new URLSearchParams(window.location.search).get("demo");
+  if (value === "morning" || value === "crit" || value === "cleared" || value === "idle") return value;
+  return null;
+}
+
+const OPEN_DAYS: Array<[number, string, string]> = [
+  [1, "M", "Monday"],
+  [2, "T", "Tuesday"],
+  [3, "W", "Wednesday"],
+  [4, "T", "Thursday"],
+  [5, "F", "Friday"],
+  [6, "S", "Saturday"],
+  [0, "S", "Sunday"],
+];
+
 function rateText(cents: number): string {
   const dollars = cents / 100;
   if (Number.isInteger(dollars)) return String(dollars);
@@ -59,7 +93,14 @@ export default function Hud() {
   const [chips, setChips] = useState(threeColors);
   const [company, setCompany] = useState<CompanyView | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [demoScene, setDemoScene] = useState<DemoScene | null>(readDemo);
+  const [pinOpen, setPinOpen] = useState(false);
+  const [afterPin, setAfterPin] = useState<"clock" | "settings" | "change" | null>(null);
+  const [shake, setShake] = useState(false);
+  const [burst, setBurst] = useState(false);
   const heard = useRef(new Set<string>());
+  const wasCleared = useRef<boolean | null>(null);
+  const demo = demoScene ? demoModel(demoScene) : null;
 
   useEffect(() => {
     const unlock = () => unlockChing();
@@ -68,16 +109,62 @@ export default function Hud() {
   }, []);
 
   useEffect(() => {
+    if (demo) return;
     for (const event of freshEvents) {
       if (heard.current.has(event.id)) continue;
       heard.current.add(event.id);
-      if (event.kind === "sale" && event.outputCents > 0) ching();
+      if (event.kind === "sale" && event.outputCents > 0) {
+        const tier = hitTier(event.outputCents);
+        ching(tier);
+        if (tier === "crit") {
+          setShake(true);
+          window.setTimeout(() => setShake(false), 600);
+        }
+      }
     }
-  }, [freshEvents]);
+  }, [freshEvents, demo]);
 
-  const live = state?.session.clockedIn ?? false;
-  const moneyOut = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
-  const moneyIn = state?.session.collectedCents ?? 0;
+  useEffect(() => {
+    if (demo?.scene !== "crit") return;
+    ching("crit");
+    setShake(true);
+    const timer = window.setTimeout(() => setShake(false), 600);
+    return () => window.clearTimeout(timer);
+  }, [demo?.scene]);
+
+  const fight = demo?.view ?? state?.fight ?? null;
+  const pinSet = state?.fight.pinSet ?? false;
+
+  useEffect(() => {
+    if (demo) return;
+    if (!fight?.cleared) {
+      wasCleared.current = fight ? false : wasCleared.current;
+      return;
+    }
+    if (wasCleared.current !== false) {
+      wasCleared.current = true;
+      return;
+    }
+    wasCleared.current = true;
+    const key = `io.cleared.${fight.date}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    setBurst(true);
+    clearedChime();
+    const timer = window.setTimeout(() => setBurst(false), 2200);
+    return () => window.clearTimeout(timer);
+  }, [demo, fight]);
+
+  useEffect(() => {
+    if (error === "Wrong PIN" || error === "Too many tries") {
+      clearShopPin();
+      setPinOpen(true);
+    }
+  }, [error]);
+
+  const live = demo ? demo.clockedIn : (state?.session.clockedIn ?? false);
+  const moneyOut = fight ? fight.todayWageCents : (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
+  const moneyIn = fight ? fight.todayCollectedCents : (state?.session.collectedCents ?? 0);
   const points = state?.session.inputUnits ?? 0;
   const combined = moneyIn + moneyOut;
   const barFloor = 16;
@@ -95,7 +182,19 @@ export default function Hud() {
       redShare = 100 - greenShare;
     }
   }
-  const wide = (menu || settings || change || whoOpen) && !collapsed;
+  const wide = (menu || settings || change || whoOpen || pinOpen) && !collapsed;
+  const showBurst = demo?.scene === "cleared" || burst;
+  const demoHit = useMemo<PrintEvent | null>(() => {
+    if (!demo?.hitCents) return null;
+    return {
+      id: `demo-${demo.scene}`,
+      kind: "sale",
+      outputCents: demo.hitCents,
+      inputUnits: 0,
+      label: saleTapeLabel(demo.hitCents),
+      createdAt: 0,
+    };
+  }, [demo]);
 
   useEffect(() => {
     if (!live) return;
@@ -154,6 +253,24 @@ export default function Hud() {
     takeCompany(next);
   };
 
+  const saveFight = async (path: string, body: unknown) => {
+    setSettingsError(null);
+    const res = await fetch(path, {
+      method: path.endsWith("/pin") ? "POST" : "PATCH",
+      headers: ownerHeaders(),
+      body: JSON.stringify(body),
+    });
+    const next = (await res.json()) as { message?: string };
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 429) clearShopPin();
+      throw new Error(next.message || "Couldn't save that");
+    }
+    if (path.endsWith("/pin") && body && typeof body === "object" && "pin" in body) {
+      setShopPin(String((body as { pin: string }).pin));
+    }
+    await refresh();
+  };
+
   const openWho = async (mode: "clock" | "link") => {
     setMenu(false);
     setSettings(false);
@@ -175,16 +292,63 @@ export default function Hud() {
     localStorage.setItem(WHO_NAME, person.name);
     setYouName(person.name);
     setWhoOpen(false);
-    if (whoMode === "clock") clockIn();
-    else void refresh();
+    if (whoMode === "clock") {
+      if (demo) return;
+      if (!guard("clock")) return;
+      clockIn();
+    } else void refresh();
+  };
+
+  const guard = (next: "clock" | "settings" | "change") => {
+    if (demo && next === "clock") return false;
+    if (!pinSet) {
+      if (next === "clock") {
+        setSettings(true);
+        setSettingsError("Set a shop PIN first");
+        return false;
+      }
+      return true;
+    }
+    if (!shopPin()) {
+      setAfterPin(next);
+      setPinOpen(true);
+      setMenu(false);
+      return false;
+    }
+    return true;
+  };
+
+  const finishPin = (pin: string) => {
+    setShopPin(pin);
+    setPinOpen(false);
+    const next = afterPin;
+    setAfterPin(null);
+    if (next === "settings") setSettings(true);
+    else if (next === "change") setChange(true);
+    else if (next === "clock") {
+      if (live) clockOut();
+      else clockIn();
+    }
+  };
+
+  const showDemo = (scene: DemoScene | null) => {
+    const params = new URLSearchParams(window.location.search);
+    if (scene) params.set("demo", scene);
+    else params.delete("demo");
+    const rest = params.toString();
+    window.history.replaceState({}, "", rest ? `/?${rest}` : "/");
+    setDemoScene(scene);
+    setMenu(false);
   };
 
   const toggle = () => {
+    if (demo) return;
     if (pending || !state) return;
     if (!localStorage.getItem(WHO_ID)) {
       void openWho("clock");
       return;
     }
+    if (!guard("clock")) return;
     if (live) clockOut();
     else clockIn();
   };
@@ -192,10 +356,17 @@ export default function Hud() {
   return (
     <div className="stage">
       <div className="strip-anchor">
-        <PrintTape events={freshEvents} onDone={dismissTick} />
+        <PrintTape
+          events={demo ? (demoHit ? [demoHit] : []) : freshEvents}
+          onDone={dismissTick}
+          hold={Boolean(demo)}
+          burst={showBurst}
+        />
 
         <div
-          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
+          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}${shake ? " shake" : ""}`}
+          data-clock={live ? "in" : "out"}
+          data-fight={fight?.cleared && live ? "cleared" : "behind"}
         >
           <span className="chips" aria-hidden>
             {chips.map((color, index) => (
@@ -218,6 +389,28 @@ export default function Hud() {
               <span className="num down">−${money(moneyOut)}</span>
             </span>
           )}
+          {!collapsed && fight && (
+            <span className="fight-meta">
+              {demo && <span>Demo</span>}
+              {fight.cleared ? (
+                <>
+                  <span className="win-word">TARGET CLEARED</span>
+                  <span title={fight.shares.map((share) => `${share.name} $${compact(share.cents)}`).join(" · ")}>
+                    pot ${compact(fight.potCents)}
+                    {fight.shares.map((share) => ` · ${share.name.split(" ")[0]} $${compact(share.cents)}`).join("")}
+                  </span>
+                </>
+              ) : (
+                <span title={`Break-even $${compact(fight.breakEvenCents)}`}>
+                  ${compact(fight.toBreakEvenCents)} to break-even
+                </span>
+              )}
+              <span title="Open days cleared">{fight.streak}d</span>
+              <span>
+                avg {fight.avgSaleCents == null ? "—" : `$${compact(fight.avgSaleCents)}`}/${compact(fight.goalCents)}
+              </span>
+            </span>
+          )}
           <span className="actions">
             {!collapsed && (
               <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
@@ -233,6 +426,7 @@ export default function Hud() {
                 setSettings(false);
                 setChange(false);
                 setWhoOpen(false);
+                setPinOpen(false);
               }}
               aria-label={collapsed ? "Expand" : "Collapse"}
             >
@@ -240,12 +434,15 @@ export default function Hud() {
             </button>
           </span>
           {!collapsed && (
-            <span className="balance-bar" aria-hidden>
+            <span className={`balance-bar${fight?.cleared && live ? " won" : ""}${shake ? " crit" : ""}`} aria-hidden>
               {combined > 0 && (
                 <>
                   <i className="in" style={{ width: `${greenShare}%` }} />
                   <i className="out" style={{ width: `${redShare}%` }} />
                 </>
+              )}
+              {fight && fight.breakEvenCents > 0 && (
+                <span className="notch" style={{ left: `${fight.notchPct}%` }} />
               )}
             </span>
           )}
@@ -268,9 +465,10 @@ export default function Hud() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSettings(true);
                     setChange(false);
                     setMenu(false);
+                    if (!guard("settings")) return;
+                    setSettings(true);
                   }}
                 >
                   Settings
@@ -279,9 +477,10 @@ export default function Hud() {
                   <button
                     type="button"
                     onClick={() => {
-                      setChange(true);
                       setSettings(false);
                       setMenu(false);
+                      if (!guard("change")) return;
+                      setChange(true);
                     }}
                   >
                     Change
@@ -298,10 +497,22 @@ export default function Hud() {
             <SettingsPanel
               company={company}
               youName={youName}
-              live={live}
+              live={live && !demo}
+              settings={state?.fight.settings ?? null}
+              pinSet={pinSet}
+              demo={demoScene}
               error={settingsError}
               onLink={() => void openWho("link")}
               onClose={() => setSettings(false)}
+              onDemo={showDemo}
+              onFight={async (path, body) => {
+                try {
+                  await saveFight(path, body);
+                } catch (err) {
+                  setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
+                  throw err;
+                }
+              }}
               onSave={async (path, body) => {
                 try {
                   await saveCompany(path, body);
@@ -316,6 +527,15 @@ export default function Hud() {
 
         <AnimatePresence>
           {change && <ChangePanel onClose={() => setChange(false)} onCompany={takeCompany} />}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {pinOpen && (
+            <PinPanel
+              onClose={() => setPinOpen(false)}
+              onSubmit={finishPin}
+            />
+          )}
         </AnimatePresence>
 
         <AnimatePresence>
@@ -373,26 +593,94 @@ function WhoPanel({
   );
 }
 
+function PinPanel({ onClose, onSubmit }: { onClose: () => void; onSubmit: (pin: string) => void }) {
+  const [pin, setPin] = useState("");
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Shop PIN</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <form
+        className="ask"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!/^\d{4,8}$/.test(pin)) return;
+          onSubmit(pin);
+        }}
+      >
+        <input
+          value={pin}
+          onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+          placeholder="PIN"
+          aria-label="Shop PIN"
+          inputMode="numeric"
+          autoComplete="off"
+          type="password"
+          autoFocus
+        />
+      </form>
+    </motion.div>
+  );
+}
+
 function SettingsPanel({
   company,
   youName,
   live,
+  settings,
+  pinSet,
+  demo,
   error,
   onLink,
   onClose,
+  onDemo,
+  onFight,
   onSave,
 }: {
-  company: CompanyState | null;
+  company: CompanyView | null;
   youName: string | null;
   live: boolean;
+  settings: FightSettings | null;
+  pinSet: boolean;
+  demo: DemoScene | null;
   error: string | null;
   onLink: () => void;
   onClose: () => void;
+  onDemo: (scene: DemoScene | null) => void;
+  onFight: (path: string, body: unknown) => Promise<void>;
   onSave: (path: string, body: unknown) => Promise<void>;
 }) {
   const [mode, setMode] = useState<"join" | "create" | null>(null);
   const [draft, setDraft] = useState("");
+  const [pin, setPin] = useState("");
+  const [fixed, setFixed] = useState("");
+  const [materials, setMaterials] = useState("");
+  const [fee, setFee] = useState("");
+  const [pot, setPot] = useState("");
+  const [goal, setGoal] = useState("");
+  const [days, setDays] = useState<number[]>(DEFAULT_FIGHT_SETTINGS.openWeekdays);
+  const [ready, setReady] = useState(false);
   const invite = company?.code ? `${window.location.origin}/?join=${company.code}` : "";
+
+  useEffect(() => {
+    if (!settings || ready) return;
+    setFixed(String(settings.fixedMonthlyCents / 100));
+    setMaterials(String(settings.materialsBps / 100));
+    setFee(String(settings.feeBps / 100));
+    setPot(String(settings.potBps / 100));
+    setGoal(String(settings.avgGoalCents / 100));
+    setDays(settings.openWeekdays);
+    setReady(true);
+  }, [settings, ready]);
 
   const submit = (next: "join" | "create", value: string) => {
     const save =
@@ -471,6 +759,103 @@ function SettingsPanel({
           />
         </form>
       )}
+      <form
+        className="stack"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!pinSet) {
+            void onFight("/api/fight/pin", { pin });
+            return;
+          }
+          void onFight("/api/fight/settings", {
+            fixedMonthlyCents: Math.round(Number(fixed) * 100),
+            materialsBps: Math.round(Number(materials) * 100),
+            feeBps: Math.round(Number(fee) * 100),
+            openWeekdays: days,
+            potBps: Math.round(Number(pot) * 100),
+            avgGoalCents: Math.round(Number(goal) * 100),
+          });
+        }}
+      >
+        {!pinSet && company?.owner && (
+          <input
+            value={pin}
+            onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+            placeholder="Shop PIN"
+            aria-label="Shop PIN"
+            inputMode="numeric"
+            autoComplete="off"
+            type="password"
+          />
+        )}
+        {pinSet && (
+          <>
+            <label className="settings-line">
+              <span>Fixed / month</span>
+              <input value={fixed} onChange={(event) => setFixed(event.target.value)} inputMode="decimal" aria-label="Fixed costs per month" />
+            </label>
+            <label className="settings-line">
+              <span>Materials %</span>
+              <input value={materials} onChange={(event) => setMaterials(event.target.value)} inputMode="decimal" aria-label="Materials percent" />
+            </label>
+            <label className="settings-line">
+              <span>Fee %</span>
+              <input value={fee} onChange={(event) => setFee(event.target.value)} inputMode="decimal" aria-label="Fee percent" />
+            </label>
+            <label className="settings-line">
+              <span>Pot %</span>
+              <input value={pot} onChange={(event) => setPot(event.target.value)} inputMode="decimal" aria-label="Team pot percent" />
+            </label>
+            <label className="settings-line">
+              <span>Avg goal</span>
+              <input value={goal} onChange={(event) => setGoal(event.target.value)} inputMode="decimal" aria-label="Average sale goal" />
+            </label>
+          </>
+        )}
+        {(pinSet || company?.owner) && (
+          <button type="submit">{pinSet ? "Save" : "Set PIN"}</button>
+        )}
+      </form>
+      {!pinSet && company?.owner && <p className="pay-source">4 to 8 digits. Clock in asks for it.</p>}
+      {!pinSet && !company?.owner && <p className="pay-source">The owner sets the shop PIN on this computer.</p>}
+      {pinSet && <p className="pay-source">Fixed / month, materials %, fee %, pot %, avg goal. Rent not included.</p>}
+      {pinSet && (
+        <div className="settings-actions">
+          {OPEN_DAYS.map(([day, letter, name]) => (
+            <button
+              key={name}
+              type="button"
+              aria-label={name}
+              aria-pressed={days.includes(day)}
+              onClick={() =>
+                setDays((current) => {
+                  if (current.includes(day)) return current.length === 1 ? current : current.filter((item) => item !== day);
+                  return [...current, day];
+                })
+              }
+            >
+              {letter}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="settings-actions">
+        <button type="button" aria-pressed={demo === "morning"} onClick={() => onDemo("morning")}>
+          Morning
+        </button>
+        <button type="button" aria-pressed={demo === "crit"} onClick={() => onDemo("crit")}>
+          CRIT
+        </button>
+        <button type="button" aria-pressed={demo === "cleared"} onClick={() => onDemo("cleared")}>
+          Cleared
+        </button>
+        <button type="button" aria-pressed={demo === "idle"} onClick={() => onDemo("idle")}>
+          Gray
+        </button>
+        <button type="button" aria-pressed={demo === null} onClick={() => onDemo(null)}>
+          Live
+        </button>
+      </div>
       {error && <div className="err">{error}</div>}
     </motion.div>
   );
@@ -627,32 +1012,58 @@ function ChangePanel({
 function PrintTape({
   events,
   onDone,
+  hold = false,
+  burst = false,
 }: {
   events: PrintEvent[];
   onDone: (id: string) => void;
+  hold?: boolean;
+  burst?: boolean;
 }) {
   return (
     <div className="tape">
       <AnimatePresence>
+        {burst && (
+          <motion.div
+            key="target-cleared"
+            className="print cleared"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.16 }}
+          >
+            TARGET CLEARED
+          </motion.div>
+        )}
         {events.map((event) => (
-          <TapePrint key={event.id} event={event} onDone={onDone} />
+          <TapePrint key={event.id} event={event} onDone={onDone} hold={hold} />
         ))}
       </AnimatePresence>
     </div>
   );
 }
 
-function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) => void }) {
+function TapePrint({
+  event,
+  onDone,
+  hold = false,
+}: {
+  event: PrintEvent;
+  onDone: (id: string) => void;
+  hold?: boolean;
+}) {
   const point = event.kind === "input";
   const sale = event.kind === "sale";
+  const tier = sale ? hitTier(event.outputCents) : null;
   const moneyHit = event.kind === "hour_print" || (sale && event.outputCents > 0);
-  const big = moneyHit && event.outputCents >= 2000;
+  const big = !tier && moneyHit && event.outputCents >= 2000;
 
   useEffect(() => {
-    const life = big ? 2600 : point ? 1800 : 1400;
+    if (hold) return;
+    const life = tier === "crit" ? 2800 : tier === "big" ? 2200 : big ? 2600 : point ? 1800 : 1400;
     const t = setTimeout(() => onDone(event.id), life);
     return () => clearTimeout(t);
-  }, [event.id, big, point, onDone]);
+  }, [event.id, big, point, onDone, hold, tier]);
 
   const tone = event.kind === "hour_print" ? "down" : sale ? "up" : point
       ? event.inputType === "email"
@@ -665,7 +1076,7 @@ function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) 
 
   return (
     <motion.div
-      className={`print ${tone}${big ? " big" : ""}`}
+      className={`print ${tone}${big ? " big" : ""}${tier ? ` tier-${tier}` : ""}`}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}

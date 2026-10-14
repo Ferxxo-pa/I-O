@@ -5,8 +5,9 @@ import { join } from "node:path";
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "io-store-"));
 delete process.env.HOUR_DURATION_MS;
+delete process.env.SHOP_PIN;
 
-const { startPersistence, flushState } = await import("./persist.ts");
+const { startPersistence, flushState, parseSavedState } = await import("./persist.ts");
 const { earnEngine } = await import("./clock/engine.ts");
 const { createCompany, getCompany, hydrateCompany } = await import("./company.ts");
 
@@ -57,8 +58,16 @@ assert.equal(saved.shifts[0].personId, "ada");
 assert.equal(saved.shifts[0].clockedIn, true);
 assert.equal(saved.squareBootstrapped, true);
 assert.ok(saved.seen.includes("sale:inv_old"));
+assert.equal(saved.fight.pinHash, null);
+assert.equal(saved.fight.settings.fixedMonthlyCents, 290_000);
+assert.equal(JSON.stringify(saved).includes("scrypt$"), false);
+const legacy = { ...saved };
+delete legacy.fight;
+assert.equal(parseSavedState(legacy).company.name, "North");
 
 earnEngine.setBookListener(() => {});
+const { fightBook } = await import("./fight/book.ts");
+fightBook.setListener(() => {});
 const { setCompanyListener } = await import("./company.ts");
 setCompanyListener(() => {});
 earnEngine.reset();

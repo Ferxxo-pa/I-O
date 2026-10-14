@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fightViewSchema } from "./fight";
 
 /**
  * I/O — Input vs Output.
@@ -108,6 +109,8 @@ export const appStateSchema = z.object({
   serverNow: z.number(),
   /** The person this browser is linked to. The strip greys from their clock, not the company's. */
   you: viewerSchema,
+  /** Today's fight-the-bar snapshot. No secrets. */
+  fight: fightViewSchema,
 });
 export type AppState = z.infer<typeof appStateSchema>;
 

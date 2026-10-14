@@ -13,6 +13,8 @@ import {
 import type { InvoiceSnapshot } from "../square/parse";
 import { squareConfigured } from "../square/client";
 import { closeTimecard, openTimecard, type RemoteTimecard } from "../square/labor";
+import { fightBook } from "../fight/book";
+import { saleTapeLabel, type FightView } from "@shared/fight";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
 import { randomUUID } from "crypto";
 
@@ -134,6 +136,7 @@ export class EarnEngine {
 
   getState(viewerId: string | null = null): AppState {
     const t = now();
+    const fight = this.syncFight(t);
     const legacy = this.derive(t);
     const you = viewerId ? this.shifts.find((shift) => shift.personId === viewerId) : undefined;
     const accruedOutputCents =
@@ -165,6 +168,7 @@ export class EarnEngine {
         name: you?.name ?? null,
         clockedIn: viewerClockedIn,
       },
+      fight,
     };
   }
 
@@ -392,6 +396,7 @@ export class EarnEngine {
     this.session = { ...DEFAULT_SESSION };
     this.shifts = [];
     this.events = [];
+    fightBook.resetDay();
     this.touch();
     return this.getState();
   }
@@ -453,17 +458,18 @@ export class EarnEngine {
     const key = `sale:${id}`;
     if (this.seenExternal.has(key)) return false;
     this.remember(key);
+    const amount = Math.max(0, Math.round(cents));
     this.session = {
       ...this.session,
-      collectedCents: this.session.collectedCents + Math.max(0, cents),
+      collectedCents: this.session.collectedCents + amount,
     };
-    const label = signedLabel(cents);
+    this.syncFight(now(), amount);
     this.pushEvent(
       makeEvent({
         kind: "sale",
-        outputCents: cents,
+        outputCents: amount,
         inputUnits: 0,
-        label,
+        label: saleTapeLabel(amount),
       }),
     );
     return true;
@@ -496,6 +502,7 @@ export class EarnEngine {
 
   private printShiftHour(shift: PersonShift, at: number): PersonShift {
     const amount = shift.hourlyCents;
+    this.noteHours(shift.personId, shift.name, this.config.hourDurationMs, at);
     const next = { ...shift, outputCents: shift.outputCents + amount };
     this.pushEvent(
       makeEvent({
@@ -510,6 +517,10 @@ export class EarnEngine {
   }
 
   private settleShift(shift: PersonShift, at: number): PersonShift {
+    if (shift.hourSegmentStartedAt) {
+      const elapsed = Math.max(0, at - shift.hourSegmentStartedAt);
+      this.noteHours(shift.personId, shift.name, Math.min(elapsed, this.config.hourDurationMs), at);
+    }
     const accrued = this.shiftAccrual(shift, at);
     if (accrued <= 0) return shift;
     const next = { ...shift, outputCents: shift.outputCents + accrued };
@@ -574,6 +585,60 @@ export class EarnEngine {
         createdAt: at,
       }),
     );
+  }
+
+  private syncFight(at: number, saleCents?: number): FightView {
+    return fightBook.sync({
+      now: at,
+      lifetimeCollected: this.session.collectedCents,
+      lifetimeSettled: this.settledWages(),
+      saleCents,
+      accrualSince: (since) => this.accrualSince(since, at),
+      liveHoursSince: (since) => this.liveHoursSince(since, at),
+    });
+  }
+
+  private settledWages(): number {
+    return this.session.outputCents + this.shifts.reduce((sum, shift) => sum + shift.outputCents, 0);
+  }
+
+  /** Wages for the open hour, counting only time since `since`. Does not change what was printed. */
+  private accrualSince(since: number, at: number): number {
+    let total = 0;
+    if (this.session.clockedIn && this.session.hourSegmentStartedAt) {
+      total += this.partialWage(this.config.hourlyOutputCents, this.session.hourSegmentStartedAt, since, at);
+    }
+    for (const shift of this.shifts) {
+      if (!shift.clockedIn || !shift.hourSegmentStartedAt) continue;
+      total += this.partialWage(shift.hourlyCents, shift.hourSegmentStartedAt, since, at);
+    }
+    return total;
+  }
+
+  private partialWage(hourly: number, segmentStart: number, since: number, at: number): number {
+    const start = Math.max(segmentStart, since);
+    const elapsed = Math.max(0, at - start);
+    const ratio = Math.min(1, elapsed / this.config.hourDurationMs);
+    return Math.floor(hourly * ratio);
+  }
+
+  private liveHoursSince(since: number, at: number): Array<{ personId: string; name: string; ms: number }> {
+    const rows: Array<{ personId: string; name: string; ms: number }> = [];
+    for (const shift of this.shifts) {
+      if (!shift.clockedIn || !shift.hourSegmentStartedAt) continue;
+      const start = Math.max(shift.hourSegmentStartedAt, since);
+      const ms = Math.min(Math.max(0, at - start), this.config.hourDurationMs);
+      if (ms > 0) rows.push({ personId: shift.personId, name: shift.name, ms });
+    }
+    return rows;
+  }
+
+  private noteHours(personId: string, name: string, ms: number, at: number) {
+    fightBook.addHours(personId, name, ms, {
+      now: at,
+      lifetimeCollected: this.session.collectedCents,
+      lifetimeSettled: this.settledWages(),
+    });
   }
 
   private derive(t: number): {

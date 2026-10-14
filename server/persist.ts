@@ -9,8 +9,11 @@ import {
   squareLinkSchema,
   type CompanyState,
 } from "@shared/schema";
+import { fightSettingsSchema } from "@shared/fight";
+import { pinShape } from "./auth/pin";
 import { earnEngine } from "./clock/engine";
 import { getCompany, getOwnerKey, hydrateCompany, setCompanyListener } from "./company";
+import { fightBook } from "./fight/book";
 import { log } from "./vite";
 
 const fileSchema = z.object({
@@ -24,7 +27,34 @@ const fileSchema = z.object({
   square: squareLinkSchema,
   company: companyStateSchema,
   ownerKey: z.string().nullable().default(null),
+  fight: z
+    .object({
+      settings: fightSettingsSchema,
+      pinHash: z.string().max(200).nullable().default(null),
+      streak: z.number().int().min(0).max(100_000).default(0),
+      lastResolvedDate: z.string().nullable().default(null),
+      todayCounted: z.boolean().default(false),
+      anchorDate: z.string().nullable().default(null),
+      collectedAnchor: z.number().int().nonnegative().default(0),
+      wageAnchor: z.number().int().nonnegative().default(0),
+      sales: z.array(z.number().int().nonnegative()).max(500).default([]),
+      hours: z
+        .array(
+          z.object({
+            personId: z.string().max(80),
+            name: z.string().max(80),
+            ms: z.number().int().nonnegative(),
+          }),
+        )
+        .max(80)
+        .default([]),
+    })
+    .optional(),
 });
+
+export function parseSavedState(raw: unknown) {
+  return fileSchema.parse(raw);
+}
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let started = false;
@@ -39,7 +69,9 @@ export function startPersistence() {
   started = true;
   loadState();
   earnEngine.setBookListener(scheduleSave);
+  fightBook.setListener(scheduleSave);
   setCompanyListener(scheduleSave);
+  bootstrapShopPin();
   applyHourOverride();
 }
 
@@ -74,10 +106,21 @@ export function loadState() {
       square: parsed.square,
     });
     hydrateCompany(parsed.company, parsed.ownerKey);
+    fightBook.hydrate(parsed.fight ?? null);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unreadable state";
     log(`keeping a fresh book, saved state was unreadable: ${message}`, "store");
   }
+}
+
+function bootstrapShopPin() {
+  const raw = process.env.SHOP_PIN?.trim() ?? "";
+  if (!raw || fightBook.pinSet()) return;
+  if (!pinShape(raw)) {
+    log("SHOP_PIN must be 4 to 8 digits", "auth");
+    return;
+  }
+  fightBook.setPin(raw);
 }
 
 function applyHourOverride() {
@@ -97,6 +140,7 @@ function writeState() {
         ...earnEngine.toPersist(),
         company: getCompany() satisfies CompanyState,
         ownerKey: getOwnerKey(),
+        fight: fightBook.toPersist(),
       },
       null,
       2,

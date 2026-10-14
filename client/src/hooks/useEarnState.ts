@@ -2,11 +2,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState, PrintEvent } from "@shared/schema";
 
 export const WHO_ID = "io.who";
+export const PIN_KEY = "io.shop.pin";
+
+export function shopPin(): string | null {
+  return sessionStorage.getItem(PIN_KEY);
+}
+
+export function setShopPin(pin: string) {
+  sessionStorage.setItem(PIN_KEY, pin);
+}
+
+export function clearShopPin() {
+  sessionStorage.removeItem(PIN_KEY);
+}
 
 function personHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const who = localStorage.getItem(WHO_ID);
   if (who) headers["x-person-id"] = who;
+  const pin = sessionStorage.getItem(PIN_KEY);
+  if (pin) headers["x-shop-pin"] = pin;
   return headers;
 }
 
