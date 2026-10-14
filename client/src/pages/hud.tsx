@@ -57,6 +57,15 @@ function compact(cents: number): string {
   });
 }
 
+function whole(cents: number): string {
+  return Math.round(cents / 100).toLocaleString("en-US");
+}
+
+function toGo(cents: number): string {
+  const dollars = Math.max(1, Math.ceil(cents / 100));
+  return `$${dollars.toLocaleString("en-US")} to go`;
+}
+
 function readDemo(): DemoScene | null {
   const value = new URLSearchParams(window.location.search).get("demo");
   if (value === "morning" || value === "crit" || value === "cleared" || value === "idle") return value;
@@ -93,11 +102,10 @@ export default function Hud() {
   const [chips, setChips] = useState(threeColors);
   const [company, setCompany] = useState<CompanyView | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [demoScene, setDemoScene] = useState<DemoScene | null>(readDemo);
+  const [demoScene] = useState<DemoScene | null>(readDemo);
   const [pinOpen, setPinOpen] = useState(false);
   const [afterPin, setAfterPin] = useState<"clock" | "settings" | "change" | null>(null);
   const [shake, setShake] = useState(false);
-  const [burst, setBurst] = useState(false);
   const heard = useRef(new Set<string>());
   const wasCleared = useRef<boolean | null>(null);
   const demo = demoScene ? demoModel(demoScene) : null;
@@ -149,10 +157,7 @@ export default function Hud() {
     const key = `io.cleared.${fight.date}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
-    setBurst(true);
     clearedChime();
-    const timer = window.setTimeout(() => setBurst(false), 2200);
-    return () => window.clearTimeout(timer);
   }, [demo, fight]);
 
   useEffect(() => {
@@ -183,7 +188,6 @@ export default function Hud() {
     }
   }
   const wide = (menu || settings || change || whoOpen || pinOpen) && !collapsed;
-  const showBurst = demo?.scene === "cleared" || burst;
   const demoHit = useMemo<PrintEvent | null>(() => {
     if (!demo?.hitCents) return null;
     return {
@@ -331,16 +335,6 @@ export default function Hud() {
     }
   };
 
-  const showDemo = (scene: DemoScene | null) => {
-    const params = new URLSearchParams(window.location.search);
-    if (scene) params.set("demo", scene);
-    else params.delete("demo");
-    const rest = params.toString();
-    window.history.replaceState({}, "", rest ? `/?${rest}` : "/");
-    setDemoScene(scene);
-    setMenu(false);
-  };
-
   const toggle = () => {
     if (demo) return;
     if (pending || !state) return;
@@ -360,11 +354,10 @@ export default function Hud() {
           events={demo ? (demoHit ? [demoHit] : []) : freshEvents}
           onDone={dismissTick}
           hold={Boolean(demo)}
-          burst={showBurst}
         />
 
         <div
-          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}${shake ? " shake" : ""}`}
+          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
           data-clock={live ? "in" : "out"}
           data-fight={fight?.cleared && live ? "cleared" : "behind"}
         >
@@ -389,26 +382,9 @@ export default function Hud() {
               <span className="num down">−${money(moneyOut)}</span>
             </span>
           )}
-          {!collapsed && fight && (
-            <span className="fight-meta">
-              {demo && <span>Demo</span>}
-              {fight.cleared ? (
-                <>
-                  <span className="win-word">TARGET CLEARED</span>
-                  <span title={fight.shares.map((share) => `${share.name} $${compact(share.cents)}`).join(" · ")}>
-                    pot ${compact(fight.potCents)}
-                    {fight.shares.map((share) => ` · ${share.name.split(" ")[0]} $${compact(share.cents)}`).join("")}
-                  </span>
-                </>
-              ) : (
-                <span title={`Break-even $${compact(fight.breakEvenCents)}`}>
-                  ${compact(fight.toBreakEvenCents)} to break-even
-                </span>
-              )}
-              <span title="Open days cleared">{fight.streak}d</span>
-              <span>
-                avg {fight.avgSaleCents == null ? "—" : `$${compact(fight.avgSaleCents)}`}/${compact(fight.goalCents)}
-              </span>
+          {!collapsed && fight && (fight.cleared || fight.toBreakEvenCents > 0) && (
+            <span className={`fight-cta${fight.cleared ? " won" : ""}`}>
+              {fight.cleared ? `pot $${whole(fight.potCents)}` : toGo(fight.toBreakEvenCents)}
             </span>
           )}
           <span className="actions">
@@ -461,6 +437,27 @@ export default function Hud() {
                 <span>Points</span>
                 <span>{points}</span>
               </div>
+              {fight && (
+                <div className="menu-row">
+                  <span>Streak</span>
+                  <span>{fight.streak}d</span>
+                </div>
+              )}
+              {fight && (
+                <div className="menu-row">
+                  <span>Avg</span>
+                  <span>
+                    {fight.avgSaleCents == null ? "—" : `$${compact(fight.avgSaleCents)}`}/${compact(fight.goalCents)}
+                  </span>
+                </div>
+              )}
+              {fight?.cleared &&
+                fight.shares.map((share) => (
+                  <div className="menu-row" key={share.id}>
+                    <span>{share.name.split(" ")[0]}</span>
+                    <span>${compact(share.cents)}</span>
+                  </div>
+                ))}
               <div className="menu-actions">
                 <button
                   type="button"
@@ -500,11 +497,9 @@ export default function Hud() {
               live={live && !demo}
               settings={state?.fight.settings ?? null}
               pinSet={pinSet}
-              demo={demoScene}
               error={settingsError}
               onLink={() => void openWho("link")}
               onClose={() => setSettings(false)}
-              onDemo={showDemo}
               onFight={async (path, body) => {
                 try {
                   await saveFight(path, body);
@@ -638,11 +633,9 @@ function SettingsPanel({
   live,
   settings,
   pinSet,
-  demo,
   error,
   onLink,
   onClose,
-  onDemo,
   onFight,
   onSave,
 }: {
@@ -651,11 +644,9 @@ function SettingsPanel({
   live: boolean;
   settings: FightSettings | null;
   pinSet: boolean;
-  demo: DemoScene | null;
   error: string | null;
   onLink: () => void;
   onClose: () => void;
-  onDemo: (scene: DemoScene | null) => void;
   onFight: (path: string, body: unknown) => Promise<void>;
   onSave: (path: string, body: unknown) => Promise<void>;
 }) {
@@ -816,9 +807,6 @@ function SettingsPanel({
           <button type="submit">{pinSet ? "Save" : "Set PIN"}</button>
         )}
       </form>
-      {!pinSet && company?.owner && <p className="pay-source">4 to 8 digits. Clock in asks for it.</p>}
-      {!pinSet && !company?.owner && <p className="pay-source">The owner sets the shop PIN on this computer.</p>}
-      {pinSet && <p className="pay-source">Fixed / month, materials %, fee %, pot %, avg goal. Rent not included.</p>}
       {pinSet && (
         <div className="settings-actions">
           {OPEN_DAYS.map(([day, letter, name]) => (
@@ -839,23 +827,6 @@ function SettingsPanel({
           ))}
         </div>
       )}
-      <div className="settings-actions">
-        <button type="button" aria-pressed={demo === "morning"} onClick={() => onDemo("morning")}>
-          Morning
-        </button>
-        <button type="button" aria-pressed={demo === "crit"} onClick={() => onDemo("crit")}>
-          CRIT
-        </button>
-        <button type="button" aria-pressed={demo === "cleared"} onClick={() => onDemo("cleared")}>
-          Cleared
-        </button>
-        <button type="button" aria-pressed={demo === "idle"} onClick={() => onDemo("idle")}>
-          Gray
-        </button>
-        <button type="button" aria-pressed={demo === null} onClick={() => onDemo(null)}>
-          Live
-        </button>
-      </div>
       {error && <div className="err">{error}</div>}
     </motion.div>
   );
@@ -1013,28 +984,14 @@ function PrintTape({
   events,
   onDone,
   hold = false,
-  burst = false,
 }: {
   events: PrintEvent[];
   onDone: (id: string) => void;
   hold?: boolean;
-  burst?: boolean;
 }) {
   return (
     <div className="tape">
       <AnimatePresence>
-        {burst && (
-          <motion.div
-            key="target-cleared"
-            className="print cleared"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.16 }}
-          >
-            TARGET CLEARED
-          </motion.div>
-        )}
         {events.map((event) => (
           <TapePrint key={event.id} event={event} onDone={onDone} hold={hold} />
         ))}

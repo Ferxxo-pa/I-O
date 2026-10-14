@@ -259,16 +259,16 @@ button {
   background: #c7c7cc;
 }
 
-.strip.idle .fight-meta,
-.strip.idle .fight-meta .win-word {
+.strip.idle .fight-cta,
+.strip.idle .fight-cta.won {
   color: #c7c7cc;
 }
 
 .balance-bar .notch {
   position: absolute;
-  top: -3px;
+  top: 0;
   width: 1px;
-  height: 9px;
+  height: 3px;
   margin-left: -0.5px;
   background: #1d1d1f;
   pointer-events: none;
@@ -284,10 +284,6 @@ button {
   animation: crit-flash 0.6s ease;
 }
 
-.strip.shake {
-  animation: strip-shake 0.5s ease;
-}
-
 @keyframes crit-flash {
   0%,
   100% {
@@ -298,43 +294,27 @@ button {
   }
 }
 
-@keyframes strip-shake {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  25% {
-    transform: translate3d(-1px, 0, 0);
-  }
-  50% {
-    transform: translate3d(2px, 0, 0);
-  }
-  75% {
-    transform: translate3d(-1px, 0, 0);
-  }
-}
-
-.fight-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.fight-cta {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 9px;
+  z-index: 2;
+  height: 9px;
+  overflow: hidden;
   color: var(--mute);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 560;
+  line-height: 9px;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  text-align: center;
   white-space: nowrap;
+  pointer-events: none;
 }
 
-.fight-meta .win-word {
-  color: #c9a227;
-  letter-spacing: 0.08em;
-  font-size: 10px;
-}
-
-.strip.with-panel .fight-meta,
-.strip.collapsed .fight-meta {
-  display: none;
+.fight-cta.won {
+  color: #d6b03a;
 }
 
 .print.tier-solid {
@@ -349,14 +329,7 @@ button {
   font-size: 22px;
 }
 
-.print.cleared {
-  color: #c9a227;
-  letter-spacing: 0.08em;
-  font-size: 12px;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .strip.shake,
   .balance-bar.crit .in {
     animation: none;
   }
