@@ -357,53 +357,45 @@ export default function Hud() {
               <i key={index} style={live ? { background: color } : undefined} />
             ))}
           </span>
-          <button
-            type="button"
-            className="mark"
-            onClick={toggle}
-            disabled={pending || !state}
-            title={live ? "Clock out" : youName || "Clock in"}
-          >
-            I/O
-            <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
-          </button>
-          {!collapsed && (
-            <span className="fight-stack">
-              <span className="size-lock" aria-hidden>
-                <span>+$0.00</span>
-                <span>−$0.00</span>
-              </span>
-              <span className={`fight-cta${fight?.cleared && live ? " won" : ""}`}>
-                {fight?.cleared ? `pot $${whole(fight.potCents)}` : fight && fight.toBreakEvenCents > 0 ? toGo(fight.toBreakEvenCents) : ""}
-              </span>
-              <span className="nums">
-                <span className="num up">+${money(moneyIn)}</span>
-                <span className="num down">−${money(moneyOut)}</span>
-              </span>
-            </span>
-          )}
-          <span className="actions">
-            {!collapsed && (
-              <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
-                +
-              </button>
-            )}
+          <div className="ctrl-row">
             <button
               type="button"
-              className="fold"
-              onClick={() => {
-                setCollapsed((open) => !open);
-                setMenu(false);
-                setSettings(false);
-                setChange(false);
-                setWhoOpen(false);
-                setPinOpen(false);
-              }}
-              aria-label={collapsed ? "Expand" : "Collapse"}
+              className="mark ctrl"
+              onClick={toggle}
+              disabled={pending || !state}
+              title={live ? "Clock out" : youName || "Clock in"}
             >
-              {collapsed ? "›" : "‹"}
+              I/O
+              <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
             </button>
-          </span>
+            <span className="actions">
+              {!collapsed && (
+                <button type="button" className="plus ctrl" onClick={() => setMenu((open) => !open)} aria-label="More">
+                  +
+                </button>
+              )}
+              <button
+                type="button"
+                className="fold ctrl"
+                onClick={() => {
+                  setCollapsed((open) => !open);
+                  setMenu(false);
+                  setSettings(false);
+                  setChange(false);
+                  setWhoOpen(false);
+                  setPinOpen(false);
+                }}
+                aria-label={collapsed ? "Expand" : "Collapse"}
+              >
+                {collapsed ? "›" : "‹"}
+              </button>
+            </span>
+          </div>
+          {!collapsed && (
+            <span className={`fight-cta${fight?.cleared && live ? " won" : ""}`}>
+              {fight?.cleared ? `pot $${whole(fight.potCents)}` : fight && fight.toBreakEvenCents > 0 ? toGo(fight.toBreakEvenCents) : ""}
+            </span>
+          )}
           {!collapsed && (
             <span className={`balance-bar${fight?.cleared && live ? " won" : ""}`} aria-hidden>
               {combined > 0 && (
@@ -415,6 +407,12 @@ export default function Hud() {
               {fight && fight.breakEvenCents > 0 && (
                 <span className="notch" style={{ left: `${fight.notchPct}%` }} />
               )}
+            </span>
+          )}
+          {!collapsed && (
+            <span className="nums">
+              <span className="num up">+${money(moneyIn)}</span>
+              <span className="num down">−${money(moneyOut)}</span>
             </span>
           )}
         </div>
