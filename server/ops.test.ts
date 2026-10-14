@@ -3,6 +3,7 @@ import { DEFAULT_FIGHT_SETTINGS, SHOP_ZONE, zonedParts } from "@shared/fight";
 import {
   advanceLevel,
   applyWeekStreak,
+  buildWeekPips,
   demoOps,
   levelReward,
   markPaid,
@@ -12,6 +13,7 @@ import {
   readiness,
   splitPotWithHours,
   suggestMove,
+  suggestQuest,
   summarizeWeek,
   weeklyBreakEven,
   type Payout,
@@ -160,6 +162,50 @@ assert.equal(
   "Tip: follow up on the Patio quote",
 );
 assert.equal(suggestMove({ hour: 16, collectedCents: 200_000, breakEvenCents: 39_265, invoices: [] }), null);
+const questChase = suggestQuest({
+  hour: 16,
+  collectedCents: 24_000,
+  breakEvenCents: 39_265,
+  invoices: [{ id: "inv", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: null }],
+});
+assert.equal(questChase?.label, "Chase Booth invoice");
+assert.equal(questChase?.cents, 42_000);
+assert.ok((questChase?.label.split(/\s+/).length ?? 9) <= 4);
+const questQuote = suggestQuest({
+  hour: 16,
+  collectedCents: 24_000,
+  breakEvenCents: 39_265,
+  invoices: [{ id: "q", title: "Patio", status: "DRAFT", dueCents: 0, quote: true, teamMemberId: null }],
+});
+assert.equal(questQuote?.label, "Follow Patio quote");
+assert.ok((questQuote?.label.split(/\s+/).length ?? 9) <= 4);
+const questSell = suggestQuest({ hour: 16, collectedCents: 24_000, breakEvenCents: 39_265, invoices: [] });
+assert.equal(questSell?.label, "Sell one more");
+assert.equal(suggestQuest({ hour: 14, collectedCents: 1_000, breakEvenCents: 39_265, invoices: [] }), null);
+const pips = buildWeekPips({
+  today: "2026-10-14",
+  openWeekdays: DEFAULT_FIGHT_SETTINGS.openWeekdays,
+  clearedDates: ["2026-10-12", "2026-10-13"],
+  todayCleared: false,
+});
+assert.equal(pips.length, 7);
+assert.deepEqual(
+  pips.map((pip) => pip.state),
+  ["hit", "hit", "today", "ahead", "ahead", "off", "off"],
+);
+assert.deepEqual(
+  pips.map((pip) => pip.filled),
+  [true, true, false, false, false, false, false],
+);
+assert.equal(pips[2]?.date, "2026-10-14");
+const wonPips = buildWeekPips({
+  today: "2026-10-14",
+  openWeekdays: DEFAULT_FIGHT_SETTINGS.openWeekdays,
+  clearedDates: ["2026-10-12", "2026-10-13", "2026-10-14"],
+  todayCleared: true,
+});
+assert.equal(wonPips[2]?.filled, true);
+assert.equal(wonPips[2]?.state, "today");
 assert.equal(ownLoginPct(3, 2), 67);
 assert.equal(ownLoginPct(0, 0), null);
 
@@ -202,9 +248,15 @@ book.addHours("ada", "Ada", 5 * hour, { now: thursday, lifetimeCollected: 0, lif
 book.replaceInvoices([{ id: "inv", title: "Booth", status: "UNPAID", dueCents: 42_000, quote: false, teamMemberId: "ada" }]);
 book.sync({ now: thursday, lifetimeCollected: 24_000, lifetimeSettled: 18_000, saleCents: 24_000, ...quiet });
 assert.equal(book.opsView().nudge, "Tip: chase Booth invoice $420");
+assert.equal(book.opsView().quest?.label, "Chase Booth invoice");
+assert.equal(book.opsView().pips.length, 7);
+assert.equal(book.opsView().pips.find((pip) => pip.date === "2026-10-15")?.state, "today");
+assert.equal(book.opsView().pips.find((pip) => pip.date === "2026-10-15")?.filled, false);
 book.sync({ now: thursday, lifetimeCollected: 50_000, lifetimeSettled: 18_000, saleCents: 26_000, ...quiet });
 assert.equal(book.opsView().level, 0);
 assert.equal(book.opsView().nudge, null);
+assert.equal(book.opsView().quest, null);
+assert.equal(book.opsView().pips.find((pip) => pip.date === "2026-10-15")?.filled, true);
 
 const friday = atChicago("2026-10-16", 16);
 book.sync({ now: friday, lifetimeCollected: 50_000, lifetimeSettled: 18_000, ...quiet });
@@ -243,6 +295,11 @@ assert.equal(book.payoutCsv().includes("paid"), true);
 assert.throws(() => book.approvePayout("2026-09-28", 90), /not closed/);
 assert.equal(JSON.stringify(book.toPersist()).includes("scrypt$"), false);
 assert.equal(demoOps("morning").nudge, "Tip: chase Booth invoice $420");
+assert.equal(demoOps("morning").quest?.label, "Chase Booth invoice");
+assert.equal(demoOps("morning").quest?.cents, 42_000);
+assert.equal(demoOps("morning").pips.filter((pip) => pip.filled).length, 2);
 assert.equal(demoOps("cleared").nudge, null);
+assert.equal(demoOps("cleared").quest, null);
+assert.equal(demoOps("cleared").pips.find((pip) => pip.state === "today")?.filled, true);
 
 console.log("ops ok");

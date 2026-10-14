@@ -19,11 +19,13 @@ import {
   levelReward,
   levelRulesSchema,
   markPaid,
+  buildWeekPips,
   mondayOf,
   payoutCsv,
   sameScope,
   scopeKey,
   suggestMove,
+  suggestQuest,
   summarizeWeek,
   type ChaseInvoice,
   type DayPot,
@@ -360,14 +362,24 @@ export class FightBook {
       this.data.payouts
         .filter((row) => sameScope(row, scope) && row.weekStart < monday)
         .sort((a, b) => b.weekStart.localeCompare(a.weekStart))[0] ?? null;
-    const nudge = this.live
-      ? suggestMove({
+    const liveTarget = this.live ? this.target(this.live.date, this.live.wages) : 0;
+    const todayCleared = Boolean(this.live && liveTarget > 0 && this.live.collected >= liveTarget);
+    const chase = this.live
+      ? {
           hour: zonedParts(this.live.now, SHOP_ZONE).hour,
           collectedCents: this.live.collected,
-          breakEvenCents: this.target(this.live.date, this.live.wages),
+          breakEvenCents: liveTarget,
           invoices: this.data.invoices,
-        })
+        }
       : null;
+    const nudge = chase ? suggestMove(chase) : null;
+    const quest = chase ? suggestQuest(chase) : null;
+    const pips = buildWeekPips({
+      today,
+      openWeekdays: this.data.settings.openWeekdays,
+      clearedDates: days.filter((day) => day.cleared).map((day) => day.date),
+      todayCleared,
+    });
     return {
       scope,
       level: this.data.level,
@@ -394,6 +406,8 @@ export class FightBook {
         ? { ...payout, shares: payout.shares.map((share) => ({ ...share })) }
         : null,
       nudge,
+      quest,
+      pips,
     };
   }
 

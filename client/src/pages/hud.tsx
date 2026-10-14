@@ -9,8 +9,9 @@ import {
   saleTapeLabel,
   type DemoScene,
   type FightSettings,
+  type FightView,
 } from "@shared/fight";
-import { demoOps, demoReadiness, payoutCsv, type OpsView, type ReadinessCheck } from "@shared/ops";
+import { demoOps, demoReadiness, payoutCsv, type DayPip, type OpsView, type ReadinessCheck } from "@shared/ops";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -85,14 +86,326 @@ function readPanel(): "menu" | "levels" | "payout" | "checklist" | null {
   return null;
 }
 
-function levelLine(ops: OpsView): string {
-  const every = Math.max(1, ops.rules.clearsInARow);
-  const into = ops.consecutiveClears % every;
-  const left = into === 0 ? every : every - into;
-  const dayWord = left === 1 ? "day" : "days";
-  const next = ops.level + 1;
-  if (ops.level <= 0) return `${left} more ${dayWord} to Level ${next}`;
-  return `Level ${ops.level} · ${left} more ${dayWord} to Level ${next}`;
+function readStill(): boolean {
+  return new URLSearchParams(window.location.search).get("still") === "1";
+}
+
+function shownPips(pips: DayPip[], cold: boolean): DayPip[] {
+  if (!cold) return pips;
+  return pips.map((pip) => (pip.state === "hit" ? { ...pip, state: "miss" as const, filled: false } : pip));
+}
+
+function teamMarks(ops: OpsView): string[] {
+  const shares = ops.payout && ops.payout.shares.length > 0 ? ops.payout.shares : ops.week.shares;
+  const marks: string[] = [];
+  const seen = new Set<string>();
+  for (const share of shares) {
+    if (seen.has(share.id)) continue;
+    seen.add(share.id);
+    const letter = share.name.trim().charAt(0).toUpperCase();
+    if (!letter) continue;
+    marks.push(letter);
+    if (marks.length === 3) break;
+  }
+  return marks;
+}
+
+const RING_R = 26;
+const RING_C = 2 * Math.PI * RING_R;
+
+function useReveal(): { progress: number; still: boolean } {
+  const still = useMemo(readStill, []);
+  const hold = useMemo(() => new URLSearchParams(window.location.search).get("hold") === "1", []);
+  const reduce = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
+  const skip = still || (reduce && !hold);
+  const [progress, setProgress] = useState(skip ? 1 : 0);
+  useEffect(() => {
+    if (skip) {
+      setProgress(1);
+      return;
+    }
+    let start = 0;
+    let frame = 0;
+    const tick = (now: number) => {
+      if (!start) start = now;
+      const t = Math.min(1, (now - start) / 600);
+      setProgress(1 - (1 - t) ** 3);
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    const play = () => {
+      cancelAnimationFrame(frame);
+      start = 0;
+      setProgress(0);
+      frame = requestAnimationFrame(tick);
+    };
+    if (hold) {
+      (window as unknown as { __ioReveal?: () => void }).__ioReveal = play;
+      return () => {
+        cancelAnimationFrame(frame);
+        delete (window as unknown as { __ioReveal?: () => void }).__ioReveal;
+      };
+    }
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [skip, hold]);
+  return { progress, still };
+}
+
+function GearIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="3" />
+      <path
+        d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+const CONFETTI = [
+  { x: -16, y: -2, r: 28, c: "#12c45a" },
+  { x: -6, y: -14, r: -20, c: "#f83090" },
+  { x: 8, y: -8, r: 50, c: "#38b8f8" },
+  { x: 16, y: 2, r: -40, c: "#f5c451" },
+  { x: -12, y: 8, r: 16, c: "#ff3b30" },
+  { x: 4, y: 10, r: 70, c: "#12c45a" },
+  { x: 12, y: -16, r: -12, c: "#a8c838" },
+  { x: -4, y: -6, r: 36, c: "#f86020" },
+];
+
+function GameMenu({
+  fight,
+  ops,
+  dayStreak,
+  coldStreak,
+  freshEvents,
+  error,
+  onSettings,
+}: {
+  fight: FightView | null;
+  ops: OpsView | null;
+  dayStreak: number;
+  coldStreak: boolean;
+  freshEvents: PrintEvent[];
+  error: string | null;
+  onSettings: () => void;
+}) {
+  const { progress, still } = useReveal();
+  const ringRef = useRef<HTMLDivElement>(null);
+  const heardSale = useRef<Set<string> | null>(null);
+  const [bump, setBump] = useState(0);
+  const [questDone, setQuestDone] = useState(false);
+  const [xp, setXp] = useState(false);
+  const prevLevel = useRef(ops?.level ?? 0);
+  const [levelBanner, setLevelBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (heardSale.current == null) {
+      heardSale.current = new Set(freshEvents.map((event) => event.id));
+      return;
+    }
+    for (const event of freshEvents) {
+      if (heardSale.current.has(event.id)) continue;
+      heardSale.current.add(event.id);
+      if (event.kind === "sale" && event.outputCents > 0) setBump((n) => n + 1);
+    }
+  }, [freshEvents]);
+
+  useEffect(() => {
+    const node = ringRef.current;
+    if (!node || bump === 0) return;
+    node.classList.remove("bump");
+    void node.offsetWidth;
+    node.classList.add("bump");
+  }, [bump]);
+
+  useEffect(() => {
+    if (!ops) return;
+    if (ops.level > prevLevel.current) {
+      setLevelBanner(`Level ${ops.level}`);
+      const id = window.setTimeout(() => setLevelBanner(null), 2000);
+      prevLevel.current = ops.level;
+      return () => window.clearTimeout(id);
+    }
+    prevLevel.current = ops.level;
+  }, [ops]);
+
+  const won = Boolean(fight?.cleared);
+  const todayRatio =
+    fight && fight.breakEvenCents > 0 ? Math.min(1, fight.todayCollectedCents / fight.breakEvenCents) : 0;
+  const todayDollars = fight ? Math.max(0, Math.round(fight.toBreakEvenCents / 100)) : 0;
+  const shownToday = Math.round(todayDollars * progress);
+  const weekRatio =
+    ops && ops.week.breakEvenCents > 0 ? Math.min(1, ops.week.collectedCents / ops.week.breakEvenCents) : 0;
+  const weekDollars = ops ? Math.max(0, Math.round((ops.week.breakEvenCents - ops.week.collectedCents) / 100)) : 0;
+  const shownWeek = Math.round(weekDollars * progress);
+  const pips = ops ? shownPips(ops.pips, coldStreak) : [];
+  const openDays = pips.filter((pip) => pip.state !== "off").length;
+  const hits = pips.filter((pip) => pip.filled).length;
+  const chest = ops?.week.cleared ? 1 : openDays === 0 ? 0 : Math.min(1, hits / openDays);
+  const chestFull = Boolean(ops?.week.cleared) || (chest >= 1 && progress >= 1);
+  const potNow = ops ? Math.round((ops.week.potCents / 100) * progress) : 0;
+  const potGoal = ops
+    ? Math.round(((ops.week.potCents > 0 ? ops.week.potCents : (ops.payout?.potCents ?? 0)) / 100) * progress)
+    : 0;
+  const marks = ops ? teamMarks(ops) : [];
+  const every = Math.max(1, ops?.rules.clearsInARow ?? 1);
+  const into = ops ? ops.consecutiveClears % every : 0;
+  const filledSegs = Math.floor(into * progress + 1e-6);
+  const ringShown = (won ? 1 : todayRatio) * progress;
+
+  return (
+    <>
+      <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
+        <GearIcon />
+      </button>
+      {won && (
+        <span className={`confetti${still ? " settled" : ""}`} aria-hidden>
+          {CONFETTI.map((bit, index) => (
+            <i
+              key={index}
+              style={{
+                background: bit.c,
+                ["--x" as string]: `${bit.x}px`,
+                ["--y" as string]: `${bit.y}px`,
+                ["--r" as string]: `${bit.r}deg`,
+              }}
+            />
+          ))}
+        </span>
+      )}
+      {fight && (
+        <div className="hero">
+          <div
+            className={`ring${won ? " won" : ""}`}
+            ref={ringRef}
+            role="img"
+            aria-label={won ? "Day won" : `$${shownToday.toLocaleString("en-US")} to go`}
+          >
+            <svg viewBox="0 0 64 64" aria-hidden>
+              <circle className="track" cx="32" cy="32" r={RING_R} />
+              <circle
+                className="value"
+                cx="32"
+                cy="32"
+                r={RING_R}
+                strokeDasharray={RING_C}
+                strokeDashoffset={RING_C * (1 - ringShown)}
+              />
+            </svg>
+            <span className="ring-copy">
+              {won ? (
+                <strong>Won</strong>
+              ) : (
+                <>
+                  <strong>${shownToday.toLocaleString("en-US")}</strong>
+                  <em>to go</em>
+                </>
+              )}
+            </span>
+          </div>
+          {ops && (
+            <div className="week-side">
+              <div className="cap">This week</div>
+              <div className="thin-bar" aria-hidden>
+                <i style={{ width: `${weekRatio * progress * 100}%` }} />
+              </div>
+              <div className="week-left">{ops.week.cleared ? "Week won" : `$${shownWeek.toLocaleString("en-US")} to go`}</div>
+            </div>
+          )}
+        </div>
+      )}
+      {fight && (
+        <div className={`game-row streak-row${dayStreak === 0 ? " cold" : ""}`}>
+          {won ? (
+            <>
+              <span className="pips" aria-label="This week">
+                {pips.map((pip) => (
+                  <i key={pip.date} className={`pip ${pip.state}${pip.filled ? " on" : ""}`} />
+                ))}
+              </span>
+              <span className="day-won">
+                Day won <span className="fire">🔥</span> {dayStreak}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={`fire${dayStreak === 0 ? " cold" : ""}`} aria-hidden>
+                🔥
+              </span>
+              <span className="streak-num">{dayStreak}</span>
+              <span className="pips" aria-label="This week">
+                {pips.map((pip) => (
+                  <i key={pip.date} className={`pip ${pip.state}${pip.filled ? " on" : ""}`} />
+                ))}
+              </span>
+              <span className="streak-copy">day streak</span>
+            </>
+          )}
+        </div>
+      )}
+      {ops && (
+        <div className="game-row level-row">
+          <span className={`lv-badge${levelBanner ? " wide flip" : ""}`}>{levelBanner ?? ops.level}</span>
+          <span className="segments" aria-hidden>
+            {Array.from({ length: every }, (_, index) => (
+              <i key={index} className={index < filledSegs ? "on" : ""} />
+            ))}
+          </span>
+          <span className="lock">🔒 Lv {ops.level + 1}</span>
+        </div>
+      )}
+      {ops && (
+        <div className="game-row chest-row">
+          <span className={`chest${chestFull ? " open" : ""}`} aria-hidden>
+            <i className="lid" />
+            🎁
+          </span>
+          <div className="chest-main">
+            <div className="chest-top">
+              <span>Team bonus</span>
+              <span className="chest-money">
+                {chestFull ? `$${potGoal.toLocaleString("en-US")}` : `$${potNow.toLocaleString("en-US")} → $${potGoal.toLocaleString("en-US")}`}
+              </span>
+            </div>
+            {marks.length > 0 && (
+              <span className="initials" aria-label="Team">
+                {marks.map((mark, index) => (
+                  <i key={`${mark}-${index}`}>{mark}</i>
+                ))}
+              </span>
+            )}
+            <div className="thin-bar chest-bar" aria-hidden>
+              <i style={{ width: `${chest * progress * 100}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
+      {ops?.quest && (
+        <button
+          type="button"
+          className={`quest${questDone ? " done" : ""}`}
+          onClick={() => {
+            if (questDone) return;
+            setQuestDone(true);
+            window.setTimeout(() => setXp(true), 320);
+          }}
+        >
+          <span aria-hidden>⚡</span>
+          <span className="label">{ops.quest.label}</span>
+          <span className="gain">
+            {xp ? "+XP" : ops.quest.cents > 0 ? `+$${whole(ops.quest.cents)}` : ""}
+          </span>
+        </button>
+      )}
+      {error && <div className="err">{error}</div>}
+      <span className="reveal" data-reveal={progress.toFixed(3)} hidden />
+    </>
+  );
 }
 
 const OPEN_DAYS: Array<[number, string, string]> = [
@@ -454,62 +767,25 @@ export default function Hud() {
         <AnimatePresence>
           {menu && (
             <motion.div
-              className="menu"
+              className="menu game"
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.12 }}
             >
-              {fight && (
-                <div className="menu-row">
-                  <span>Today</span>
-                  <span>{fight.cleared ? "Goal hit 🎉" : `$${whole(fight.toBreakEvenCents)} to go`}</span>
-                </div>
-              )}
-              {ops && (
-                <div className="menu-row">
-                  <span>This week</span>
-                  <span>
-                    {ops.week.cleared
-                      ? "Week goal hit"
-                      : `$${whole(Math.max(0, ops.week.breakEvenCents - ops.week.collectedCents))} to go`}
-                  </span>
-                </div>
-              )}
-              {fight && (
-                <div className="menu-row">
-                  <span className={`streak${dayStreak === 0 ? " cold" : ""}`}>
-                    <span className="fire" aria-hidden>
-                      🔥
-                    </span>
-                    {dayStreak === 1 ? "1 day in a row" : `${dayStreak} days in a row`}
-                  </span>
-                </div>
-              )}
-              {ops && (
-                <div className="menu-row">
-                  <span>{levelLine(ops)}</span>
-                </div>
-              )}
-              {ops && (
-                <div className="menu-row">
-                  <span>Team bonus</span>
-                  <span>${whole(ops.week.potCents)}</span>
-                </div>
-              )}
-              {ops?.nudge && <p className="menu-note">{ops.nudge}</p>}
-              <button
-                type="button"
-                className="menu-settings"
-                onClick={() => {
+              <GameMenu
+                fight={fight}
+                ops={ops}
+                dayStreak={dayStreak}
+                coldStreak={dayStreak === 0}
+                freshEvents={demo ? [] : freshEvents}
+                error={error}
+                onSettings={() => {
                   closePanels();
                   if (!guard("settings")) return;
                   setSettings(true);
                 }}
-              >
-                Settings
-              </button>
-              {error && <div className="err">{error}</div>}
+              />
             </motion.div>
           )}
         </AnimatePresence>
