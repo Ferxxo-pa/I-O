@@ -319,25 +319,13 @@ button {
 }
 
 .strip.idle .balance-bar .in,
-.strip.idle .balance-bar .out,
-.strip.idle .balance-bar .notch {
+.strip.idle .balance-bar .out {
   background: #c7c7cc;
 }
 
 .strip.idle .fight-cta,
 .strip.idle .fight-cta.won {
   color: #c7c7cc;
-}
-
-.balance-bar .notch {
-  position: absolute;
-  top: 0;
-  width: 1px;
-  height: 3px;
-  margin-left: -0.5px;
-  background: #1d1d1f;
-  pointer-events: none;
-  z-index: 1;
 }
 
 .balance-bar.won .in,

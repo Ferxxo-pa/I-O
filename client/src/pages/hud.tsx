@@ -404,9 +404,6 @@ export default function Hud() {
                   <i className="out" style={{ width: `${redShare}%` }} />
                 </>
               )}
-              {fight && fight.breakEvenCents > 0 && (
-                <span className="notch" style={{ left: `${fight.notchPct}%` }} />
-              )}
             </span>
           )}
           {!collapsed && (
