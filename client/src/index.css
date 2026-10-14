@@ -547,6 +547,40 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.menu-row span.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.menu-row span.streak .fire {
+  font-style: normal;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.menu-row span.streak.cold {
+  color: var(--mute);
+}
+
+.menu-row span.streak.cold > .fire {
+  filter: grayscale(1);
+  opacity: 0.4;
+}
+
+.menu-row span.streak small {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.menu-row span.streak small .fire {
+  font-size: 11px;
+}
+
 .menu-actions {
   display: flex;
   justify-content: flex-end;

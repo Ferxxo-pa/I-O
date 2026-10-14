@@ -73,10 +73,37 @@ function readDemo(): DemoScene | null {
   return null;
 }
 
+function readStreakOverride(): number | null {
+  const value = new URLSearchParams(window.location.search).get("streak");
+  if (value == null || !/^\d{1,4}$/.test(value)) return null;
+  return Number(value);
+}
+
 function readPanel(): "menu" | "levels" | "payout" | "checklist" | null {
   const value = new URLSearchParams(window.location.search).get("panel");
   if (value === "menu" || value === "levels" || value === "payout" || value === "checklist") return value;
   return null;
+}
+
+function StreakCount({ days, weeks }: { days: number; weeks: number }) {
+  const weeksLabel = weeks === 1 ? "1 week" : `${weeks} weeks`;
+  const daysLabel = days === 1 ? "1 day" : `${days} days`;
+  return (
+    <span className={`streak${days === 0 ? " cold" : ""}`} aria-label={weeks > 0 ? `${daysLabel}, ${weeksLabel}` : daysLabel}>
+      <span className="fire" aria-hidden>
+        🔥
+      </span>
+      {days}
+      {weeks > 0 && (
+        <small>
+          <span className="fire" aria-hidden>
+            🔥
+          </span>
+          {weeks}w
+        </small>
+      )}
+    </span>
+  );
 }
 
 function levelText(ops: OpsView): string {
@@ -150,6 +177,9 @@ export default function Hud() {
 
   const fight = demo?.view ?? state?.fight ?? null;
   const ops = demo ? demoOps(demo.scene) : (state?.ops ?? null);
+  const streakOverride = demo ? readStreakOverride() : null;
+  const dayStreak = streakOverride ?? fight?.streak ?? 0;
+  const weekStreak = streakOverride === 0 ? 0 : (ops?.weekStreak ?? 0);
   const pinSet = state?.fight.pinSet ?? false;
 
   useEffect(() => {
@@ -457,9 +487,7 @@ export default function Hud() {
               {fight && (
                 <div className="menu-row">
                   <span>Streak</span>
-                  <span>
-                    {fight.streak}d{ops ? ` · ${ops.weekStreak}w` : ""}
-                  </span>
+                  <StreakCount days={dayStreak} weeks={weekStreak} />
                 </div>
               )}
               {ops && (
