@@ -48,3 +48,21 @@ Every 15 seconds it checks invoices. The first check remembers invoices that alr
 Subscribe Square webhooks to `POST /api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Set `SQUARE_WEBHOOK_SIGNATURE_KEY` plus `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL. A timecard opened in Square still counts that person's wage here.
 
 Square does not publish a customer-messages API. Points follow invoices you send, which is the outbound message Square records.
+
+## Go live
+
+`GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level, closed day, and pot payout is stored on that pair. This build is still one shop on one computer. There is no second login.
+
+Do these before you leave it on the counter:
+
+1. Check out this branch. Do not merge it to main until the strip has been used on the shop computer.
+2. `npm install`, then copy `.env.example` to `.env`. Do not commit `.env`.
+3. Set `SQUARE_ACCESS_TOKEN` and `SQUARE_LOCATION_ID`. The token stays on the server.
+4. Point Square webhooks at `POST /api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Set `SQUARE_WEBHOOK_SIGNATURE_KEY` and `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL. Ready stays open until a signed delivery arrives.
+5. Create the company, set the shop PIN, and set each person's hourly rate. When Square is connected, Square keeps the rates. This app never writes wages back.
+6. Put rent into **Fixed / month**, then check **Rent included**.
+7. Each person clocks in under their own name. **Own login** is the share of the roster that has clocked, or the share of open invoices that name a team member when Square sends one.
+8. Open **+**. Levels, the week target, and the pot summary live there. A late day that is behind pace shows one line, such as an unpaid invoice to chase.
+9. On Monday, **Payout** shows last week's Mon–Fri pot, split by timecard hours. Approve it with the shop PIN, then export CSV. Approving only marks it paid here.
+
+`npm test` and `npm run check` should pass before you leave it running.

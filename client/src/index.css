@@ -550,7 +550,36 @@ button {
 .menu-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 16px;
+  row-gap: 8px;
+}
+
+.menu-note {
+  margin: 0 0 10px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.menu-row.soft span:last-child {
+  color: var(--mute);
+  max-width: 150px;
+  white-space: normal;
+  text-align: right;
+}
+
+.level-grid {
+  display: grid;
+  grid-template-columns: 20px 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.level-grid input {
+  width: 100%;
+  min-width: 0;
 }
 
 .menu button {

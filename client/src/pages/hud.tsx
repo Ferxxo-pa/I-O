@@ -10,6 +10,7 @@ import {
   type DemoScene,
   type FightSettings,
 } from "@shared/fight";
+import { demoOps, demoReadiness, payoutCsv, type OpsView, type ReadinessCheck } from "@shared/ops";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -72,6 +73,19 @@ function readDemo(): DemoScene | null {
   return null;
 }
 
+function readPanel(): "menu" | "levels" | "payout" | "checklist" | null {
+  const value = new URLSearchParams(window.location.search).get("panel");
+  if (value === "menu" || value === "levels" || value === "payout" || value === "checklist") return value;
+  return null;
+}
+
+function levelText(ops: OpsView): string {
+  const bump = ops.payBumpCents > 0 ? `+$${compact(ops.payBumpCents)}/hr` : "";
+  const pot = ops.potBonusBps > 0 ? `+${ops.potBonusBps / 100}% pot` : "";
+  const extra = [bump, pot].filter(Boolean).join(" ");
+  return extra ? `${ops.level} · ${extra}` : String(ops.level);
+}
+
 const OPEN_DAYS: Array<[number, string, string]> = [
   [1, "M", "Monday"],
   [2, "T", "Tuesday"],
@@ -90,8 +104,11 @@ function rateText(cents: number): string {
 
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, refresh, clockIn, clockOut } = useIoState();
-  const [menu, setMenu] = useState(false);
+  const [menu, setMenu] = useState(() => readPanel() === "menu");
   const [settings, setSettings] = useState(false);
+  const [levelsOpen, setLevelsOpen] = useState(() => readPanel() === "levels");
+  const [payoutOpen, setPayoutOpen] = useState(() => readPanel() === "payout");
+  const [checklistOpen, setChecklistOpen] = useState(() => readPanel() === "checklist");
   const [change, setChange] = useState(false);
   const [whoOpen, setWhoOpen] = useState(false);
   const [whoMode, setWhoMode] = useState<"clock" | "link">("clock");
@@ -132,6 +149,7 @@ export default function Hud() {
   }, [demo?.scene]);
 
   const fight = demo?.view ?? state?.fight ?? null;
+  const ops = demo ? demoOps(demo.scene) : (state?.ops ?? null);
   const pinSet = state?.fight.pinSet ?? false;
 
   useEffect(() => {
@@ -178,7 +196,7 @@ export default function Hud() {
       redShare = 100 - greenShare;
     }
   }
-  const wide = (menu || settings || change || whoOpen || pinOpen) && !collapsed;
+  const wide = (menu || settings || levelsOpen || payoutOpen || checklistOpen || change || whoOpen || pinOpen) && !collapsed;
   const demoHit = useMemo<PrintEvent | null>(() => {
     if (!demo?.hitCents) return null;
     return {
@@ -251,7 +269,7 @@ export default function Hud() {
   const saveFight = async (path: string, body: unknown) => {
     setSettingsError(null);
     const res = await fetch(path, {
-      method: path.endsWith("/pin") ? "POST" : "PATCH",
+      method: path.endsWith("/pin") || path.includes("/approve") ? "POST" : "PATCH",
       headers: ownerHeaders(),
       body: JSON.stringify(body),
     });
@@ -292,6 +310,15 @@ export default function Hud() {
       if (!guard("clock")) return;
       clockIn();
     } else void refresh();
+  };
+
+  const closePanels = () => {
+    setMenu(false);
+    setSettings(false);
+    setLevelsOpen(false);
+    setPayoutOpen(false);
+    setChecklistOpen(false);
+    setChange(false);
   };
 
   const guard = (next: "clock" | "settings" | "change") => {
@@ -430,9 +457,36 @@ export default function Hud() {
               {fight && (
                 <div className="menu-row">
                   <span>Streak</span>
-                  <span>{fight.streak}d</span>
+                  <span>
+                    {fight.streak}d{ops ? ` · ${ops.weekStreak}w` : ""}
+                  </span>
                 </div>
               )}
+              {ops && (
+                <div className="menu-row">
+                  <span>Level</span>
+                  <span>{levelText(ops)}</span>
+                </div>
+              )}
+              {ops && (
+                <div className="menu-row">
+                  <span>Week</span>
+                  <span>
+                    ${whole(ops.week.collectedCents)} / ${whole(ops.week.breakEvenCents)}
+                  </span>
+                </div>
+              )}
+              {ops && (
+                <div className="menu-row">
+                  <span>Pot</span>
+                  <span>
+                    {ops.payout
+                      ? `$${compact(ops.payout.potCents)} ${ops.payout.status}`
+                      : `$${compact(ops.week.potCents)}`}
+                  </span>
+                </div>
+              )}
+              {ops?.nudge && <p className="menu-note">{ops.nudge}</p>}
               {fight && (
                 <div className="menu-row">
                   <span>Avg</span>
@@ -452,20 +506,45 @@ export default function Hud() {
                 <button
                   type="button"
                   onClick={() => {
-                    setChange(false);
-                    setMenu(false);
+                    closePanels();
                     if (!guard("settings")) return;
                     setSettings(true);
                   }}
                 >
                   Settings
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closePanels();
+                    setLevelsOpen(true);
+                  }}
+                >
+                  Levels
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closePanels();
+                    setPayoutOpen(true);
+                  }}
+                >
+                  Payout
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closePanels();
+                    setChecklistOpen(true);
+                  }}
+                >
+                  Ready
+                </button>
                 {company?.owner && (
                   <button
                     type="button"
                     onClick={() => {
-                      setSettings(false);
-                      setMenu(false);
+                      closePanels();
                       if (!guard("change")) return;
                       setChange(true);
                     }}
@@ -476,6 +555,37 @@ export default function Hud() {
               </div>
               {error && <div className="err">{error}</div>}
             </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {levelsOpen && ops && (
+            <LevelsPanel
+              ops={ops}
+              demo={Boolean(demo)}
+              onClose={() => setLevelsOpen(false)}
+              onSave={(body) => saveFight("/api/fight/levels", body)}
+            />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {payoutOpen && ops && (
+            <PayoutPanel
+              ops={ops}
+              demo={Boolean(demo)}
+              onClose={() => setPayoutOpen(false)}
+              onApprove={async (weekStart) => {
+                if (demo) return;
+                await saveFight(`/api/fight/payouts/${weekStart}/approve`, {});
+              }}
+            />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {checklistOpen && (
+            <ChecklistPanel demo={Boolean(demo)} onClose={() => setChecklistOpen(false)} />
           )}
         </AnimatePresence>
 
@@ -649,6 +759,7 @@ function SettingsPanel({
   const [pot, setPot] = useState("");
   const [goal, setGoal] = useState("");
   const [days, setDays] = useState<number[]>(DEFAULT_FIGHT_SETTINGS.openWeekdays);
+  const [rent, setRent] = useState(false);
   const [ready, setReady] = useState(false);
   const invite = company?.code ? `${window.location.origin}/?join=${company.code}` : "";
 
@@ -660,6 +771,7 @@ function SettingsPanel({
     setPot(String(settings.potBps / 100));
     setGoal(String(settings.avgGoalCents / 100));
     setDays(settings.openWeekdays);
+    setRent(settings.rentEntered);
     setReady(true);
   }, [settings, ready]);
 
@@ -755,6 +867,7 @@ function SettingsPanel({
             openWeekdays: days,
             potBps: Math.round(Number(pot) * 100),
             avgGoalCents: Math.round(Number(goal) * 100),
+            rentEntered: rent,
           });
         }}
       >
@@ -790,6 +903,15 @@ function SettingsPanel({
             <label className="settings-line">
               <span>Avg goal</span>
               <input value={goal} onChange={(event) => setGoal(event.target.value)} inputMode="decimal" aria-label="Average sale goal" />
+            </label>
+            <label className="settings-line">
+              <span>Rent included</span>
+              <input
+                type="checkbox"
+                checked={rent}
+                onChange={(event) => setRent(event.target.checked)}
+                aria-label="Rent is included in fixed costs"
+              />
             </label>
           </>
         )}
@@ -965,6 +1087,295 @@ function ChangePanel({
           />
         </form>
       )}
+      {error && <div className="err">{error}</div>}
+    </motion.div>
+  );
+}
+
+function LevelsPanel({
+  ops,
+  demo,
+  onClose,
+  onSave,
+}: {
+  ops: OpsView;
+  demo: boolean;
+  onClose: () => void;
+  onSave: (body: unknown) => Promise<void>;
+}) {
+  const [days, setDays] = useState(String(ops.rules.clearsInARow));
+  const [rows, setRows] = useState(
+    ops.rules.table.map((row) => ({
+      level: String(row.level),
+      pay: rateText(row.payBumpCents),
+      pot: String(row.potBonusBps / 100),
+    })),
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    const table = rows.map((row) => ({
+      level: Math.round(Number(row.level)),
+      payBumpCents: Math.round(Number(row.pay) * 100),
+      potBonusBps: Math.round(Number(row.pot) * 100),
+    }));
+    if (demo) return;
+    try {
+      setError(null);
+      await onSave({ clearsInARow: Math.round(Number(days)), table });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save levels");
+    }
+  };
+
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Levels</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <p className="menu-note">Clear open days in a row. Square wages stay put.</p>
+      <label className="settings-line">
+        <span>Days</span>
+        <input value={days} onChange={(event) => setDays(event.target.value)} inputMode="numeric" aria-label="Open days in a row" />
+      </label>
+      <div className="menu-row">
+        <span>$/hr</span>
+        <span>Pot %</span>
+      </div>
+      {rows.map((row, index) => (
+        <div className="level-grid" key={index}>
+          <span>{row.level}</span>
+          <input
+            value={row.pay}
+            aria-label={`Level ${row.level} pay bump`}
+            inputMode="decimal"
+            onChange={(event) =>
+              setRows((current) => current.map((item, i) => (i === index ? { ...item, pay: event.target.value } : item)))
+            }
+          />
+          <input
+            value={row.pot}
+            aria-label={`Level ${row.level} pot percent`}
+            inputMode="decimal"
+            onChange={(event) =>
+              setRows((current) => current.map((item, i) => (i === index ? { ...item, pot: event.target.value } : item)))
+            }
+          />
+        </div>
+      ))}
+      {ops.history.map((step) => (
+        <div className="menu-row" key={`${step.date}-${step.toLevel}`}>
+          <span>{step.date}</span>
+          <span>
+            {step.fromLevel} → {step.toLevel}
+          </span>
+        </div>
+      ))}
+      <div className="menu-actions">
+        <button type="button" onClick={() => void save()}>
+          Save
+        </button>
+      </div>
+      {error && <div className="err">{error}</div>}
+    </motion.div>
+  );
+}
+
+function PayoutPanel({
+  ops,
+  demo,
+  onClose,
+  onApprove,
+}: {
+  ops: OpsView;
+  demo: boolean;
+  onClose: () => void;
+  onApprove: (weekStart: string) => Promise<void>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [pin, setPin] = useState("");
+  const hours = (ms: number) => (ms / 3_600_000).toFixed(1);
+
+  const download = async () => {
+    setError(null);
+    try {
+      const text = demo
+        ? payoutCsv(ops.payout ? [ops.payout] : [])
+        : await (async () => {
+            if (pin && !shopPin()) setShopPin(pin);
+            const res = await fetch("/api/fight/payouts.csv", { headers: ownerHeaders() });
+            const body = await res.text();
+            if (!res.ok) {
+              const message = body.startsWith("{") ? (JSON.parse(body) as { message?: string }).message : "";
+              throw new Error(message || "Couldn't export the pot");
+            }
+            return body;
+          })();
+      const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "pot-payouts.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't export the pot");
+    }
+  };
+
+  const approve = async () => {
+    if (!ops.payout || ops.payout.status === "paid") return;
+    setError(null);
+    try {
+      if (!demo && pin && !shopPin()) setShopPin(pin);
+      await onApprove(ops.payout.weekStart);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't approve that week");
+    }
+  };
+
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Payout</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <p className="menu-note">Mon–Fri pot by timecard hours. Approving does not change Square.</p>
+      <div className="menu-row">
+        <span>This week</span>
+        <span>
+          ${whole(ops.week.collectedCents)} / ${whole(ops.week.breakEvenCents)}
+        </span>
+      </div>
+      {ops.week.shares.map((share) => (
+        <div className="menu-row" key={share.id}>
+          <span>
+            {share.name.split(" ")[0]} · {hours(share.ms)}h
+          </span>
+          <span>${compact(share.cents)}</span>
+        </div>
+      ))}
+      {ops.payout && (
+        <>
+          <div className="menu-row">
+            <span>Week of {ops.payout.weekStart.slice(5)}</span>
+            <span>
+              ${compact(ops.payout.potCents)} {ops.payout.status}
+            </span>
+          </div>
+          {ops.payout.shares.map((share) => (
+            <div className="menu-row" key={`pay-${share.id}`}>
+              <span>
+                {share.name.split(" ")[0]} · {hours(share.ms)}h
+              </span>
+              <span>${compact(share.cents)}</span>
+            </div>
+          ))}
+        </>
+      )}
+      {!demo && !shopPin() && (
+        <input
+          value={pin}
+          onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+          placeholder="Shop PIN"
+          aria-label="Shop PIN"
+          inputMode="numeric"
+          type="password"
+          autoComplete="off"
+        />
+      )}
+      <div className="menu-actions">
+        {ops.payout && ops.payout.status === "open" && (
+          <button type="button" onClick={() => void approve()}>
+            Approve
+          </button>
+        )}
+        <button type="button" onClick={() => void download()}>
+          CSV
+        </button>
+      </div>
+      {error && <div className="err">{error}</div>}
+    </motion.div>
+  );
+}
+
+function ChecklistPanel({ demo, onClose }: { demo: boolean; onClose: () => void }) {
+  const [checks, setChecks] = useState<ReadinessCheck[]>(() => (demo ? demoReadiness().checks : []));
+  const [scope, setScope] = useState<string>(demo ? "local" : "");
+  const [ready, setReady] = useState(demo ? demoReadiness().ready : false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (demo) return;
+    let cancel = false;
+    void fetch("/api/health")
+      .then(async (res) => {
+        const body = (await res.json()) as {
+          ready?: boolean;
+          scope?: { locationId?: string };
+          checks?: ReadinessCheck[];
+          message?: string;
+        };
+        if (!res.ok) throw new Error(body.message || "Couldn't load the checklist");
+        if (cancel) return;
+        setChecks(body.checks ?? []);
+        setReady(Boolean(body.ready));
+        setScope(body.scope?.locationId ?? "");
+      })
+      .catch((err) => {
+        if (!cancel) setError(err instanceof Error ? err.message : "Couldn't load the checklist");
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [demo]);
+
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Ready</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="menu-row">
+        <span>Go live</span>
+        <span>{ready ? "Yes" : "No"}</span>
+      </div>
+      {scope && (
+        <div className="menu-row">
+          <span>Location</span>
+          <span>{scope}</span>
+        </div>
+      )}
+      {checks.map((check) => (
+        <div className={`menu-row${check.ok ? "" : " soft"}`} key={check.id}>
+          <span>{check.label}</span>
+          <span>{check.ok ? "Yes" : check.detail}</span>
+        </div>
+      ))}
       {error && <div className="err">{error}</div>}
     </motion.div>
   );

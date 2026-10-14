@@ -10,9 +10,10 @@ import {
   type CompanyState,
 } from "@shared/schema";
 import { fightSettingsSchema } from "@shared/fight";
+import { DEFAULT_LEVEL_RULES, levelRulesSchema } from "@shared/ops";
 import { pinShape } from "./auth/pin";
 import { earnEngine } from "./clock/engine";
-import { getCompany, getOwnerKey, hydrateCompany, setCompanyListener } from "./company";
+import { ensureScope, getCompany, getOwnerKey, hydrateCompany, setCompanyListener } from "./company";
 import { fightBook } from "./fight/book";
 import { log } from "./vite";
 
@@ -48,6 +49,90 @@ const fileSchema = z.object({
         )
         .max(80)
         .default([]),
+      level: z.number().int().min(0).max(1_000).default(0),
+      consecutiveClears: z.number().int().min(0).max(100_000).default(0),
+      levelNotedDate: z.string().nullable().default(null),
+      levelRules: levelRulesSchema.default(DEFAULT_LEVEL_RULES),
+      history: z
+        .array(
+          z.object({
+            at: z.number(),
+            date: z.string(),
+            fromLevel: z.number().int(),
+            toLevel: z.number().int(),
+            reason: z.string().max(120),
+            companyId: z.string().max(80),
+            locationId: z.string().max(80),
+          }),
+        )
+        .max(200)
+        .default([]),
+      days: z
+        .array(
+          z.object({
+            companyId: z.string().max(80),
+            locationId: z.string().max(80),
+            date: z.string(),
+            collectedCents: z.number().int().nonnegative(),
+            wageCents: z.number().int().nonnegative(),
+            breakEvenCents: z.number().int().nonnegative(),
+            potCents: z.number().int().nonnegative(),
+            payoutPotCents: z.number().int().nonnegative(),
+            cleared: z.boolean(),
+            hours: z
+              .array(
+                z.object({
+                  personId: z.string().max(80),
+                  name: z.string().max(80),
+                  ms: z.number().int().nonnegative(),
+                }),
+              )
+              .max(80),
+          }),
+        )
+        .max(400)
+        .default([]),
+      payouts: z
+        .array(
+          z.object({
+            companyId: z.string().max(80),
+            locationId: z.string().max(80),
+            weekStart: z.string(),
+            potCents: z.number().int().nonnegative(),
+            shares: z
+              .array(
+                z.object({
+                  id: z.string().max(80),
+                  name: z.string().max(80),
+                  cents: z.number().int().nonnegative(),
+                  ms: z.number().int().nonnegative(),
+                }),
+              )
+              .max(80),
+            status: z.enum(["open", "paid"]),
+            approvedAt: z.number().int().nullable(),
+          }),
+        )
+        .max(120)
+        .default([]),
+      resolvedWeeks: z.array(z.string().max(200)).max(200).default([]),
+      lastResolvedWeek: z.string().nullable().default(null),
+      lastWeekScope: z.string().nullable().default(null),
+      weekStreak: z.number().int().min(0).max(100_000).default(0),
+      webhookSeenAt: z.number().int().nullable().default(null),
+      invoices: z
+        .array(
+          z.object({
+            id: z.string().max(80),
+            title: z.string().max(80),
+            status: z.string().max(40),
+            dueCents: z.number().int().nonnegative(),
+            quote: z.boolean(),
+            teamMemberId: z.string().max(80).nullable(),
+          }),
+        )
+        .max(40)
+        .default([]),
     })
     .optional(),
 });
@@ -71,6 +156,7 @@ export function startPersistence() {
   earnEngine.setBookListener(scheduleSave);
   fightBook.setListener(scheduleSave);
   setCompanyListener(scheduleSave);
+  ensureScope(process.env.SQUARE_LOCATION_ID ?? null, fightBook.scopeHint());
   bootstrapShopPin();
   applyHourOverride();
 }

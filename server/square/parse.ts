@@ -1,3 +1,5 @@
+import type { ChaseInvoice } from "@shared/ops";
+
 export type SquareMoney = { amount?: number; currency?: string };
 
 export type JobAssignment = {
@@ -26,6 +28,9 @@ export type InvoiceSnapshot = {
   sent: boolean;
   collected: boolean;
   updatedAt?: string;
+  /** Balance still due, in cents. Absent on older snapshots. */
+  dueCents?: number;
+  teamMemberId?: string | null;
 };
 
 const SENT = new Set([
@@ -85,6 +90,19 @@ export function snapshotFromInvoice(invoice: unknown): InvoiceSnapshot | null {
 
   const title = typeof row.title === "string" ? row.title.trim() : "";
   const updatedAt = typeof row.updated_at === "string" ? row.updated_at : undefined;
+  const member = row.team_member_id ?? row.employee_id;
+  let dueCents = 0;
+  for (const request of requests) {
+    if (!request || typeof request !== "object") continue;
+    const bill = request as {
+      computed_amount_money?: SquareMoney;
+      requested_money?: SquareMoney;
+      total_completed_amount_money?: SquareMoney;
+    };
+    const asked = bill.computed_amount_money?.amount ?? bill.requested_money?.amount;
+    const paid = bill.total_completed_amount_money?.amount ?? 0;
+    if (positive(asked)) dueCents += Math.max(0, asked - (positive(paid) ? paid : 0));
+  }
 
   return {
     id: row.id,
@@ -94,6 +112,8 @@ export function snapshotFromInvoice(invoice: unknown): InvoiceSnapshot | null {
     sent: SENT.has(status),
     collected: status === "PAID" && centsPaid > 0,
     updatedAt,
+    dueCents,
+    teamMemberId: typeof member === "string" && member ? member : null,
   };
 }
 
@@ -111,4 +131,22 @@ export function snapshotFromWebhook(body: unknown): InvoiceSnapshot | null {
     body as { data?: { object?: { invoice?: unknown } } }
   ).data?.object?.invoice;
   return snapshotFromInvoice(invoice);
+}
+
+const CLOSED = new Set(["PAID", "CANCELED", "CANCELLED", "REFUNDED", "FAILED"]);
+
+/** Open invoice or quote the nudge can mention. Paid invoices drop out. */
+export function chaseFromSnapshot(snapshot: InvoiceSnapshot): ChaseInvoice | null {
+  if (CLOSED.has(snapshot.status)) return null;
+  const quote = snapshot.status === "DRAFT" || snapshot.status === "SCHEDULED";
+  const dueCents = Math.max(0, snapshot.dueCents ?? 0);
+  if (!quote && dueCents <= 0) return null;
+  return {
+    id: snapshot.id,
+    title: snapshot.title?.trim() || (quote ? "Quote" : "Invoice"),
+    status: snapshot.status,
+    dueCents,
+    quote,
+    teamMemberId: snapshot.teamMemberId ?? null,
+  };
 }

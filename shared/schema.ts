@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { fightViewSchema } from "./fight";
+import { opsViewSchema } from "./ops";
 
 /**
  * I/O — Input vs Output.
@@ -111,6 +112,8 @@ export const appStateSchema = z.object({
   you: viewerSchema,
   /** Today's fight-the-bar snapshot. No secrets. */
   fight: fightViewSchema,
+  /** Levels, week target, pot payout, and the late-day nudge. The strip does not read this. */
+  ops: opsViewSchema,
 });
 export type AppState = z.infer<typeof appStateSchema>;
 
@@ -134,6 +137,10 @@ export const companyStateSchema = z.object({
   name: z.string().nullable(),
   code: z.string().nullable(),
   people: z.array(boardPersonSchema),
+  /** Stable id for this shop's book. Null until the first save mints one. */
+  id: z.string().min(1).max(80).nullable().default(null),
+  /** Square location, or "local" when Square has no location yet. */
+  locationId: z.string().min(1).max(80).nullable().default(null),
 });
 export type CompanyState = z.infer<typeof companyStateSchema>;
 

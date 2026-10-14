@@ -1,12 +1,14 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { fightSettingsSchema } from "@shared/fight";
+import { levelRulesSchema } from "@shared/ops";
 import { configSchema, inputTypeSchema } from "@shared/schema";
 import { HttpError, assertShopPin, pinShape } from "./auth/pin";
 import { addPerson, companyView, createCompany, joinCompany, setPersonRate } from "./company";
 import { earnEngine } from "./clock/engine";
 import { fightBook } from "./fight/book";
 import { startPersistence } from "./persist";
+import { healthReport } from "./ready";
 import { squareConfigured } from "./square/client";
 import { timecardFromWebhook } from "./square/labor";
 import { signaturesMatch, squareSignature } from "./square/signature";
@@ -72,7 +74,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   startSquareSync();
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
+    res.json(healthReport());
   });
 
   app.get("/api/state", (req, res) => {
@@ -261,6 +263,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/fight/levels", (req, res) => {
+    try {
+      requirePin(req);
+      const parsed = levelRulesSchema.safeParse(req.body);
+      if (!parsed.success) {
+        const custom = parsed.error.issues.find((issue) => issue.code === "custom")?.message;
+        return res.status(400).json({ message: custom || "Check the level table" });
+      }
+      fightBook.updateLevelRules(parsed.data);
+      res.json(earnEngine.getState(personIdFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't save levels");
+    }
+  });
+
+  // PIN confirms the owner saw the week. Square wages are not changed.
+  app.post("/api/fight/payouts/:weekStart/approve", (req, res) => {
+    try {
+      requirePin(req);
+      const weekStart = req.params.weekStart;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+        return res.status(400).json({ message: "That week is not closed" });
+      }
+      const payout = fightBook.approvePayout(weekStart, Date.now());
+      res.json({ ok: true, status: payout.status, potCents: payout.potCents });
+    } catch (err) {
+      sendError(res, err, "Couldn't approve that week");
+    }
+  });
+
+  app.get("/api/fight/payouts.csv", (req, res) => {
+    try {
+      requirePin(req);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "attachment; filename=\"pot-payouts.csv\"");
+      res.send(fightBook.payoutCsv());
+    } catch (err) {
+      sendError(res, err, "Couldn't export the pot");
+    }
+  });
+
   app.post("/api/square/webhook", (req, res) => {
     const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
     const url = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
@@ -279,6 +322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(403).json({ message: "Invalid Square signature" });
     }
 
+    fightBook.markWebhook(Date.now());
     const timecard = timecardFromWebhook(req.body);
     if (timecard) {
       earnEngine.syncRemoteTimecard(timecard);

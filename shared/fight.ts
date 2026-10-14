@@ -24,6 +24,8 @@ export const fightSettingsSchema = z
     potBps: z.number().int().min(0).max(10_000),
     /** Average-sale goal in cents. Default $1,040. */
     avgGoalCents: z.number().int().positive().max(100_000_000),
+    /** Owner confirmed rent is inside the monthly fixed number. */
+    rentEntered: z.boolean().default(false),
   })
   .superRefine((value, ctx) => {
     if (value.materialsBps + value.feeBps >= 10_000) {
@@ -51,6 +53,7 @@ export const DEFAULT_FIGHT_SETTINGS: FightSettings = {
   openWeekdays: [1, 2, 3, 4, 5],
   potBps: 1_000,
   avgGoalCents: 104_000,
+  rentEntered: false,
 };
 
 const WEEKDAY: Record<string, number> = {

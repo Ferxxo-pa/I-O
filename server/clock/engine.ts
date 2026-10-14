@@ -169,7 +169,16 @@ export class EarnEngine {
         clockedIn: viewerClockedIn,
       },
       fight,
+      ops: fightBook.opsView(),
     };
+  }
+
+  linkedPersonIds(): string[] {
+    return this.shifts.map((shift) => shift.personId);
+  }
+
+  rateSourceName(): "default" | "manual" | "square" {
+    return this.rateSource;
   }
 
   /**
