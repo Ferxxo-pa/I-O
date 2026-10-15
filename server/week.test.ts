@@ -6,7 +6,13 @@ import {
   closeWeek,
   copyLine,
   cushionTotal,
+  consecutiveWorkedDays,
+  formatWorkStreak,
+  halfTargetCents,
+  menuLevel,
   menuWorkLine,
+  shownWorkedDays,
+  weekFillPct,
   demoWeek,
   depositCushion,
   drawCushion,
@@ -183,12 +189,115 @@ assert.equal(copyLine(demoWeek("mid"), 1), "Over the hump");
 assert.equal(copyLine(demoWeek("stretch"), 0), "One sale away");
 assert.equal(copyLine(demoWeek("covered"), 0), "Covered. Now profit.");
 assert.equal(copyLine(demoWeek("covered"), 1), "In the green");
-assert.equal(menuWorkLine(false, 32.8), "Hardly working");
-assert.equal(menuWorkLine(false, 50), "Working hard");
-assert.equal(menuWorkLine(false, 66), "Working hard");
-assert.equal(menuWorkLine(true, 100), "Working harder");
-assert.equal(menuWorkLine(demoWeek("low").covered, 33), "Hardly working");
-assert.equal(menuWorkLine(demoWeek("covered").covered, 100), "Working harder");
+const lowWeek = demoWeek("low");
+const midWeek = demoWeek("mid");
+const coveredWeek = demoWeek("covered");
+const halfCut = halfTargetCents(lowWeek.targetCents);
+assert.equal(halfCut, Math.floor(lowWeek.targetCents / 2));
+assert.equal(lowWeek.targetCents, weekBarTarget({
+  weeklyTargetCents: 290_000,
+  materialsBps: 1_300,
+  feeBps: 300,
+  rentMonthlyCents: 0,
+  rentEntered: false,
+  weekOpenDays: 5,
+  monthOpenDays: 22,
+}));
+assert.equal(menuWorkLine(false, halfCut - 1, lowWeek.targetCents), "Hardly working");
+assert.equal(menuWorkLine(false, halfCut, lowWeek.targetCents), "Working hard");
+assert.equal(menuWorkLine(true, lowWeek.targetCents, lowWeek.targetCents), "Working harder");
+assert.equal(menuWorkLine(lowWeek.covered, lowWeek.ownCents + lowWeek.cushionUsedCents, lowWeek.targetCents), "Hardly working");
+assert.equal(menuWorkLine(midWeek.covered, midWeek.ownCents + midWeek.cushionUsedCents, midWeek.targetCents), "Working hard");
+assert.equal(menuWorkLine(coveredWeek.covered, coveredWeek.ownCents + coveredWeek.cushionUsedCents, coveredWeek.targetCents), "Working harder");
+const cushionWeek = demoWeek("cushion");
+assert.equal(
+  menuWorkLine(cushionWeek.covered, cushionWeek.ownCents + cushionWeek.cushionUsedCents, cushionWeek.targetCents),
+  "Working hard",
+);
+const lowFilled = lowWeek.ownCents + lowWeek.cushionUsedCents;
+const lowLevel = menuLevel({
+  weeksCovered: lowWeek.weeksCovered,
+  filledCents: lowFilled,
+  targetCents: lowWeek.targetCents,
+  covered: lowWeek.covered,
+});
+assert.equal(lowLevel.level, 1);
+assert.equal(lowLevel.next, 2);
+assert.equal(lowLevel.pct, weekFillPct(lowFilled, lowWeek.targetCents, lowWeek.covered));
+assert.ok(lowLevel.pct < 50);
+const coveredLevel = menuLevel({
+  weeksCovered: coveredWeek.weeksCovered,
+  filledCents: coveredWeek.ownCents + coveredWeek.cushionUsedCents,
+  targetCents: coveredWeek.targetCents,
+  covered: coveredWeek.covered,
+});
+assert.equal(coveredLevel.level, 2);
+assert.equal(coveredLevel.next, 3);
+assert.equal(coveredLevel.pct, 100);
+assert.equal(menuLevel({ weeksCovered: 1, filledCents: 1, targetCents: 4, covered: false }).level, 1);
+assert.equal(menuLevel({ weeksCovered: 3, filledCents: 1, targetCents: 4, covered: false }).level, 2);
+assert.equal(menuLevel({ weeksCovered: 4, filledCents: 1, targetCents: 4, covered: false }).level, 3);
+assert.equal(menuLevel({ weeksCovered: 8, filledCents: 1, targetCents: 4, covered: false }).level, 4);
+assert.equal(menuLevel({ weeksCovered: 13, filledCents: 1, targetCents: 4, covered: false }).level, 5);
+assert.equal(menuLevel({ weeksCovered: 25, filledCents: 1, targetCents: 4, covered: false }).level, 5);
+const top = menuLevel({ weeksCovered: 26, filledCents: 1, targetCents: 4, covered: false });
+assert.equal(top.level, 6);
+assert.equal(top.next, null);
+assert.equal(top.pct, 25);
+assert.equal(formatWorkStreak(0), "0 days");
+assert.equal(formatWorkStreak(1), "1 day");
+assert.equal(formatWorkStreak(6), "6 days");
+assert.equal(formatWorkStreak(7), "1 week");
+assert.equal(formatWorkStreak(8), "1 week, 1 day");
+assert.equal(formatWorkStreak(10), "1 week, 3 days");
+assert.equal(formatWorkStreak(14), "2 weeks");
+assert.equal(formatWorkStreak(15), "2 weeks, 1 day");
+const open = [1, 2, 3, 4, 5];
+const run = ["2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12", "2026-10-13"];
+assert.equal(
+  consecutiveWorkedDays({
+    today: "2026-10-14",
+    openWeekdays: open,
+    days: run.map((date) => ({ date, worked: true })),
+    todayWorked: true,
+  }),
+  10,
+);
+assert.equal(
+  consecutiveWorkedDays({
+    today: "2026-10-14",
+    openWeekdays: open,
+    days: run.map((date) => ({ date, worked: true })),
+    todayWorked: false,
+  }),
+  9,
+);
+assert.equal(
+  consecutiveWorkedDays({
+    today: "2026-10-14",
+    openWeekdays: open,
+    days: [
+      { date: "2026-10-13", worked: true },
+      { date: "2026-10-12", worked: false },
+      { date: "2026-10-09", worked: true },
+    ],
+    todayWorked: false,
+  }),
+  1,
+);
+assert.equal(
+  consecutiveWorkedDays({
+    today: "2026-10-14",
+    openWeekdays: open,
+    days: [{ date: "2026-10-13", worked: false }, { date: "2026-10-09", worked: true }],
+    todayWorked: false,
+  }),
+  0,
+);
+assert.equal(shownWorkedDays(9, false, true, true), 10);
+assert.equal(shownWorkedDays(9, true, true, true), 9);
+assert.equal(shownWorkedDays(9, false, false, true), 9);
+assert.equal(shownWorkedDays(9, false, true, false), 9);
 const cushion = demoWeek("cushion");
 assert.equal(cushion.covered, false);
 assert.equal(cushion.bankedCents, 120_000);
@@ -276,3 +385,30 @@ const later = book.sync({
 });
 assert.equal(later.week.bankedCents, 0);
 assert.equal(later.todayWageCents, 0);
+
+const streakBook = new FightBook();
+const workedKeys = ["2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12", "2026-10-13"];
+for (const key of workedKeys) {
+  const now = atChicago(key, 11);
+  streakBook.sync({ now, lifetimeCollected: 0, lifetimeSettled: 0, ...quiet });
+  streakBook.addHours("ada", "Ada", 3_600_000, { now, lifetimeCollected: 0, lifetimeSettled: 0 });
+}
+const quietToday = streakBook.sync({
+  now: atChicago("2026-10-14", 10),
+  lifetimeCollected: 0,
+  lifetimeSettled: 0,
+  ...quiet,
+});
+assert.equal(quietToday.todayWorked, false);
+assert.equal(quietToday.workedDays, 9);
+assert.equal(formatWorkStreak(shownWorkedDays(quietToday.workedDays, quietToday.todayWorked, true, true)), "1 week, 3 days");
+const clockedToday = streakBook.sync({
+  now: atChicago("2026-10-14", 11),
+  lifetimeCollected: 0,
+  lifetimeSettled: 0,
+  accrualSince: () => 0,
+  liveHoursSince: () => [{ personId: "ada", name: "Ada", ms: 1_000 }],
+});
+assert.equal(clockedToday.todayWorked, true);
+assert.equal(clockedToday.workedDays, 10);
+assert.equal(formatWorkStreak(clockedToday.workedDays), "1 week, 3 days");

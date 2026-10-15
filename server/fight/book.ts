@@ -30,6 +30,7 @@ import {
 } from "@shared/ops";
 import {
   closeWeek,
+  consecutiveWorkedDays,
   depositCushion,
   netOfSale,
   splitSale,
@@ -568,6 +569,7 @@ export class FightBook {
     const [year, month] = date.split("-").map(Number);
     const hours = mergeHours(this.data.hours, live);
     this.live = { now, date, collected, wages, hours };
+    const worked = this.workedStreak(date, hours);
     return buildFightView({
       date,
       pinSet: this.pinSet(),
@@ -576,10 +578,33 @@ export class FightBook {
       sales: this.data.sales,
       hours: hours.map((row) => ({ id: row.personId, name: row.name, ms: row.ms })),
       streak: this.data.streak,
+      workedDays: worked.workedDays,
+      todayWorked: worked.todayWorked,
       settings: this.data.settings,
       openDays: openDaysInMonth(year, month, this.data.settings.openWeekdays, SHOP_ZONE),
       week: this.weekView(date),
     });
+  }
+
+  /** Open days in a row with clock time or a covered day. Today with no clock yet is skipped. */
+  private workedStreak(date: string, hours: FightHour[]): { workedDays: number; todayWorked: boolean } {
+    const scope = currentScope();
+    const todayWorked = this.data.todayCounted || hours.some((row) => row.ms > 0);
+    const days = this.data.days
+      .filter((day) => sameScope(day, scope))
+      .map((day) => ({
+        date: day.date,
+        worked: day.cleared || day.hours.some((row) => row.ms > 0),
+      }));
+    return {
+      todayWorked,
+      workedDays: consecutiveWorkedDays({
+        today: date,
+        openWeekdays: this.data.settings.openWeekdays,
+        days,
+        todayWorked,
+      }),
+    };
   }
 
   private weekTarget(monday: string): number {

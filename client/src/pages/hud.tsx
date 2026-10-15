@@ -6,13 +6,24 @@ import {
   DEFAULT_FIGHT_SETTINGS,
   demoModel,
   hitTier,
+  isOpenKey,
   saleTapeLabel,
   type DemoScene,
   type FightSettings,
   type FightView,
 } from "@shared/fight";
-import { demoOps, demoReadiness, levelProgress, type OpsView, type ReadinessCheck } from "@shared/ops";
-import { copyLine, demoWeek, menuWorkLine, type WeekPreset, type WeekView } from "@shared/week";
+import { demoOps, demoReadiness, type OpsView, type ReadinessCheck } from "@shared/ops";
+import {
+  copyLine,
+  demoWeek,
+  formatWorkStreak,
+  menuLevel,
+  menuWorkLine,
+  shownWorkedDays,
+  weekFillPct,
+  type WeekPreset,
+  type WeekView,
+} from "@shared/week";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -80,6 +91,12 @@ function readWeek(): WeekPreset | null {
   const value = new URLSearchParams(window.location.search).get("week");
   if (value === "low" || value === "mid" || value === "stretch" || value === "covered" || value === "cushion") return value;
   return null;
+}
+
+function readWorked(): number | null {
+  const raw = new URLSearchParams(window.location.search).get("worked");
+  if (raw == null || !/^\d{1,4}$/.test(raw)) return null;
+  return Number(raw);
 }
 
 function useCopyVariant(): number {
@@ -177,15 +194,9 @@ function StatRow({
   );
 }
 
-function streakLine(count: number): string {
-  const weeks = Math.max(0, count);
-  return `🔥 ${weeks} ${weeks === 1 ? "week" : "weeks"}`;
-}
-
 function splitWidths(collected: number, needed: number, covered: boolean): { green: number; red: number } {
-  const total = Math.max(0, collected) + Math.max(0, needed);
-  const green = covered || total <= 0 ? 100 : (Math.max(0, collected) / total) * 100;
-  const red = covered || total <= 0 ? 0 : 100 - green;
+  const green = weekFillPct(collected, Math.max(0, collected) + Math.max(0, needed), covered);
+  const red = covered || green >= 100 ? 0 : 100 - green;
   return { green, red };
 }
 
@@ -201,7 +212,7 @@ function UpgradeBar({
   calm,
 }: {
   level: number;
-  next: number;
+  next: number | null;
   progress: number;
   calm: boolean;
 }) {
@@ -219,7 +230,7 @@ function UpgradeBar({
       </span>
       <span className="level-row">
         <span className="level-now">Level {level}</span>
-        <span className="level-next">Level {next}</span>
+        {next != null && <span className="level-next">Level {next}</span>}
       </span>
     </motion.div>
   );
@@ -227,22 +238,56 @@ function UpgradeBar({
 
 function GameMenu({
   fight,
-  ops,
   calm,
+  live,
+  pending,
+  ready,
+  youName,
+  streakDays,
+  onClock,
   onSettings,
 }: {
   fight: FightView | null;
-  ops: OpsView | null;
   calm: boolean;
+  live: boolean;
+  pending: boolean;
+  ready: boolean;
+  youName: string | null;
+  streakDays: number;
+  onClock: () => void;
   onSettings: () => void;
 }) {
   const week = fight?.week ?? null;
   if (!week) return null;
-  const step = levelProgress(ops?.level ?? 1, ops?.consecutiveClears ?? 0, ops?.rules.clearsInARow ?? 5);
+  const filled = week.ownCents + week.cushionUsedCents;
+  const step = menuLevel({
+    weeksCovered: week.weeksCovered,
+    filledCents: filled,
+    targetCents: week.targetCents,
+    covered: week.covered,
+  });
+  const clockTitle = live ? "Clock out" : youName || "Clock in";
   return (
     <div className="col">
       <UpgradeBar level={step.level} next={step.next} progress={step.pct} calm={calm} />
-      <StatRow label="Streak" index={2} calm={calm} value={streakLine(week.weeksCovered)} />
+      <motion.div
+        className="clock-stack"
+        initial={calm ? false : { opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.06 }}
+      >
+        <button
+          type="button"
+          className={`mark ctrl${live ? "" : " out"}`}
+          onClick={onClock}
+          disabled={pending || !ready}
+          title={clockTitle}
+        >
+          I/O
+          <span className="tip">{clockTitle}</span>
+        </button>
+        <span className="streak-line">{formatWorkStreak(streakDays)}</span>
+      </motion.div>
       <motion.button
         type="button"
         className="gear dock"
@@ -283,7 +328,7 @@ function MenuTop({
 }) {
   const filled = week.ownCents + week.cushionUsedCents;
   const widths = splitWidths(filled, week.remainingCents, week.covered);
-  const work = menuWorkLine(week.covered, widths.green);
+  const work = menuWorkLine(week.covered, filled, week.targetCents);
   return (
     <div className={`strip ${live ? "live" : "idle"}${won ? " won" : ""}`} data-clock={live ? "in" : "out"}>
       <span className="chips" aria-hidden>
@@ -419,6 +464,12 @@ export default function Hud() {
 
   const live = demo ? demo.clockedIn : (state?.session.clockedIn ?? false);
   const week = fight?.week ?? null;
+  const workedOverride = demo ? readWorked() : null;
+  const streakDays =
+    workedOverride ??
+    (fight
+      ? shownWorkedDays(fight.workedDays, fight.todayWorked, live, isOpenKey(fight.date, fight.settings.openWeekdays))
+      : 0);
   const won = Boolean(week?.covered && live);
   const barPct = week ? Math.min(100, week.barPct * 100) : 0;
   const headline = week ? weekLine(week, copyVariant) : "";
@@ -722,8 +773,13 @@ export default function Hud() {
               ) : (
                 <GameMenu
                   fight={fight}
-                  ops={ops}
                   calm={calm}
+                  live={live}
+                  pending={pending}
+                  ready={Boolean(state) || Boolean(demo)}
+                  youName={youName}
+                  streakDays={streakDays}
+                  onClock={toggle}
                   onSettings={() => {
                     if (!demo && !guard("settings")) return;
                     setSettings(true);

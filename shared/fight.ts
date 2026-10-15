@@ -301,6 +301,10 @@ export const fightViewSchema = z.object({
   potCents: z.number().int(),
   shares: z.array(potShareSchema),
   streak: z.number().int(),
+  /** Consecutive open days with clock time or a covered day, ending today. */
+  workedDays: z.number().int().min(0).default(0),
+  /** Today already has clock time or was covered, so a live clock-in must not be counted twice. */
+  todayWorked: z.boolean().default(false),
   avgSaleCents: z.number().int().nullable(),
   saleCount: z.number().int(),
   goalCents: z.number().int(),
@@ -320,6 +324,8 @@ export type FightView = {
   potCents: number;
   shares: PotShare[];
   streak: number;
+  workedDays: number;
+  todayWorked: boolean;
   avgSaleCents: number | null;
   saleCount: number;
   goalCents: number;
@@ -335,6 +341,8 @@ export function buildFightView(input: {
   sales: readonly number[];
   hours: HourShare[];
   streak: number;
+  workedDays?: number;
+  todayWorked?: boolean;
   settings: FightSettings;
   openDays: number;
   week?: WeekView;
@@ -360,6 +368,8 @@ export function buildFightView(input: {
     potCents: pot,
     shares: splitPot(pot, input.hours),
     streak: input.streak,
+    workedDays: Math.max(0, Math.round(input.workedDays ?? 0)),
+    todayWorked: input.todayWorked ?? false,
     avgSaleCents: averageSaleCents(input.sales),
     saleCount: input.sales.length,
     goalCents: input.settings.avgGoalCents,

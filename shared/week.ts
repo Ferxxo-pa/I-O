@@ -244,11 +244,98 @@ export function copyVariants(input: {
   return ["Covered. Now profit.", "In the green", "Week covered"];
 }
 
-/** Open-menu headline. One line, from how full the weekly bar is. */
-export function menuWorkLine(covered: boolean, greenPct: number): string {
+/** Half the net week target. Covered weeks, the bar, and the work line all use this cut. */
+export function halfTargetCents(targetCents: number): number {
+  return Math.floor(Math.max(0, Math.round(targetCents)) / 2);
+}
+
+/** Green share of the week bar. Covered is a full bar. A zero target matches an empty week. */
+export function weekFillPct(filledCents: number, targetCents: number, covered: boolean): number {
+  if (covered) return 100;
+  const target = Math.max(0, Math.round(targetCents));
+  const filled = Math.max(0, Math.round(filledCents));
+  if (target <= 0) return 100;
+  return Math.min(100, (filled / target) * 100);
+}
+
+/** Open-menu headline. Half is half the real net target, and the fill includes cushion already drawn. */
+export function menuWorkLine(covered: boolean, filledCents: number, targetCents: number): string {
   if (covered) return "Working harder";
-  if (greenPct >= 50) return "Working hard";
+  const target = Math.max(0, Math.round(targetCents));
+  const filled = Math.max(0, Math.round(filledCents));
+  if (target > 0 && filled >= halfTargetCents(target)) return "Working hard";
   return "Hardly working";
+}
+
+/** Covered weeks required to reach level 2, then 3, 4, 5, and 6. Level 1 is the start. */
+export const LEVEL_WEEKS = [2, 4, 8, 13, 26] as const;
+
+/** Gold level bar. The number follows covered weeks. The fill is this week's collected share. */
+export function menuLevel(input: {
+  weeksCovered: number;
+  filledCents: number;
+  targetCents: number;
+  covered: boolean;
+}): { level: number; next: number | null; pct: number } {
+  const weeks = Math.max(0, Math.round(input.weeksCovered));
+  let level = 1;
+  for (const need of LEVEL_WEEKS) {
+    if (weeks >= need) level += 1;
+    else break;
+  }
+  return {
+    level,
+    next: level > LEVEL_WEEKS.length ? null : level + 1,
+    pct: weekFillPct(input.filledCents, input.targetCents, input.covered),
+  };
+}
+
+export type DayWork = { date: string; worked: boolean };
+
+function dayIsOpen(key: string, openWeekdays: readonly number[]): boolean {
+  return openWeekdays.includes(weekdayOf(key));
+}
+
+/**
+ * Consecutive open days worked, walking back from today.
+ * A day counts when someone clocked time or the day was covered.
+ * Today with no clock yet does not break the run.
+ */
+export function consecutiveWorkedDays(input: {
+  today: string;
+  openWeekdays: readonly number[];
+  days: readonly DayWork[];
+  todayWorked: boolean;
+}): number {
+  const worked = new Map(input.days.map((day) => [day.date, day.worked]));
+  let count = 0;
+  let cursor = input.today;
+  for (let i = 0; i < 800; i++) {
+    if (dayIsOpen(cursor, input.openWeekdays)) {
+      const hit = cursor === input.today ? input.todayWorked || worked.get(cursor) === true : worked.get(cursor) === true;
+      if (hit) count += 1;
+      else if (cursor !== input.today) break;
+    }
+    cursor = addDays(cursor, -1);
+  }
+  return count;
+}
+
+/** Group consecutive worked days by seven: `6 days`, `1 week`, `1 week, 3 days`, `2 weeks`. */
+export function formatWorkStreak(days: number): string {
+  const count = Math.max(0, Math.floor(days));
+  const weeks = Math.floor(count / 7);
+  const rest = count % 7;
+  const weekPart = weeks === 0 ? "" : `${weeks} ${weeks === 1 ? "week" : "weeks"}`;
+  const dayPart = rest === 0 && weeks > 0 ? "" : `${rest} ${rest === 1 ? "day" : "days"}`;
+  if (weekPart && dayPart) return `${weekPart}, ${dayPart}`;
+  return weekPart || dayPart;
+}
+
+/** Today counts as soon as this person is clocked in, before the hour has printed. */
+export function shownWorkedDays(count: number, todayWorked: boolean, clockedIn: boolean, todayOpen: boolean): number {
+  if (clockedIn && todayOpen && !todayWorked) return Math.max(0, count) + 1;
+  return Math.max(0, count);
 }
 
 export function copyLine(view: WeekView, variant: number): string {
@@ -283,7 +370,7 @@ export function summarizeWeekBar(input: WeekMathInput): WeekView {
     weekOpenDays: countOpenDays(monday, input.openWeekdays),
     monthOpenDays: input.monthOpenDays,
   });
-  const half = Math.floor(target / 2);
+  const half = halfTargetCents(target);
   const own = Math.max(0, Math.round(input.ownCents));
   const shortfall = Math.max(0, target - own);
   const drawn = drawCushion(alive, shortfall, half);
@@ -344,7 +431,7 @@ export function closeWeek(input: {
   weeksCovered: number;
 }): { weekStart: string; lots: CushionLot[]; weeksCovered: number; covered: boolean } {
   const alive = expireLots(input.lots, input.weekStart);
-  const half = Math.floor(input.targetCents / 2);
+  const half = halfTargetCents(input.targetCents);
   const own = Math.max(0, Math.round(input.ownCents));
   const drawn = drawCushion(alive, Math.max(0, input.targetCents - own), half);
   const covered = input.targetCents > 0 && own >= half && own + drawn.used >= input.targetCents;
