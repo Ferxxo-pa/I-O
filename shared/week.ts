@@ -244,6 +244,13 @@ export function copyVariants(input: {
   return ["Covered. Now profit.", "In the green", "Week covered"];
 }
 
+/** Open-menu headline. One line, from how full the weekly bar is. */
+export function menuWorkLine(covered: boolean, greenPct: number): string {
+  if (covered) return "Working harder";
+  if (greenPct >= 50) return "Working hard";
+  return "Hardly working";
+}
+
 export function copyLine(view: WeekView, variant: number): string {
   if (view.lines.length === 0) return "";
   const index = ((variant % view.lines.length) + view.lines.length) % view.lines.length;

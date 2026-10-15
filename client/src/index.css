@@ -622,6 +622,29 @@ button {
   animation: gold-shimmer 2.4s ease-in-out infinite;
 }
 
+.menu.game .level-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 214px;
+}
+
+.menu.game .level-now {
+  color: #c89600;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.menu.game .level-next {
+  color: #c89600;
+  font-size: 10px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
 .menu.game .upgrade-line {
   display: block;
   width: 214px;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
 import { ching, clearedChime, unlockChing } from "@/lib/ching";
@@ -11,8 +11,8 @@ import {
   type FightSettings,
   type FightView,
 } from "@shared/fight";
-import { DEFAULT_LEVEL_RULES, demoOps, demoReadiness, unlockName, type OpsView, type ReadinessCheck } from "@shared/ops";
-import { copyLine, demoWeek, type WeekPreset, type WeekView } from "@shared/week";
+import { demoOps, demoReadiness, levelProgress, type OpsView, type ReadinessCheck } from "@shared/ops";
+import { copyLine, demoWeek, menuWorkLine, type WeekPreset, type WeekView } from "@shared/week";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -182,12 +182,6 @@ function streakLine(count: number): string {
   return `🔥 ${weeks} ${weeks === 1 ? "week" : "weeks"}`;
 }
 
-function rewardAt(ops: OpsView | null, offset: number): string | null {
-  const rules = ops?.rules ?? DEFAULT_LEVEL_RULES;
-  const level = Math.max(0, ops?.level ?? 1);
-  return unlockName(level + offset, rules);
-}
-
 function splitWidths(collected: number, needed: number, covered: boolean): { green: number; red: number } {
   const total = Math.max(0, collected) + Math.max(0, needed);
   const green = covered || total <= 0 ? 100 : (Math.max(0, collected) / total) * 100;
@@ -201,61 +195,32 @@ function signedMoney(cents: number, sign: "+" | "−"): string {
 }
 
 function UpgradeBar({
+  level,
+  next,
   progress,
-  remainingCents,
-  covered,
-  current,
-  upcoming,
   calm,
 }: {
+  level: number;
+  next: number;
   progress: number;
-  remainingCents: number;
-  covered: boolean;
-  current: string | null;
-  upcoming: string | null;
   calm: boolean;
 }) {
-  const [phase, setPhase] = useState<"rest" | "burst" | "next">(covered ? "burst" : "rest");
-  useEffect(() => {
-    if (!covered) {
-      setPhase("rest");
-      return;
-    }
-    setPhase("burst");
-    if (calm) return;
-    const id = window.setTimeout(() => setPhase("next"), 600);
-    return () => window.clearTimeout(id);
-  }, [covered, calm, current]);
-  const text =
-    phase === "burst"
-      ? current
-        ? `Upgrade unlocked: ${current}`
-        : "Upgrade unlocked"
-      : phase === "next"
-        ? (upcoming ?? (current ? `Upgrade unlocked: ${current}` : "Upgrade unlocked"))
-        : `${whole(remainingCents)} until your next upgrade`;
-  const fill = phase === "rest" ? progress : 100;
-  const sparks = [0, 45, 90, 135, 180, 225, 270, 315];
   return (
     <motion.div
-      className={`upgrade${phase === "burst" ? " burst" : ""}${calm ? " calm" : " live"}`}
+      className={`upgrade${calm ? " calm" : " live"}`}
       initial={calm ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.03 }}
     >
       <span className="gold-wrap">
         <span className="gold-bar" aria-hidden>
-          <i style={{ width: `${fill}%`, transition: calm ? "none" : undefined }} />
+          <i style={{ width: `${progress}%`, transition: calm ? "none" : undefined }} />
         </span>
-        {phase === "burst" && (
-          <span className="burst" aria-hidden>
-            {sparks.map((deg) => (
-              <i key={deg} style={{ "--deg": `${deg}deg`, transform: `rotate(${deg}deg) translateX(12px)` } as CSSProperties} />
-            ))}
-          </span>
-        )}
       </span>
-      <StatValue className="upgrade-line" value={text} />
+      <span className="level-row">
+        <span className="level-now">Level {level}</span>
+        <span className="level-next">Level {next}</span>
+      </span>
     </motion.div>
   );
 }
@@ -273,18 +238,10 @@ function GameMenu({
 }) {
   const week = fight?.week ?? null;
   if (!week) return null;
-  const filled = week.ownCents + week.cushionUsedCents;
-  const widths = splitWidths(filled, week.remainingCents, week.covered);
+  const step = levelProgress(ops?.level ?? 1, ops?.consecutiveClears ?? 0, ops?.rules.clearsInARow ?? 5);
   return (
     <div className="col">
-      <UpgradeBar
-        progress={widths.green}
-        remainingCents={week.remainingCents}
-        covered={week.covered}
-        current={rewardAt(ops, 1)}
-        upcoming={rewardAt(ops, 2)}
-        calm={calm}
-      />
+      <UpgradeBar level={step.level} next={step.next} progress={step.pct} calm={calm} />
       <StatRow label="Streak" index={2} calm={calm} value={streakLine(week.weeksCovered)} />
       <motion.button
         type="button"
@@ -303,7 +260,6 @@ function GameMenu({
 
 function MenuTop({
   week,
-  headline,
   live,
   won,
   chips,
@@ -315,7 +271,6 @@ function MenuTop({
   onCollapse,
 }: {
   week: WeekView;
-  headline: string;
   live: boolean;
   won: boolean;
   chips: string[];
@@ -328,6 +283,7 @@ function MenuTop({
 }) {
   const filled = week.ownCents + week.cushionUsedCents;
   const widths = splitWidths(filled, week.remainingCents, week.covered);
+  const work = menuWorkLine(week.covered, widths.green);
   return (
     <div className={`strip ${live ? "live" : "idle"}${won ? " won" : ""}`} data-clock={live ? "in" : "out"}>
       <span className="chips" aria-hidden>
@@ -346,7 +302,7 @@ function MenuTop({
           I/O
           <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
         </button>
-        <span className={`fight-cta${won ? " won" : ""}`}>{headline}</span>
+        <span className={`fight-cta${won ? " won" : ""}`}>{work}</span>
         <span className="actions">
           <button type="button" className="plus ctrl" onClick={onClose} aria-label="More">
             +
@@ -646,7 +602,6 @@ export default function Hud() {
         {menu && !settings && week ? (
           <MenuTop
             week={week}
-            headline={headline}
             live={live}
             won={won}
             chips={chips}

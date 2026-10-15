@@ -6,6 +6,7 @@ import {
   closeWeek,
   copyLine,
   cushionTotal,
+  menuWorkLine,
   demoWeek,
   depositCushion,
   drawCushion,
@@ -182,6 +183,12 @@ assert.equal(copyLine(demoWeek("mid"), 1), "Over the hump");
 assert.equal(copyLine(demoWeek("stretch"), 0), "One sale away");
 assert.equal(copyLine(demoWeek("covered"), 0), "Covered. Now profit.");
 assert.equal(copyLine(demoWeek("covered"), 1), "In the green");
+assert.equal(menuWorkLine(false, 32.8), "Hardly working");
+assert.equal(menuWorkLine(false, 50), "Working hard");
+assert.equal(menuWorkLine(false, 66), "Working hard");
+assert.equal(menuWorkLine(true, 100), "Working harder");
+assert.equal(menuWorkLine(demoWeek("low").covered, 33), "Hardly working");
+assert.equal(menuWorkLine(demoWeek("covered").covered, 100), "Working harder");
 const cushion = demoWeek("cushion");
 assert.equal(cushion.covered, false);
 assert.equal(cushion.bankedCents, 120_000);

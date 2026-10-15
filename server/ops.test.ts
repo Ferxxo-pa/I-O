@@ -6,6 +6,7 @@ import {
   applyWeekStreak,
   buildWeekPips,
   demoOps,
+  levelProgress,
   levelUnlockLine,
   mondayOf,
   ownLoginPct,
@@ -28,6 +29,9 @@ for (let day = 0; day < 5; day++) {
 }
 assert.equal(level, 1);
 assert.equal(levelUnlockLine(1, 3, DEFAULT_LEVEL_RULES), "Lv 1 · team lunch in 2 days");
+assert.deepEqual(levelProgress(1, 3, 5), { level: 1, next: 2, pct: 60 });
+assert.deepEqual(levelProgress(3, 0, 5), { level: 3, next: 4, pct: 0 });
+assert.equal(levelProgress(3, 5, 5).pct, 0);
 assert.equal(levelUnlockLine(1, 4, DEFAULT_LEVEL_RULES), "Lv 1 · team lunch in 1 day");
 assert.equal(levelUnlockLine(2, 5, DEFAULT_LEVEL_RULES), "Lv 2 · team playlist pick in 5 days");
 assert.equal(unlockName(2, DEFAULT_LEVEL_RULES), "team lunch");

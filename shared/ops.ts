@@ -94,6 +94,14 @@ export function advanceLevel(input: {
   };
 }
 
+/** How far the current level is toward the next one. A finished step starts the next bar at empty. */
+export function levelProgress(level: number, consecutive: number, clearsInARow: number): { level: number; next: number; pct: number } {
+  const step = Math.max(1, Math.round(clearsInARow));
+  const current = Math.max(0, Math.round(level));
+  const into = ((Math.max(0, Math.round(consecutive)) % step) + step) % step;
+  return { level: current, next: current + 1, pct: (into / step) * 100 };
+}
+
 /** Small line under the streak. Names the next team unlock and the days left in this run. */
 export function levelUnlockLine(level: number, consecutive: number, rules: LevelRules): string {
   const every = Math.max(1, rules.clearsInARow);
