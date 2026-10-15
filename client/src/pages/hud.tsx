@@ -184,7 +184,7 @@ function GameMenu({
   const ringAmount = covered ? Math.max(0, collected - target) : shownLeft;
   const caption = covered ? "Profit" : "Let's get";
   const ratio = fight && fight.breakEvenCents > 0 ? Math.min(1, fight.todayCollectedCents / fight.breakEvenCents) : 0;
-  const ringShown = ratio * progress;
+  const ringShown = covered ? 1 : ratio * progress;
   const line = covered ? `${caption} $${ringAmount.toLocaleString("en-US")}` : `${caption} $${shownLeft.toLocaleString("en-US")}`;
 
   return (
@@ -194,7 +194,7 @@ function GameMenu({
       </button>
       {fight && (
         <div className="hero">
-          <div className="ring" ref={ringRef} role="img" aria-label={line}>
+          <div className={`ring${covered ? " won" : ""}`} ref={ringRef} role="img" aria-label={line}>
             <svg viewBox="0 0 64 64" aria-hidden>
               <circle className="track" cx="32" cy="32" r={RING_R} />
               <circle
@@ -521,13 +521,13 @@ export default function Hud() {
         />
 
         <div
-          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
+          className={`strip ${live ? "live" : "idle"}${fight?.cleared && live ? " won" : ""}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
           data-clock={live ? "in" : "out"}
           data-fight={fight?.cleared && live ? "cleared" : "behind"}
         >
           <span className="chips" aria-hidden>
             {chips.map((color, index) => (
-              <i key={index} style={live ? { background: color } : undefined} />
+              <i key={index} style={live && !(fight?.cleared) ? { background: color } : undefined} />
             ))}
           </span>
           <div className="ctrl-row">

@@ -265,7 +265,7 @@ button {
 }
 
 .fight-cta.won {
-  color: #d6b03a;
+  color: #12c45a;
 }
 
 .nums {
@@ -329,9 +329,19 @@ button {
   color: #c7c7cc;
 }
 
+.strip.won .chips i {
+  background: #12c45a;
+}
+
+.strip.won .fight-cta,
+.strip.won .num.up,
+.strip.won .num.down {
+  color: #12c45a;
+}
+
 .balance-bar.won .in,
 .balance-bar.won .out {
-  background: #d6b03a;
+  background: #12c45a;
 }
 
 .print.tier-small,
@@ -530,6 +540,11 @@ button {
 .menu.game .ring .value {
   stroke: #12c45a;
   stroke-linecap: round;
+}
+
+.menu.game .ring.won .track,
+.menu.game .ring.won .value {
+  stroke: #12c45a;
 }
 
 .menu.game .ring.bump {
