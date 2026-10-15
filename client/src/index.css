@@ -580,7 +580,13 @@ button {
 
 .menu.game .week-row {
   gap: 8px;
-  padding-top: 16px;
+}
+
+.menu.game .gear.dock {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
 }
 
 .menu.game .goal-line {

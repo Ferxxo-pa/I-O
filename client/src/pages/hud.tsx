@@ -11,7 +11,7 @@ import {
   type FightSettings,
   type FightView,
 } from "@shared/fight";
-import { demoOps, demoReadiness, type OpsView, type ReadinessCheck } from "@shared/ops";
+import { DEFAULT_LEVEL_RULES, demoOps, demoReadiness, unlockName, type OpsView, type ReadinessCheck } from "@shared/ops";
 import { copyLine, demoWeek, type WeekPreset, type WeekView } from "@shared/week";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
@@ -205,31 +205,57 @@ function streakLine(count: number): string {
   return `🔥 ${weeks} ${weeks === 1 ? "week" : "weeks"}`;
 }
 
-function GameMenu({ fight, calm, onSettings }: { fight: FightView | null; calm: boolean; onSettings: () => void }) {
+function nextReward(ops: OpsView | null): string | null {
+  const rules = ops?.rules ?? DEFAULT_LEVEL_RULES;
+  const level = Math.max(0, ops?.level ?? 1);
+  return unlockName(level + 1, rules);
+}
+
+function upgradeLine(remainingCents: number, covered: boolean, reward: string | null): string {
+  if (covered) return reward ? `Upgrade unlocked: ${reward}` : "Upgrade unlocked";
+  return `${whole(remainingCents)} until your next upgrade`;
+}
+
+function GameMenu({
+  fight,
+  ops,
+  calm,
+  onSettings,
+}: {
+  fight: FightView | null;
+  ops: OpsView | null;
+  calm: boolean;
+  onSettings: () => void;
+}) {
   const week = fight?.week ?? null;
   if (!week) return null;
-  const expiry = week.bankedCents > 0 ? `expires in ${week.expiresInWeeks} wks` : undefined;
-  const goal = week.covered ? "Goal reached" : `You need ${whole(week.remainingCents)} to reach your goal`;
+  const reward = nextReward(ops);
+  const line = upgradeLine(week.remainingCents, week.covered, reward);
   const filled = week.ownCents + week.cushionUsedCents;
   return (
-    <>
-      <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
+    <div className="col">
+      <motion.div
+        className={`stat week-row${week.covered ? " won" : ""}`}
+        initial={calm ? false : { opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: "easeOut" }}
+      >
+        <WeekBar collected={filled} needed={week.remainingCents} covered={week.covered} calm={calm} />
+        <StatValue className={`goal-line${week.covered ? " won" : ""}`} value={line} />
+      </motion.div>
+      <StatRow label="Streak" index={1} calm={calm} value={streakLine(week.weeksCovered)} />
+      <motion.button
+        type="button"
+        className="gear dock"
+        aria-label="Settings"
+        onClick={onSettings}
+        initial={calm ? false : { opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.06 }}
+      >
         <GearIcon />
-      </button>
-      <div className="col">
-        <motion.div
-          className={`stat week-row${week.covered ? " won" : ""}`}
-          initial={calm ? false : { opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18, ease: "easeOut" }}
-        >
-          <WeekBar collected={filled} needed={week.remainingCents} covered={week.covered} calm={calm} />
-          <StatValue className={`goal-line${week.covered ? " won" : ""}`} value={goal} />
-        </motion.div>
-        <StatRow label="Streak" index={1} calm={calm} value={streakLine(week.weeksCovered)} />
-        <StatRow label="Banked" index={2} calm={calm} value={whole(week.bankedCents)} note={expiry} />
-      </div>
-    </>
+      </motion.button>
+    </div>
   );
 }
 
@@ -609,6 +635,7 @@ export default function Hud() {
               ) : (
                 <GameMenu
                   fight={fight}
+                  ops={ops}
                   calm={calm}
                   onSettings={() => {
                     if (!demo && !guard("settings")) return;
