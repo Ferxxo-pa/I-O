@@ -578,43 +578,6 @@ button {
   cursor: pointer;
 }
 
-.menu.game .io-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 214px;
-}
-
-.menu.game .io-nums {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  width: 214px;
-  height: 14px;
-  white-space: nowrap;
-}
-
-.menu.game .io-nums .up,
-.menu.game .io-nums .down {
-  font-variant-numeric: tabular-nums;
-  font-weight: 560;
-  letter-spacing: -0.03em;
-  font-size: 10px;
-  line-height: 14px;
-}
-
-.menu.game .io-nums .up {
-  color: #12c45a;
-}
-
-.menu.game .io-nums .down {
-  color: #ff3b30;
-}
-
-.menu.game .io-block.won .io-nums .down {
-  color: #12c45a;
-}
-
 .menu.game .gear.dock {
   position: static;
   top: auto;
@@ -712,45 +675,6 @@ button {
   animation: num-fade 180ms ease-out;
 }
 
-.menu.game .menu-bar {
-  display: flex;
-  width: 214px;
-  min-width: 214px;
-  max-width: 214px;
-  height: 3px;
-  min-height: 3px;
-  max-height: 3px;
-  border-radius: 99px;
-  background: rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-}
-
-.menu.game .menu-bar i {
-  display: block;
-  height: 3px;
-  transition: width 300ms ease;
-}
-
-.menu.game .menu-bar .in {
-  background: #12c45a;
-  border-radius: 99px 0 0 99px;
-}
-
-.menu.game .menu-bar .out {
-  background: #ff3b30;
-  border-radius: 0 99px 99px 0;
-}
-
-.menu.game .menu-bar i:only-child {
-  border-radius: 99px;
-}
-
-.menu.game .menu-bar.won,
-.menu.game .menu-bar.won .in,
-.menu.game .menu-bar.won .out {
-  background: #12c45a;
-}
-
 @keyframes num-fade {
   from {
     opacity: 0;
@@ -798,7 +722,6 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .menu.game .stat-value.changed,
   .menu.game .upgrade-line.changed,
-  .menu.game .menu-bar i,
   .menu.game .upgrade .gold-bar i,
   .menu.game .upgrade .burst i {
     animation: none;

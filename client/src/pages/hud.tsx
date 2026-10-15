@@ -177,29 +177,6 @@ function StatRow({
   );
 }
 
-function WeekBar({
-  collected,
-  needed,
-  covered,
-  calm,
-}: {
-  collected: number;
-  needed: number;
-  covered: boolean;
-  calm: boolean;
-}) {
-  const total = Math.max(0, collected) + Math.max(0, needed);
-  const green = covered || total <= 0 ? 100 : (Math.max(0, collected) / total) * 100;
-  const red = covered || total <= 0 ? 0 : 100 - green;
-  const transition = calm ? "none" : undefined;
-  return (
-    <span className={`menu-bar${covered ? " won" : ""}`} aria-hidden>
-      {green > 0 && <i className="in" style={{ width: `${green}%`, transition }} />}
-      {red > 0 && <i className="out" style={{ width: `${red}%`, transition }} />}
-    </span>
-  );
-}
-
 function streakLine(count: number): string {
   const weeks = Math.max(0, count);
   return `🔥 ${weeks} ${weeks === 1 ? "week" : "weeks"}`;
@@ -300,18 +277,6 @@ function GameMenu({
   const widths = splitWidths(filled, week.remainingCents, week.covered);
   return (
     <div className="col">
-      <motion.div
-        className={`io-block${week.covered ? " won" : ""}`}
-        initial={calm ? false : { opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-      >
-        <WeekBar collected={filled} needed={week.remainingCents} covered={week.covered} calm={calm} />
-        <span className="io-nums">
-          <span className="up">{signedMoney(week.ownCents, "+")}</span>
-          <span className="down">{signedMoney(week.remainingCents, "−")}</span>
-        </span>
-      </motion.div>
       <UpgradeBar
         progress={widths.green}
         remainingCents={week.remainingCents}
@@ -332,6 +297,73 @@ function GameMenu({
       >
         <GearIcon />
       </motion.button>
+    </div>
+  );
+}
+
+function MenuTop({
+  week,
+  headline,
+  live,
+  won,
+  chips,
+  pending,
+  ready,
+  youName,
+  onToggle,
+  onClose,
+  onCollapse,
+}: {
+  week: WeekView;
+  headline: string;
+  live: boolean;
+  won: boolean;
+  chips: string[];
+  pending: boolean;
+  ready: boolean;
+  youName: string | null;
+  onToggle: () => void;
+  onClose: () => void;
+  onCollapse: () => void;
+}) {
+  const filled = week.ownCents + week.cushionUsedCents;
+  const widths = splitWidths(filled, week.remainingCents, week.covered);
+  return (
+    <div className={`strip ${live ? "live" : "idle"}${won ? " won" : ""}`} data-clock={live ? "in" : "out"}>
+      <span className="chips" aria-hidden>
+        {chips.map((color, index) => (
+          <i key={index} style={live && !won ? { background: color } : undefined} />
+        ))}
+      </span>
+      <div className="ctrl-row">
+        <button
+          type="button"
+          className="mark ctrl"
+          onClick={onToggle}
+          disabled={pending || !ready}
+          title={live ? "Clock out" : youName || "Clock in"}
+        >
+          I/O
+          <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
+        </button>
+        <span className={`fight-cta${won ? " won" : ""}`}>{headline}</span>
+        <span className="actions">
+          <button type="button" className="plus ctrl" onClick={onClose} aria-label="More">
+            +
+          </button>
+          <button type="button" className="fold ctrl" onClick={onCollapse} aria-label="Collapse">
+            ‹
+          </button>
+        </span>
+      </div>
+      <span className={`balance-bar${won ? " won" : ""}`} aria-hidden>
+        {widths.green > 0 && <i className="in" style={{ width: `${widths.green}%` }} />}
+        {widths.red > 0 && <i className="out" style={{ width: `${widths.red}%` }} />}
+      </span>
+      <span className="nums">
+        <span className="num up">{signedMoney(week.ownCents, "+")}</span>
+        <span className="num down">{signedMoney(week.remainingCents, "−")}</span>
+      </span>
     </div>
   );
 }
@@ -611,6 +643,28 @@ export default function Hud() {
           hold={Boolean(demo)}
         />
 
+        {menu && !settings && week ? (
+          <MenuTop
+            week={week}
+            headline={headline}
+            live={live}
+            won={won}
+            chips={chips}
+            pending={pending}
+            ready={Boolean(state) || Boolean(demo)}
+            youName={youName}
+            onToggle={toggle}
+            onClose={() => setMenu(false)}
+            onCollapse={() => {
+              setCollapsed(true);
+              setMenu(false);
+              setSettings(false);
+              setChange(false);
+              setWhoOpen(false);
+              setPinOpen(false);
+            }}
+          />
+        ) : (
         <div
           className={`strip ${live ? "live" : "idle"}${won ? " won" : ""}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
           data-clock={live ? "in" : "out"}
@@ -677,6 +731,7 @@ export default function Hud() {
             </span>
           )}
         </div>
+        )}
 
         <AnimatePresence>
           {(menu || settings) && (
