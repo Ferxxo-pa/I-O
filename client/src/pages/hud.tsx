@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
 import { ching, clearedChime, unlockChing } from "@/lib/ching";
@@ -205,15 +205,83 @@ function streakLine(count: number): string {
   return `🔥 ${weeks} ${weeks === 1 ? "week" : "weeks"}`;
 }
 
-function nextReward(ops: OpsView | null): string | null {
+function rewardAt(ops: OpsView | null, offset: number): string | null {
   const rules = ops?.rules ?? DEFAULT_LEVEL_RULES;
   const level = Math.max(0, ops?.level ?? 1);
-  return unlockName(level + 1, rules);
+  return unlockName(level + offset, rules);
 }
 
-function upgradeLine(remainingCents: number, covered: boolean, reward: string | null): string {
-  if (covered) return reward ? `Upgrade unlocked: ${reward}` : "Upgrade unlocked";
-  return `${whole(remainingCents)} until your next upgrade`;
+function splitWidths(collected: number, needed: number, covered: boolean): { green: number; red: number } {
+  const total = Math.max(0, collected) + Math.max(0, needed);
+  const green = covered || total <= 0 ? 100 : (Math.max(0, collected) / total) * 100;
+  const red = covered || total <= 0 ? 0 : 100 - green;
+  return { green, red };
+}
+
+function SparkIcon() {
+  return (
+    <svg className="flame" width="14" height="14" viewBox="0 0 16 16" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M8 .4 9.7 5.4 15 6.1 11.2 9.3 12.4 14.6 8 11.9 3.6 14.6 4.8 9.3 1 6.1 6.3 5.4Z"
+      />
+    </svg>
+  );
+}
+
+function UpgradeLine({
+  remainingCents,
+  covered,
+  current,
+  upcoming,
+  calm,
+}: {
+  remainingCents: number;
+  covered: boolean;
+  current: string | null;
+  upcoming: string | null;
+  calm: boolean;
+}) {
+  const [phase, setPhase] = useState<"rest" | "burst" | "next">(covered ? "burst" : "rest");
+  useEffect(() => {
+    if (!covered) {
+      setPhase("rest");
+      return;
+    }
+    setPhase("burst");
+    if (calm) return;
+    const id = window.setTimeout(() => setPhase("next"), 600);
+    return () => window.clearTimeout(id);
+  }, [covered, calm, current]);
+  const text =
+    phase === "burst"
+      ? current
+        ? `Upgrade unlocked: ${current}`
+        : "Upgrade unlocked"
+      : phase === "next"
+        ? (upcoming ?? (current ? `Upgrade unlocked: ${current}` : "Upgrade unlocked"))
+        : `${whole(remainingCents)} until your next upgrade`;
+  const sparks = [0, 45, 90, 135, 180, 225, 270, 315];
+  return (
+    <motion.div
+      className={`upgrade${phase === "burst" ? " burst" : ""}${calm ? " calm" : " live"}`}
+      initial={calm ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.06 }}
+    >
+      <span className="mark">
+        <SparkIcon />
+        {phase === "burst" && (
+          <span className="burst" aria-hidden>
+            {sparks.map((deg) => (
+              <i key={deg} style={{ "--deg": `${deg}deg`, transform: `rotate(${deg}deg) translateX(12px)` } as CSSProperties} />
+            ))}
+          </span>
+        )}
+      </span>
+      <StatValue className="upgrade-line" value={text} />
+    </motion.div>
+  );
 }
 
 function GameMenu({
@@ -229,9 +297,9 @@ function GameMenu({
 }) {
   const week = fight?.week ?? null;
   if (!week) return null;
-  const reward = nextReward(ops);
-  const line = upgradeLine(week.remainingCents, week.covered, reward);
   const filled = week.ownCents + week.cushionUsedCents;
+  const widths = splitWidths(filled, week.remainingCents, week.covered);
+  const showNeed = !week.covered && week.remainingCents > 0;
   return (
     <div className="col">
       <motion.div
@@ -241,9 +309,22 @@ function GameMenu({
         transition={{ duration: 0.18, ease: "easeOut" }}
       >
         <WeekBar collected={filled} needed={week.remainingCents} covered={week.covered} calm={calm} />
-        <StatValue className={`goal-line${week.covered ? " won" : ""}`} value={line} />
+        <span
+          className={`bar-split${week.covered ? " won" : ""}`}
+          style={{ gridTemplateColumns: showNeed ? `${widths.green}% ${widths.red}%` : "1fr" }}
+        >
+          <span className="got">{whole(week.ownCents)}</span>
+          {showNeed ? <span className="need">{whole(week.remainingCents)}</span> : null}
+        </span>
       </motion.div>
       <StatRow label="Streak" index={1} calm={calm} value={streakLine(week.weeksCovered)} />
+      <UpgradeLine
+        remainingCents={week.remainingCents}
+        covered={week.covered}
+        current={rewardAt(ops, 1)}
+        upcoming={rewardAt(ops, 2)}
+        calm={calm}
+      />
       <motion.button
         type="button"
         className="gear dock"
@@ -251,7 +332,7 @@ function GameMenu({
         onClick={onSettings}
         initial={calm ? false : { opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.06 }}
+        transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.09 }}
       >
         <GearIcon />
       </motion.button>

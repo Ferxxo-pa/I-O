@@ -233,11 +233,7 @@ export function copyVariants(input: {
 }): string[] {
   const own = usd(input.ownCents);
   if (input.state === "bank") {
-    return [
-      fit(`${own} in the bank`, own),
-      fit(`${own} so far`, own),
-      fit(`Banking ${own}`, own),
-    ];
+    return [fit(`${own} so far`, own), fit(`${own} collected`, own), fit(`So far ${own}`, own)];
   }
   if (input.state === "hump") {
     const toCover = pct(input.remainingCents, input.targetCents);

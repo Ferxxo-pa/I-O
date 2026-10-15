@@ -176,7 +176,7 @@ for (const preset of ["low", "mid", "stretch", "covered", "cushion"] as const) {
   assert.equal(new Set(view.lines).size, 3);
   for (const line of view.lines) assert.ok(line.length <= 20, `${preset}: ${line}`);
 }
-assert.equal(copyLine(demoWeek("low"), 0), "$800 in the bank");
+assert.equal(copyLine(demoWeek("low"), 0), "$800 so far");
 assert.equal(copyLine(demoWeek("mid"), 0), "34% to cover");
 assert.equal(copyLine(demoWeek("mid"), 1), "Over the hump");
 assert.equal(copyLine(demoWeek("stretch"), 0), "One sale away");
