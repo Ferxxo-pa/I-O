@@ -270,9 +270,9 @@ button {
 
 .nums {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   height: 14px;
   white-space: nowrap;
 }
@@ -290,7 +290,7 @@ button {
   font-variant-numeric: tabular-nums;
   font-weight: 560;
   letter-spacing: -0.03em;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 14px;
   color: var(--mute);
 }
@@ -482,8 +482,8 @@ button {
 }
 
 .menu.game {
-  width: 248px;
-  padding: 14px 14px 12px;
+  width: 232px;
+  padding: 16px;
 }
 
 .menu.game .gear {
@@ -553,45 +553,56 @@ button {
 
 .menu.game .ring-copy strong {
   color: var(--ink);
-  max-width: 52px;
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  white-space: normal;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .menu.game .ring-copy em {
   color: var(--mute);
   font-style: normal;
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 
 .menu.game .money {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .menu.game .money-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: baseline;
-  font-size: 13px;
-  letter-spacing: -0.02em;
+  column-gap: 12px;
 }
 
 .menu.game .money-row span {
   color: var(--mute);
+  font-size: 11px;
+  letter-spacing: -0.02em;
 }
 
 .menu.game .money-row strong {
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+  text-align: right;
+}
+
+.menu.game .money-row.got strong {
+  color: #12c45a;
+}
+
+.menu.game .money-row.need strong {
+  color: #ff3b30;
 }
 
 .menu.game .err {

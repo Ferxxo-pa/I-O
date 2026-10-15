@@ -60,7 +60,7 @@ function encouragement(dollarsLeft: number): string {
   return `Let's get $${dollarsLeft.toLocaleString("en-US")}`;
 }
 
-const WIN_LINE = "Now it's profit.";
+const WIN_LINE = "Now it's profit";
 
 function fightLine(fight: FightView, shownLeft?: number): string {
   const left = shownLeft ?? Math.max(0, dollars(fight.breakEvenCents) - dollars(fight.todayCollectedCents));
@@ -180,9 +180,12 @@ function GameMenu({
   const target = fight ? dollars(fight.breakEvenCents) : 0;
   const left = Math.max(0, target - collected);
   const shownLeft = Math.round(left * progress);
+  const covered = Boolean(fight && (fight.cleared || left <= 0));
+  const ringAmount = covered ? Math.max(0, collected - target) : shownLeft;
+  const caption = covered ? "Profit" : "Let's get";
   const ratio = fight && fight.breakEvenCents > 0 ? Math.min(1, fight.todayCollectedCents / fight.breakEvenCents) : 0;
   const ringShown = ratio * progress;
-  const line = fight ? fightLine(fight, shownLeft) : "";
+  const line = covered ? `${caption} $${ringAmount.toLocaleString("en-US")}` : `${caption} $${shownLeft.toLocaleString("en-US")}`;
 
   return (
     <>
@@ -204,20 +207,25 @@ function GameMenu({
               />
             </svg>
             <span className="ring-copy">
-              <strong>{line}</strong>
+              <strong>${ringAmount.toLocaleString("en-US")}</strong>
+              <em>{caption}</em>
             </span>
           </div>
         </div>
       )}
       {fight && (
         <div className="money">
-          <div className="money-row">
+          <div className="money-row got">
             <span>Collected</span>
             <strong>${collected.toLocaleString("en-US")}</strong>
           </div>
           <div className="money-row">
             <span>Target</span>
             <strong>${target.toLocaleString("en-US")}</strong>
+          </div>
+          <div className="money-row need">
+            <span>Still needed</span>
+            <strong>${left.toLocaleString("en-US")}</strong>
           </div>
         </div>
       )}
@@ -573,8 +581,8 @@ export default function Hud() {
           )}
           {!collapsed && (
             <span className="nums">
-              <span className="num up">+${money(moneyIn)}</span>
-              <span className="num down">−${money(moneyOut)}</span>
+              <span className="num up">Collected ${fight ? dollars(fight.todayCollectedCents).toLocaleString("en-US") : dollars(moneyIn).toLocaleString("en-US")}</span>
+              <span className="num down">Still needed ${fight ? Math.max(0, dollars(fight.breakEvenCents) - dollars(fight.todayCollectedCents)).toLocaleString("en-US") : "0"}</span>
             </span>
           )}
         </div>
