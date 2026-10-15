@@ -701,13 +701,59 @@ button {
   background: #12c45a;
 }
 
+.menu.game .crew {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+}
+
+.menu.game .crew span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.menu.game .crew i {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: #c7c7cc;
+}
+
+.menu.game .crew i.on {
+  background: #12c45a;
+}
+
 .menu.game .chest-pop {
   position: absolute;
   top: 8px;
   left: 50%;
   z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   pointer-events: none;
   animation: chest-pop 0.55s ease;
+}
+
+.menu.game .chest-pop.settled {
+  animation: none;
+  opacity: 1;
+  transform: translateX(-50%) scale(1);
+}
+
+.menu.game .chest-pop em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  white-space: nowrap;
 }
 
 .menu.game .chest {
@@ -941,7 +987,7 @@ button {
 
 .level-grid {
   display: grid;
-  grid-template-columns: 20px 1fr 1fr;
+  grid-template-columns: 44px 1fr;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;

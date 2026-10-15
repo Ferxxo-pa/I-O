@@ -1,22 +1,19 @@
 import assert from "node:assert/strict";
 import { DEFAULT_FIGHT_SETTINGS, SHOP_ZONE, zonedParts } from "@shared/fight";
 import {
+  DEFAULT_LEVEL_RULES,
   advanceLevel,
   applyWeekStreak,
   buildWeekPips,
   demoOps,
-  levelRaiseLine,
-  levelReward,
-  markPaid,
+  levelUnlockLine,
   mondayOf,
   ownLoginPct,
-  payoutCsv,
   readiness,
-  splitPotWithHours,
   summarizeWeek,
+  unlockName,
   weeklyBreakEven,
   weekWonFriday,
-  type Payout,
 } from "@shared/ops";
 import { FightBook } from "./fight/book.ts";
 
@@ -24,15 +21,22 @@ let level = 0;
 let run = 0;
 const events = [];
 for (let day = 0; day < 5; day++) {
-  const next = advanceLevel({ level, consecutive: run, rules: { clearsInARow: 5, table: [{ level: 1, payBumpCents: 50, potBonusBps: 0 }] }, cleared: true });
+  const next = advanceLevel({ level, consecutive: run, rules: { clearsInARow: 5, table: [{ level: 2, reward: "team lunch" }] }, cleared: true });
   level = next.level;
   run = next.consecutive;
   if (next.event) events.push(next.event);
 }
 assert.equal(level, 1);
-assert.equal(levelRaiseLine(1, 3, 5), "Lv 1 · 2 days to a raise");
-assert.equal(levelRaiseLine(1, 4, 5), "Lv 1 · 1 day to a raise");
-assert.equal(levelRaiseLine(2, 5, 5), "Lv 2 · 5 days to a raise");
+assert.equal(levelUnlockLine(1, 3, DEFAULT_LEVEL_RULES), "Lv 1 · team lunch in 2 days");
+assert.equal(levelUnlockLine(1, 4, DEFAULT_LEVEL_RULES), "Lv 1 · team lunch in 1 day");
+assert.equal(levelUnlockLine(2, 5, DEFAULT_LEVEL_RULES), "Lv 2 · team playlist pick in 5 days");
+assert.equal(unlockName(2, DEFAULT_LEVEL_RULES), "team lunch");
+assert.equal(unlockName(4, DEFAULT_LEVEL_RULES), "early close on a won Friday");
+assert.equal(unlockName(9, DEFAULT_LEVEL_RULES), null);
+assert.equal(
+  levelUnlockLine(9, 0, { clearsInARow: 5, table: [{ level: 2, reward: "team lunch" }] }),
+  "Lv 9 · 5 days to Lv 10",
+);
 assert.equal(weekWonFriday("2026-10-16", true), true);
 assert.equal(weekWonFriday("2026-10-14", true), false);
 assert.equal(weekWonFriday("2026-10-16", false), false);
@@ -43,19 +47,16 @@ assert.equal(events[0]?.reason, "5 open days cleared");
 const sixth = advanceLevel({
   level,
   consecutive: run,
-  rules: { clearsInARow: 5, table: [{ level: 1, payBumpCents: 50, potBonusBps: 0 }, { level: 2, payBumpCents: 100, potBonusBps: 250 }] },
+  rules: { clearsInARow: 5, table: [{ level: 2, reward: "team lunch" }, { level: 3, reward: "team playlist pick" }] },
   cleared: true,
 });
 assert.equal(sixth.level, 1);
 assert.equal(sixth.consecutive, 6);
 assert.equal(sixth.event, null);
 
-const missed = advanceLevel({ level: sixth.level, consecutive: sixth.consecutive, rules: { clearsInARow: 5, table: [{ level: 1, payBumpCents: 50, potBonusBps: 0 }] }, cleared: false });
+const missed = advanceLevel({ level: sixth.level, consecutive: sixth.consecutive, rules: { clearsInARow: 5, table: [{ level: 2, reward: "team lunch" }] }, cleared: false });
 assert.equal(missed.level, 1);
 assert.equal(missed.consecutive, 0);
-assert.equal(levelReward(1, { clearsInARow: 5, table: [{ level: 1, payBumpCents: 50, potBonusBps: 0 }, { level: 2, payBumpCents: 100, potBonusBps: 250 }] }).payBumpCents, 50);
-assert.equal(levelReward(2, { clearsInARow: 5, table: [{ level: 1, payBumpCents: 50, potBonusBps: 0 }, { level: 2, payBumpCents: 100, potBonusBps: 250 }] }).potBonusBps, 250);
-assert.equal(levelReward(0, { clearsInARow: 5, table: [{ level: 1, payBumpCents: 50, potBonusBps: 0 }] }).payBumpCents, 0);
 
 assert.equal(weeklyBreakEven({
   wagesCents: 36_000,
@@ -95,9 +96,8 @@ const week = summarizeWeek(
 assert.equal(week.collectedCents, 100_000);
 assert.equal(week.breakEvenCents, 125_608);
 assert.equal(week.cleared, false);
-assert.equal(week.potCents, 2_146);
-assert.equal(week.shares.reduce((sum, row) => sum + row.cents, 0), 2_146);
-assert.deepEqual(week.shares.map((row) => row.cents), [1_073, 1_073]);
+assert.equal("potCents" in week, false);
+assert.equal("shares" in week, false);
 
 const ahead = summarizeWeek(
   "2026-10-12",
@@ -118,35 +118,6 @@ const ahead = summarizeWeek(
 );
 assert.equal(ahead.cleared, true);
 assert.equal(applyWeekStreak(1, ahead.cleared), 2);
-assert.deepEqual(splitPotWithHours(10, [{ id: "a", name: "A", ms: 2 }, { id: "b", name: "B", ms: 1 }]).map((row) => row.cents), [7, 3]);
-assert.equal(splitPotWithHours(0, [{ id: "a", name: "A", ms: hour }])[0]?.cents, 0);
-
-const scope = { companyId: "shop", locationId: "local" };
-const payout: Payout = {
-  ...scope,
-  weekStart: "2026-10-05",
-  potCents: 8_500,
-  shares: [
-    { id: "ada", name: "Ada", cents: 4_250, ms: 5 * hour },
-    { id: "ben", name: "Ben, Jr", cents: 4_250, ms: 5 * hour },
-  ],
-  status: "open",
-  approvedAt: null,
-};
-const other: Payout = { ...payout, companyId: "other", weekStart: "2026-10-05", potCents: 1 };
-const paid = markPaid([payout, other], scope, "2026-10-05", 50);
-assert.equal(paid[0]?.status, "paid");
-assert.equal(paid[0]?.potCents, 8_500);
-assert.equal(paid[0]?.approvedAt, 50);
-assert.equal(paid[1]?.status, "open");
-assert.equal(markPaid(paid, scope, "2026-10-05", 90), paid);
-assert.throws(() => markPaid(paid, scope, "2026-10-12", 90), /not closed/);
-const csv = payoutCsv(paid.filter((row) => row.companyId === "shop"));
-assert.equal(csv.includes("Ada"), true);
-assert.equal(csv.includes("\"Ben, Jr\""), true);
-assert.equal(csv.includes("42.50"), true);
-assert.equal(csv.includes("paid"), true);
-assert.equal(csv.includes("other"), false);
 
 const pips = buildWeekPips({
   today: "2026-10-14",
@@ -205,8 +176,8 @@ const book = new FightBook();
 book.updateLevelRules({
   clearsInARow: 2,
   table: [
-    { level: 1, payBumpCents: 50, potBonusBps: 0 },
-    { level: 2, payBumpCents: 100, potBonusBps: 250 },
+    { level: 1, reward: "team lunch" },
+    { level: 2, reward: "team playlist pick" },
   ],
 });
 const thursday = atChicago("2026-10-15", 16);
@@ -233,31 +204,37 @@ assert.equal(fridayView.streak, 2);
 assert.equal(fridayView.potCents, 1_073);
 assert.equal(book.opsView().level, 1);
 assert.equal(book.opsView().history.length, 1);
-assert.equal(book.opsView().payBumpCents, 50);
+assert.equal(unlockName(book.opsView().level, book.opsView().rules), "team lunch");
+assert.equal("payout" in book.opsView(), false);
+assert.equal("payBumpCents" in book.opsView(), false);
+assert.deepEqual(book.opsView().crew, []);
 
 const tuesday = atChicago("2026-10-20", 12);
 const after = book.sync({ now: tuesday, lifetimeCollected: 100_000, lifetimeSettled: 36_000, ...quiet });
 assert.equal(after.streak, 1);
 assert.equal(book.opsView().consecutiveClears, 0);
-const closed = book.opsView().payout;
-assert.ok(closed);
-assert.equal(closed?.weekStart, "2026-10-12");
-assert.equal(closed?.potCents, 2_146);
-assert.equal(closed?.status, "open");
-assert.equal(closed?.shares.reduce((sum, row) => sum + row.cents, 0), 2_146);
 assert.equal(book.opsView().weekStreak, 0);
-
-const approved = book.approvePayout("2026-10-12", 80);
-assert.equal(approved.status, "paid");
-assert.equal(approved.potCents, 2_146);
-assert.equal(book.approvePayout("2026-10-12", 90).approvedAt, 80);
-assert.equal(book.payoutCsv().includes("Ada"), true);
-assert.equal(book.payoutCsv().includes("paid"), true);
-assert.throws(() => book.approvePayout("2026-09-28", 90), /not closed/);
+assert.equal("potCents" in book.opsView().week, false);
 assert.equal(JSON.stringify(book.toPersist()).includes("scrypt$"), false);
+assert.equal(JSON.stringify(book.toPersist()).includes("payouts"), false);
 assert.equal(demoOps("morning").pips.filter((pip) => pip.filled).length, 2);
 assert.equal(demoOps("cleared").pips.find((pip) => pip.state === "today")?.filled, true);
 assert.equal("quest" in demoOps("morning"), false);
 assert.equal("nudge" in demoOps("morning"), false);
+assert.equal("payout" in demoOps("morning"), false);
+assert.deepEqual(
+  demoOps("morning").crew.map((mate) => mate.in),
+  [true, false, false],
+);
+assert.deepEqual(
+  demoOps("cleared").crew.map((mate) => mate.in),
+  [true, true, true],
+);
+assert.deepEqual(
+  demoOps("idle").crew.map((mate) => mate.in),
+  [false, false, false],
+);
+assert.equal(JSON.stringify(demoOps("morning").crew).includes("cents"), false);
+assert.equal(JSON.stringify(demoOps("morning").crew).includes("ms"), false);
 
 console.log("ops ok");

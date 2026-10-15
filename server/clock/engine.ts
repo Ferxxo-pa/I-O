@@ -13,6 +13,7 @@ import {
 import type { InvoiceSnapshot } from "../square/parse";
 import { squareConfigured } from "../square/client";
 import { closeTimecard, openTimecard, type RemoteTimecard } from "../square/labor";
+import { getCompany } from "../company";
 import { fightBook } from "../fight/book";
 import { saleTapeLabel, type FightView } from "@shared/fight";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
@@ -169,12 +170,21 @@ export class EarnEngine {
         clockedIn: viewerClockedIn,
       },
       fight,
-      ops: fightBook.opsView(),
+      ops: { ...fightBook.opsView(), crew: this.crewNow() },
     };
   }
 
   linkedPersonIds(): string[] {
     return this.shifts.map((shift) => shift.personId);
+  }
+
+  /** Names and clock status only. Dollars and hours stay off the menu. */
+  private crewNow(): Array<{ name: string; in: boolean }> {
+    const clocked = new Set(this.shifts.filter((shift) => shift.clockedIn).map((shift) => shift.personId));
+    return getCompany().people.map((person) => ({
+      name: person.name,
+      in: clocked.has(person.id),
+    }));
   }
 
   rateSourceName(): "default" | "manual" | "square" {

@@ -5,15 +5,12 @@ import {
   dailyFixedCents,
   isOpenKey,
   openDaysInMonth,
-  potCents,
-  splitPot,
   weekdayOfKey,
   type FightSettings,
   type HourShare,
-  type PotShare,
 } from "./fight";
 
-/** Records and payouts stay on one company and one location. No second login system. */
+/** Records stay on one company and one location. No second login system. */
 export type ShopScope = { companyId: string; locationId: string };
 
 export function sameScope(row: ShopScope, scope: ShopScope): boolean {
@@ -26,10 +23,8 @@ export function scopeKey(scope: ShopScope): string {
 
 export const levelRowSchema = z.object({
   level: z.number().int().min(1).max(100),
-  /** Extra dollars per hour, in cents. Recorded here. Never written to Square. */
-  payBumpCents: z.number().int().min(0).max(1_000_000),
-  /** Extra pot share at this level, in basis points. Added on the weekly payout only. */
-  potBonusBps: z.number().int().min(0).max(10_000),
+  /** Team unlock at this level. A name the shop chose. Not money. */
+  reward: z.string().trim().min(1).max(48),
 });
 
 export const levelRulesSchema = z
@@ -53,9 +48,9 @@ export type LevelRules = z.infer<typeof levelRulesSchema>;
 export const DEFAULT_LEVEL_RULES: LevelRules = {
   clearsInARow: 5,
   table: [
-    { level: 1, payBumpCents: 50, potBonusBps: 0 },
-    { level: 2, payBumpCents: 100, potBonusBps: 100 },
-    { level: 3, payBumpCents: 200, potBonusBps: 200 },
+    { level: 2, reward: "team lunch" },
+    { level: 3, reward: "team playlist pick" },
+    { level: 4, reward: "early close on a won Friday" },
   ],
 };
 
@@ -69,13 +64,10 @@ export type LevelStep = {
   locationId: string;
 };
 
-export function levelReward(level: number, rules: LevelRules): { payBumpCents: number; potBonusBps: number } {
-  if (level <= 0) return { payBumpCents: 0, potBonusBps: 0 };
-  const row = rules.table
-    .filter((item) => item.level <= level)
-    .sort((a, b) => b.level - a.level)[0];
-  if (!row) return { payBumpCents: 0, potBonusBps: 0 };
-  return { payBumpCents: row.payBumpCents, potBonusBps: row.potBonusBps };
+/** The unlock named on this level, if the shop set one. */
+export function unlockName(level: number, rules: LevelRules): string | null {
+  const reward = rules.table.find((row) => row.level === level)?.reward.trim();
+  return reward ? reward : null;
 }
 
 /** One open day. A miss resets the run. Every N clears in a row raises the level by one. */
@@ -102,13 +94,16 @@ export function advanceLevel(input: {
   };
 }
 
-/** Small line under the streak. Days left are the rest of the current run. */
-export function levelRaiseLine(level: number, consecutive: number, clearsInARow: number): string {
-  const every = Math.max(1, clearsInARow);
+/** Small line under the streak. Names the next team unlock and the days left in this run. */
+export function levelUnlockLine(level: number, consecutive: number, rules: LevelRules): string {
+  const every = Math.max(1, rules.clearsInARow);
   const into = ((consecutive % every) + every) % every;
   const left = into === 0 ? every : every - into;
   const day = left === 1 ? "day" : "days";
-  return `Lv ${Math.max(0, level)} · ${left} ${day} to a raise`;
+  const current = Math.max(0, level);
+  const reward = unlockName(current + 1, rules);
+  if (reward) return `Lv ${current} · ${reward} in ${left} ${day}`;
+  return `Lv ${current} · ${left} ${day} to Lv ${current + 1}`;
 }
 
 /** The week celebration is Friday only, and only after the week is already won. */
@@ -161,48 +156,18 @@ export type DayPot = {
   hours: HourShare[];
 };
 
-export type WeekShare = PotShare & { ms: number };
-
 export type WeekSummary = {
   weekStart: string;
   collectedCents: number;
   wageCents: number;
   breakEvenCents: number;
-  potCents: number;
   cleared: boolean;
-  shares: WeekShare[];
 };
-
-export function splitPotWithHours(pot: number, people: HourShare[]): WeekShare[] {
-  const rows = people.filter((person) => person.ms > 0);
-  if (pot <= 0) return rows.map((person) => ({ id: person.id, name: person.name, cents: 0, ms: person.ms }));
-  const shares = splitPot(pot, rows);
-  const ms = new Map(rows.map((person) => [person.id, person.ms]));
-  return shares.map((share) => ({ ...share, ms: ms.get(share.id) ?? 0 }));
-}
-
-function mergeHourShares(days: DayPot[]): HourShare[] {
-  const map = new Map<string, HourShare>();
-  for (const day of days) {
-    for (const person of day.hours) {
-      if (person.ms <= 0) continue;
-      const prev = map.get(person.id);
-      if (prev) {
-        prev.ms += person.ms;
-        if (person.name) prev.name = person.name;
-      } else {
-        map.set(person.id, { ...person });
-      }
-    }
-  }
-  return Array.from(map.values());
-}
 
 export function summarizeWeek(monday: string, days: DayPot[], settings: FightSettings): WeekSummary {
   const inWeek = days.filter((day) => mondayOf(day.date) === monday);
   const collectedCents = inWeek.reduce((sum, day) => sum + Math.max(0, day.collectedCents), 0);
   const wageCents = inWeek.reduce((sum, day) => sum + Math.max(0, day.wageCents), 0);
-  const potTotal = inWeek.reduce((sum, day) => sum + Math.max(0, day.payoutPotCents), 0);
   const [year, month] = monday.split("-").map(Number);
   const weekOpenDays = openDatesInWeek(monday, settings.openWeekdays).length;
   const breakEven = weeklyBreakEven({
@@ -218,50 +183,8 @@ export function summarizeWeek(monday: string, days: DayPot[], settings: FightSet
     collectedCents,
     wageCents,
     breakEvenCents: breakEven,
-    potCents: potTotal,
     cleared: breakEven > 0 && collectedCents >= breakEven,
-    shares: splitPotWithHours(potTotal, mergeHourShares(inWeek)),
   };
-}
-
-export type PayoutStatus = "open" | "paid";
-
-export type Payout = ShopScope & {
-  weekStart: string;
-  potCents: number;
-  shares: WeekShare[];
-  status: PayoutStatus;
-  approvedAt: number | null;
-};
-
-/** Marks a closed week paid. Does not touch wages. A second approve leaves the row as it is. */
-export function markPaid(payouts: Payout[], scope: ShopScope, weekStart: string, at: number): Payout[] {
-  const index = payouts.findIndex((row) => row.weekStart === weekStart && sameScope(row, scope));
-  if (index < 0) throw new Error("That week is not closed");
-  const row = payouts[index];
-  if (row.status === "paid") return payouts;
-  return payouts.map((item, i) => (i === index ? { ...item, status: "paid", approvedAt: at } : item));
-}
-
-function csvCell(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-export function payoutCsv(payouts: Payout[]): string {
-  const lines = ["week_start,person,hours,share_dollars,status"];
-  const ordered = [...payouts].sort((a, b) => a.weekStart.localeCompare(b.weekStart) || a.companyId.localeCompare(b.companyId));
-  for (const payout of ordered) {
-    const rows = payout.shares.length > 0 ? payout.shares : [{ id: "", name: "", cents: 0, ms: 0 }];
-    for (const share of rows) {
-      const hours = (share.ms / 3_600_000).toFixed(2);
-      const dollars = (share.cents / 100).toFixed(2);
-      lines.push(
-        [payout.weekStart, csvCell(share.name), hours, dollars, payout.status].join(","),
-      );
-    }
-  }
-  return `${lines.join("\n")}\n`;
 }
 
 export type PipState = "hit" | "miss" | "today" | "ahead" | "off";
@@ -371,21 +294,9 @@ export function readiness(input: {
   return { ready: checks.every((check) => check.ok), checks };
 }
 
-const weekShareSchema = z.object({
-  id: z.string(),
+const crewMateSchema = z.object({
   name: z.string(),
-  cents: z.number().int(),
-  ms: z.number().int(),
-});
-
-const payoutSchema = z.object({
-  companyId: z.string(),
-  locationId: z.string(),
-  weekStart: z.string(),
-  potCents: z.number().int(),
-  shares: z.array(weekShareSchema),
-  status: z.enum(["open", "paid"]),
-  approvedAt: z.number().int().nullable(),
+  in: z.boolean(),
 });
 
 export const opsViewSchema = z.object({
@@ -396,8 +307,6 @@ export const opsViewSchema = z.object({
   level: z.number().int(),
   consecutiveClears: z.number().int(),
   rules: levelRulesSchema,
-  payBumpCents: z.number().int(),
-  potBonusBps: z.number().int(),
   history: z.array(
     z.object({
       at: z.number(),
@@ -412,11 +321,10 @@ export const opsViewSchema = z.object({
     weekStart: z.string(),
     collectedCents: z.number().int(),
     breakEvenCents: z.number().int(),
-    potCents: z.number().int(),
     cleared: z.boolean(),
-    shares: z.array(weekShareSchema),
   }),
-  payout: payoutSchema.nullable(),
+  /** Names only. Green when clocked in. No dollars and no hours. */
+  crew: z.array(crewMateSchema),
   pips: z.array(
     z.object({
       date: z.string(),
@@ -453,7 +361,6 @@ export function demoOps(scene: "morning" | "crit" | "cleared" | "idle"): OpsView
     ],
     DEFAULT_FIGHT_SETTINGS,
   );
-  const reward = levelReward(1, DEFAULT_LEVEL_RULES);
   const todayCleared = scene === "cleared";
   const pips = buildWeekPips({
     today: "2026-10-14",
@@ -468,8 +375,6 @@ export function demoOps(scene: "morning" | "crit" | "cleared" | "idle"): OpsView
     level: 1,
     consecutiveClears: 3,
     rules: DEFAULT_LEVEL_RULES,
-    payBumpCents: reward.payBumpCents,
-    potBonusBps: reward.potBonusBps,
     history: [
       {
         at: Date.UTC(2026, 9, 9, 18, 0, 0),
@@ -481,19 +386,24 @@ export function demoOps(scene: "morning" | "crit" | "cleared" | "idle"): OpsView
     ],
     weekStreak: 2,
     week,
-    payout: {
-      companyId: "shop",
-      locationId: "local",
-      weekStart: "2026-10-05",
-      potCents: 8_500,
-      shares: [
-        { id: "ada", name: "Ada", cents: 4_250, ms: 5 * 3_600_000 },
-        { id: "ben", name: "Ben", cents: 2_550, ms: 3 * 3_600_000 },
-        { id: "sol", name: "Sol", cents: 1_700, ms: 2 * 3_600_000 },
-      ],
-      status: scene === "cleared" ? "paid" : "open",
-      approvedAt: scene === "cleared" ? Date.UTC(2026, 9, 12, 18, 0, 0) : null,
-    },
+    crew:
+      scene === "idle"
+        ? [
+            { name: "Ada", in: false },
+            { name: "Ben", in: false },
+            { name: "Sol", in: false },
+          ]
+        : scene === "cleared"
+          ? [
+              { name: "Ada", in: true },
+              { name: "Ben", in: true },
+              { name: "Sol", in: true },
+            ]
+          : [
+              { name: "Ada", in: true },
+              { name: "Ben", in: false },
+              { name: "Sol", in: false },
+            ],
     pips,
   };
 }

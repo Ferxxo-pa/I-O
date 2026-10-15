@@ -51,7 +51,7 @@ Square does not publish a customer-messages API. Points follow invoices you send
 
 ## Go live
 
-`GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level, closed day, and pot payout is stored on that pair. This build is still one shop on one computer. There is no second login.
+`GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level and closed day is stored on that pair. This build is still one shop on one computer. There is no second login.
 
 Do these before you leave it on the counter:
 
@@ -62,7 +62,6 @@ Do these before you leave it on the counter:
 5. Create the company, set the shop PIN, and set each person's hourly rate. When Square is connected, Square keeps the rates. This app never writes wages back.
 6. Put rent into **Fixed / month**, then check **Rent included**.
 7. Each person clocks in under their own name. **Own login** is the share of the roster that has clocked.
-8. Open **+**. It shows today's ring, the streak, and the level line. Levels, the pot, and the checklist live in Settings.
-9. On Monday, **Payout** shows last week's Mon–Fri pot, split by timecard hours. Approve it with the shop PIN, then export CSV. Approving only marks it paid here.
+8. Open **+**. It shows today's ring, the streak, the level unlock line, and who is clocked in. Levels and the checklist live in Settings.
 
 `npm test` and `npm run check` should pass before you leave it running.

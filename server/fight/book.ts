@@ -16,12 +16,9 @@ import {
   DEFAULT_LEVEL_RULES,
   advanceLevel,
   applyWeekStreak,
-  levelReward,
   levelRulesSchema,
-  markPaid,
   buildWeekPips,
   mondayOf,
-  payoutCsv,
   sameScope,
   scopeKey,
   summarizeWeek,
@@ -29,7 +26,6 @@ import {
   type LevelRules,
   type LevelStep,
   type OpsView,
-  type Payout,
   type ShopScope,
 } from "@shared/ops";
 import { hashPin, verifyPin } from "../auth/pin";
@@ -65,7 +61,6 @@ export type FightPersist = {
   levelRules: LevelRules;
   history: LevelStep[];
   days: ClosedDay[];
-  payouts: Payout[];
   resolvedWeeks: string[];
   lastResolvedWeek: string | null;
   lastWeekScope: string | null;
@@ -111,7 +106,6 @@ function blank(): FightPersist {
     },
     history: [],
     days: [],
-    payouts: [],
     resolvedWeeks: [],
     lastResolvedWeek: null,
     lastWeekScope: null,
@@ -174,7 +168,7 @@ export class FightBook {
   }
 
   scopeHint(): ShopScope | null {
-    const row = this.data.days[0] ?? this.data.payouts[0] ?? this.data.history[0];
+    const row = this.data.days[0] ?? this.data.history[0];
     if (!row) return null;
     return { companyId: row.companyId, locationId: row.locationId };
   }
@@ -205,7 +199,6 @@ export class FightBook {
       },
       history: this.data.history.map((row) => ({ ...row })),
       days: this.data.days.map((row) => ({ ...row, hours: row.hours.map((hour) => ({ ...hour })) })),
-      payouts: this.data.payouts.map((row) => ({ ...row, shares: row.shares.map((share) => ({ ...share })) })),
       resolvedWeeks: this.data.resolvedWeeks.slice(),
       lastResolvedWeek: this.data.lastResolvedWeek,
       lastWeekScope: this.data.lastWeekScope,
@@ -243,10 +236,6 @@ export class FightBook {
         hours: (next.hours ?? []).map((row) => ({ ...row })),
         history: (next.history ?? []).map((row) => ({ ...row })),
         days: (next.days ?? []).map((row) => ({ ...row, hours: row.hours.map((hour) => ({ ...hour })) })),
-        payouts: (next.payouts ?? []).map((row) => ({
-          ...row,
-          shares: row.shares.map((share) => ({ ...share })),
-        })),
         resolvedWeeks: next.resolvedWeeks?.slice() ?? [],
       };
     } finally {
@@ -254,7 +243,7 @@ export class FightBook {
     }
   }
 
-  /** Dev reset. Keeps the PIN, the settings, the streak, levels, and payouts. The caller persists. */
+  /** Dev reset. Keeps the PIN, the settings, the streak, and levels. The caller persists. */
   resetDay() {
     this.data.anchorDate = null;
     this.data.collectedAnchor = 0;
@@ -284,25 +273,6 @@ export class FightBook {
     this.touch();
   }
 
-  /**
-   * Marks a closed week's pot paid. The pot dollars stay as they were.
-   * This does not call Square and does not change anyone's wage.
-   */
-  approvePayout(weekStart: string, at: number): Payout {
-    const scope = currentScope();
-    const next = markPaid(this.data.payouts, scope, weekStart, at);
-    this.data.payouts = next;
-    this.touch();
-    const row = next.find((item) => item.weekStart === weekStart && sameScope(item, scope));
-    if (!row) throw new Error("That week is not closed");
-    return row;
-  }
-
-  payoutCsv(): string {
-    const scope = currentScope();
-    return payoutCsv(this.data.payouts.filter((row) => sameScope(row, scope)));
-  }
-
   sync(input: FightSync): FightView {
     const sale = input.saleCents && input.saleCents > 0 ? Math.round(input.saleCents) : 0;
     const baselineCollected = input.lifetimeCollected - sale;
@@ -323,7 +293,6 @@ export class FightBook {
 
   opsView(): OpsView {
     const scope = currentScope();
-    const reward = levelReward(this.data.level, this.data.levelRules);
     const today = this.live?.date ?? zonedParts(Date.now(), SHOP_ZONE).key;
     const monday = mondayOf(today);
     const days = this.weekDays(monday, scope);
@@ -332,10 +301,6 @@ export class FightBook {
       days.map(toDayPot),
       this.data.settings,
     );
-    const payout =
-      this.data.payouts
-        .filter((row) => sameScope(row, scope) && row.weekStart < monday)
-        .sort((a, b) => b.weekStart.localeCompare(a.weekStart))[0] ?? null;
     const liveTarget = this.live ? this.target(this.live.date, this.live.wages) : 0;
     const todayCleared = Boolean(this.live && liveTarget > 0 && this.live.collected >= liveTarget);
     const pips = buildWeekPips({
@@ -352,8 +317,6 @@ export class FightBook {
         clearsInARow: this.data.levelRules.clearsInARow,
         table: this.data.levelRules.table.map((row) => ({ ...row })),
       },
-      payBumpCents: reward.payBumpCents,
-      potBonusBps: reward.potBonusBps,
       history: this.data.history
         .filter((row) => sameScope(row, scope))
         .slice(-8)
@@ -365,10 +328,13 @@ export class FightBook {
           reason: row.reason,
         })),
       weekStreak: this.data.weekStreak,
-      week: summary,
-      payout: payout
-        ? { ...payout, shares: payout.shares.map((share) => ({ ...share })) }
-        : null,
+      week: {
+        weekStart: summary.weekStart,
+        collectedCents: summary.collectedCents,
+        breakEvenCents: summary.breakEvenCents,
+        cleared: summary.cleared,
+      },
+      crew: [],
       pips,
     };
   }
@@ -445,9 +411,7 @@ export class FightBook {
     if (this.data.days.some((day) => day.date === date && sameScope(day, scope))) return;
     const target = this.target(date, wages);
     const cleared = target > 0 && collected >= target;
-    const bonus = levelReward(this.data.level, this.data.levelRules).potBonusBps;
     const pot = cleared ? potCents(collected, target, this.data.settings.potBps) : 0;
-    const extra = cleared ? potCents(collected, target, bonus) : 0;
     this.data.days.push({
       ...scope,
       date,
@@ -455,7 +419,7 @@ export class FightBook {
       wageCents: wages,
       breakEvenCents: target,
       potCents: pot,
-      payoutPotCents: pot + extra,
+      payoutPotCents: pot,
       cleared,
       hours: this.data.hours.map((row) => ({ ...row })),
     });
@@ -469,9 +433,7 @@ export class FightBook {
     if (saved.some((day) => day.date === this.live?.date)) return saved;
     const target = this.target(this.live.date, this.live.wages);
     const cleared = target > 0 && this.live.collected >= target;
-    const bonus = levelReward(this.data.level, this.data.levelRules).potBonusBps;
     const pot = cleared ? potCents(this.live.collected, target, this.data.settings.potBps) : 0;
-    const extra = cleared ? potCents(this.live.collected, target, bonus) : 0;
     return [
       ...saved,
       {
@@ -481,7 +443,7 @@ export class FightBook {
         wageCents: this.live.wages,
         breakEvenCents: target,
         potCents: pot,
-        payoutPotCents: pot + extra,
+        payoutPotCents: pot,
         cleared,
         hours: this.live.hours.map((row) => ({ ...row })),
       },
@@ -504,16 +466,6 @@ export class FightBook {
     this.data.lastResolvedWeek = monday;
     this.data.resolvedWeeks.push(key);
     if (this.data.resolvedWeeks.length > 200) this.data.resolvedWeeks.splice(0, this.data.resolvedWeeks.length - 200);
-    if (this.data.payouts.some((row) => row.weekStart === monday && sameScope(row, scope))) return;
-    this.data.payouts.push({
-      ...scope,
-      weekStart: monday,
-      potCents: summary.potCents,
-      shares: summary.shares.map((share) => ({ ...share })),
-      status: "open",
-      approvedAt: null,
-    });
-    if (this.data.payouts.length > 120) this.data.payouts.splice(0, this.data.payouts.length - 120);
   }
 
   private resolvePastWeeks(today: string) {

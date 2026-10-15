@@ -278,32 +278,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // PIN confirms the owner saw the week. Square wages are not changed.
-  app.post("/api/fight/payouts/:weekStart/approve", (req, res) => {
-    try {
-      requirePin(req);
-      const weekStart = req.params.weekStart;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
-        return res.status(400).json({ message: "That week is not closed" });
-      }
-      const payout = fightBook.approvePayout(weekStart, Date.now());
-      res.json({ ok: true, status: payout.status, potCents: payout.potCents });
-    } catch (err) {
-      sendError(res, err, "Couldn't approve that week");
-    }
-  });
-
-  app.get("/api/fight/payouts.csv", (req, res) => {
-    try {
-      requirePin(req);
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", "attachment; filename=\"pot-payouts.csv\"");
-      res.send(fightBook.payoutCsv());
-    } catch (err) {
-      sendError(res, err, "Couldn't export the pot");
-    }
-  });
-
   app.post("/api/square/webhook", (req, res) => {
     const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
     const url = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;

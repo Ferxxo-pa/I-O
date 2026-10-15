@@ -52,7 +52,7 @@ const fileSchema = z.object({
       level: z.number().int().min(0).max(1_000).default(0),
       consecutiveClears: z.number().int().min(0).max(100_000).default(0),
       levelNotedDate: z.string().nullable().default(null),
-      levelRules: levelRulesSchema.default(DEFAULT_LEVEL_RULES),
+      levelRules: levelRulesSchema.catch(DEFAULT_LEVEL_RULES),
       history: z
         .array(
           z.object({
@@ -91,29 +91,6 @@ const fileSchema = z.object({
           }),
         )
         .max(400)
-        .default([]),
-      payouts: z
-        .array(
-          z.object({
-            companyId: z.string().max(80),
-            locationId: z.string().max(80),
-            weekStart: z.string(),
-            potCents: z.number().int().nonnegative(),
-            shares: z
-              .array(
-                z.object({
-                  id: z.string().max(80),
-                  name: z.string().max(80),
-                  cents: z.number().int().nonnegative(),
-                  ms: z.number().int().nonnegative(),
-                }),
-              )
-              .max(80),
-            status: z.enum(["open", "paid"]),
-            approvedAt: z.number().int().nullable(),
-          }),
-        )
-        .max(120)
         .default([]),
       resolvedWeeks: z.array(z.string().max(200)).max(200).default([]),
       lastResolvedWeek: z.string().nullable().default(null),
