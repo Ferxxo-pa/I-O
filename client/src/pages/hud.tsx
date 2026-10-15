@@ -11,16 +11,7 @@ import {
   type FightSettings,
   type FightView,
 } from "@shared/fight";
-import {
-  demoOps,
-  demoReadiness,
-  levelUnlockLine,
-  unlockName,
-  weekWonFriday,
-  type DayPip,
-  type OpsView,
-  type ReadinessCheck,
-} from "@shared/ops";
+import { demoOps, demoReadiness, type OpsView, type ReadinessCheck } from "@shared/ops";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -75,29 +66,14 @@ function readDemo(): DemoScene | null {
   return null;
 }
 
-function readStreakOverride(): number | null {
-  const value = new URLSearchParams(window.location.search).get("streak");
-  if (value == null || !/^\d{1,4}$/.test(value)) return null;
-  return Number(value);
-}
-
 function readPanel(): "menu" | "levels" | "checklist" | null {
   const value = new URLSearchParams(window.location.search).get("panel");
   if (value === "menu" || value === "levels" || value === "checklist") return value;
   return null;
 }
 
-function readCelebrate(): boolean {
-  return new URLSearchParams(window.location.search).get("celebrate") === "1";
-}
-
 function readStill(): boolean {
   return new URLSearchParams(window.location.search).get("still") === "1";
-}
-
-function shownPips(pips: DayPip[], cold: boolean): DayPip[] {
-  if (!cold) return pips;
-  return pips.map((pip) => (pip.state === "hit" ? { ...pip, state: "miss" as const, filled: false } : pip));
 }
 
 const RING_R = 26;
@@ -156,42 +132,21 @@ function GearIcon() {
   );
 }
 
-const CONFETTI = [
-  { x: -16, y: -2, r: 28, c: "#12c45a" },
-  { x: -6, y: -14, r: -20, c: "#f83090" },
-  { x: 8, y: -8, r: 50, c: "#38b8f8" },
-  { x: 16, y: 2, r: -40, c: "#f5c451" },
-  { x: -12, y: 8, r: 16, c: "#ff3b30" },
-  { x: 4, y: 10, r: 70, c: "#12c45a" },
-  { x: 12, y: -16, r: -12, c: "#a8c838" },
-  { x: -4, y: -6, r: 36, c: "#f86020" },
-];
-
 function GameMenu({
   fight,
-  ops,
-  dayStreak,
-  coldStreak,
   freshEvents,
   error,
-  celebrate,
   onSettings,
 }: {
   fight: FightView | null;
-  ops: OpsView | null;
-  dayStreak: number;
-  coldStreak: boolean;
   freshEvents: PrintEvent[];
   error: string | null;
-  celebrate: boolean;
   onSettings: () => void;
 }) {
-  const { progress, still } = useReveal();
+  const { progress } = useReveal();
   const ringRef = useRef<HTMLDivElement>(null);
   const heardSale = useRef<Set<string> | null>(null);
   const [bump, setBump] = useState(0);
-  const prevLevel = useRef(ops?.level ?? 0);
-  const [chestPop, setChestPop] = useState(false);
 
   useEffect(() => {
     if (heardSale.current == null) {
@@ -213,71 +168,22 @@ function GameMenu({
     node.classList.add("bump");
   }, [bump]);
 
-  useEffect(() => {
-    if (!ops) return;
-    if (ops.level > prevLevel.current) {
-      setChestPop(true);
-      const id = window.setTimeout(() => setChestPop(false), 2000);
-      prevLevel.current = ops.level;
-      return () => window.clearTimeout(id);
-    }
-    prevLevel.current = ops.level;
-  }, [ops]);
-
-  const won = Boolean(fight?.cleared);
-  const todayRatio =
-    fight && fight.breakEvenCents > 0 ? Math.min(1, fight.todayCollectedCents / fight.breakEvenCents) : 0;
-  const todayDollars = fight ? Math.max(0, Math.round(fight.toBreakEvenCents / 100)) : 0;
-  const shownToday = Math.round(todayDollars * progress);
-  const pips = ops ? shownPips(ops.pips, coldStreak) : [];
-  const shownLevel = ops ? (celebrate ? ops.level + 1 : ops.level) : 0;
-  const shownRun = ops ? (celebrate ? ops.rules.clearsInARow : ops.consecutiveClears) : 0;
-  const every = Math.max(1, ops?.rules.clearsInARow ?? 1);
-  const into = shownRun % every;
-  const filledSegs = Math.floor(into * progress + 1e-6);
-  const ringShown = (won ? 1 : todayRatio) * progress;
-  const unlock = ops ? levelUnlockLine(shownLevel, shownRun, ops.rules) : "";
-  const popped = ops ? unlockName(celebrate ? shownLevel : ops.level, ops.rules) : null;
-  const showPop = chestPop || celebrate;
-  const weekWon = Boolean(fight && ops && weekWonFriday(fight.date, ops.week.cleared));
+  const collected = fight ? Math.round(fight.todayCollectedCents / 100) : 0;
+  const target = fight ? Math.round(fight.breakEvenCents / 100) : 0;
+  const left = Math.max(0, target - collected);
+  const shownLeft = Math.round(left * progress);
+  const ratio = fight && fight.breakEvenCents > 0 ? Math.min(1, fight.todayCollectedCents / fight.breakEvenCents) : 0;
+  const ringShown = ratio * progress;
+  const leftLabel = `$${shownLeft.toLocaleString("en-US")} to go`;
 
   return (
     <>
       <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
         <GearIcon />
       </button>
-      {won && (
-        <span className={`confetti${still ? " settled" : ""}`} aria-hidden>
-          {CONFETTI.map((bit, index) => (
-            <i
-              key={index}
-              style={{
-                background: bit.c,
-                ["--x" as string]: `${bit.x}px`,
-                ["--y" as string]: `${bit.y}px`,
-                ["--r" as string]: `${bit.r}deg`,
-              }}
-            />
-          ))}
-        </span>
-      )}
-      {showPop && (
-        <div className={`chest-pop${celebrate && still ? " settled" : ""}`} role="status">
-          <span className="chest open" aria-hidden>
-            <i className="lid" />
-            🎁
-          </span>
-          {popped && <em>{popped}</em>}
-        </div>
-      )}
       {fight && (
         <div className="hero">
-          <div
-            className={`ring${won ? " won" : ""}`}
-            ref={ringRef}
-            role="img"
-            aria-label={won ? "Day won" : `$${shownToday.toLocaleString("en-US")} to go`}
-          >
+          <div className="ring" ref={ringRef} role="img" aria-label={leftLabel}>
             <svg viewBox="0 0 64 64" aria-hidden>
               <circle className="track" cx="32" cy="32" r={RING_R} />
               <circle
@@ -290,50 +196,22 @@ function GameMenu({
               />
             </svg>
             <span className="ring-copy">
-              {won ? (
-                <strong>Won</strong>
-              ) : (
-                <>
-                  <strong>${shownToday.toLocaleString("en-US")}</strong>
-                  <em>to go</em>
-                </>
-              )}
+              <strong>${shownLeft.toLocaleString("en-US")}</strong>
+              <em>to go</em>
             </span>
           </div>
         </div>
       )}
-      {weekWon && <div className="week-won">Week won</div>}
       {fight && (
-        <div className={`game-row streak-row${dayStreak === 0 ? " cold" : ""}`}>
-          <span className={`fire${dayStreak === 0 ? " cold" : ""}`} aria-hidden>
-            🔥
-          </span>
-          <span className="streak-num">{dayStreak}</span>
-          <span className="pips" aria-label="This week">
-            {pips.map((pip) => (
-              <i key={pip.date} className={`pip ${pip.state}${pip.filled ? " on" : ""}`} />
-            ))}
-          </span>
-        </div>
-      )}
-      {ops && (
-        <div className="raise">
-          <div>{unlock}</div>
-          <span className="segments" aria-hidden>
-            {Array.from({ length: every }, (_, index) => (
-              <i key={index} className={index < filledSegs ? "on" : ""} />
-            ))}
-          </span>
-        </div>
-      )}
-      {ops && ops.crew.length > 0 && (
-        <div className="crew" aria-label="Who is in">
-          {ops.crew.map((mate, index) => (
-            <span key={`${mate.name}-${index}`}>
-              <i className={mate.in ? "on" : ""} aria-hidden />
-              {mate.name}
-            </span>
-          ))}
+        <div className="money">
+          <div className="money-row">
+            <span>Collected</span>
+            <strong>${collected.toLocaleString("en-US")}</strong>
+          </div>
+          <div className="money-row">
+            <span>Target</span>
+            <strong>${target.toLocaleString("en-US")}</strong>
+          </div>
         </div>
       )}
       {error && <div className="err">{error}</div>}
@@ -405,8 +283,6 @@ export default function Hud() {
 
   const fight = demo?.view ?? state?.fight ?? null;
   const ops = demo ? demoOps(demo.scene) : (state?.ops ?? null);
-  const streakOverride = demo ? readStreakOverride() : null;
-  const dayStreak = streakOverride ?? fight?.streak ?? 0;
   const pinSet = state?.fight.pinSet ?? false;
 
   useEffect(() => {
@@ -707,12 +583,8 @@ export default function Hud() {
             >
               <GameMenu
                 fight={fight}
-                ops={ops}
-                dayStreak={dayStreak}
-                coldStreak={dayStreak === 0}
                 freshEvents={demo ? [] : freshEvents}
                 error={error}
-                celebrate={Boolean(demo) && readCelebrate()}
                 onSettings={() => {
                   closePanels();
                   if (!guard("settings")) return;
