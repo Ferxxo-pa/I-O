@@ -62,6 +62,6 @@ Do these before you leave it on the counter:
 5. Create the company, set the shop PIN, and set each person's hourly rate. When Square is connected, Square keeps the rates. This app never writes wages back.
 6. Put rent into **Fixed / month**, then check **Rent included**.
 7. Each person clocks in under their own name. **Own login** is the share of the roster that has clocked.
-8. Open **+**. It shows how much is left to today's target, what has been collected, and the target. The target is wages plus the day's share of fixed costs, marked up for materials and fees. The PIN, wages, and those costs live in Settings.
+8. Open **+**. The strip and the ring say `Let's get $153` until the day is covered, then `Now it's profit.` Collected and the target stay under the ring. Under the bar, green is money in and red is still going out. The target is wages plus the day's share of fixed costs, marked up for materials and fees. The PIN, wages, and those costs live in Settings.
 
 `npm test` and `npm run check` should pass before you leave it running.

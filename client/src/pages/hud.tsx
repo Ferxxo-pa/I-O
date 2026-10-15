@@ -51,13 +51,21 @@ function threeColors(): string[] {
   return picked;
 }
 
-function whole(cents: number): string {
-  return Math.round(cents / 100).toLocaleString("en-US");
+function dollars(cents: number): number {
+  return Math.round(cents / 100);
 }
 
-function toGo(cents: number): string {
-  const dollars = Math.max(1, Math.ceil(cents / 100));
-  return `$${dollars.toLocaleString("en-US")} to go`;
+/** Short enough for the center of the 232px strip. */
+function encouragement(dollarsLeft: number): string {
+  return `Let's get $${dollarsLeft.toLocaleString("en-US")}`;
+}
+
+const WIN_LINE = "Now it's profit.";
+
+function fightLine(fight: FightView, shownLeft?: number): string {
+  const left = shownLeft ?? Math.max(0, dollars(fight.breakEvenCents) - dollars(fight.todayCollectedCents));
+  if (fight.cleared || left <= 0) return WIN_LINE;
+  return encouragement(left);
 }
 
 function readDemo(): DemoScene | null {
@@ -168,13 +176,13 @@ function GameMenu({
     node.classList.add("bump");
   }, [bump]);
 
-  const collected = fight ? Math.round(fight.todayCollectedCents / 100) : 0;
-  const target = fight ? Math.round(fight.breakEvenCents / 100) : 0;
+  const collected = fight ? dollars(fight.todayCollectedCents) : 0;
+  const target = fight ? dollars(fight.breakEvenCents) : 0;
   const left = Math.max(0, target - collected);
   const shownLeft = Math.round(left * progress);
   const ratio = fight && fight.breakEvenCents > 0 ? Math.min(1, fight.todayCollectedCents / fight.breakEvenCents) : 0;
   const ringShown = ratio * progress;
-  const leftLabel = `$${shownLeft.toLocaleString("en-US")} to go`;
+  const line = fight ? fightLine(fight, shownLeft) : "";
 
   return (
     <>
@@ -183,7 +191,7 @@ function GameMenu({
       </button>
       {fight && (
         <div className="hero">
-          <div className="ring" ref={ringRef} role="img" aria-label={leftLabel}>
+          <div className="ring" ref={ringRef} role="img" aria-label={line}>
             <svg viewBox="0 0 64 64" aria-hidden>
               <circle className="track" cx="32" cy="32" r={RING_R} />
               <circle
@@ -196,8 +204,7 @@ function GameMenu({
               />
             </svg>
             <span className="ring-copy">
-              <strong>${shownLeft.toLocaleString("en-US")}</strong>
-              <em>to go</em>
+              <strong>{line}</strong>
             </span>
           </div>
         </div>
@@ -526,6 +533,11 @@ export default function Hud() {
               I/O
               <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
             </button>
+            {!collapsed && (
+              <span className={`fight-cta${fight?.cleared && live ? " won" : ""}`}>
+                {fight ? fightLine(fight) : ""}
+              </span>
+            )}
             <span className="actions">
               {!collapsed && (
                 <button type="button" className="plus ctrl" onClick={() => setMenu((open) => !open)} aria-label="More">
@@ -549,11 +561,6 @@ export default function Hud() {
               </button>
             </span>
           </div>
-          {!collapsed && (
-            <span className={`fight-cta${fight?.cleared && live ? " won" : ""}`}>
-              {fight?.cleared ? `pot $${whole(fight.potCents)}` : fight && fight.toBreakEvenCents > 0 ? toGo(fight.toBreakEvenCents) : ""}
-            </span>
-          )}
           {!collapsed && (
             <span className={`balance-bar${fight?.cleared && live ? " won" : ""}`} aria-hidden>
               {combined > 0 && (
