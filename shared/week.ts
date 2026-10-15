@@ -332,7 +332,7 @@ export function emptyWeek(input: Omit<WeekMathInput, "today" | "ownCents" | "lot
   });
 }
 
-/** Close this Monday and open the next one. Covered weeks count only when own sales cleared the 50% rule. */
+/** Close this Monday and open the next one. The streak grows only when own sales covered the week, and a miss resets it. */
 export function closeWeek(input: {
   weekStart: string;
   ownCents: number;
@@ -349,7 +349,7 @@ export function closeWeek(input: {
   return {
     weekStart: nextMonday,
     lots: expireLots(drawn.lots, nextMonday),
-    weeksCovered: input.weeksCovered + (covered ? 1 : 0),
+    weeksCovered: covered ? input.weeksCovered + 1 : 0,
     covered,
   };
 }

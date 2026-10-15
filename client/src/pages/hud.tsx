@@ -118,7 +118,7 @@ function whole(cents: number): string {
   return `$${dollars(cents).toLocaleString("en-US")}`;
 }
 
-function StatValue({ value }: { value: string }) {
+function StatValue({ value, className = "stat-value" }: { value: string; className?: string }) {
   const seen = useRef<string | null>(null);
   const [fade, setFade] = useState(false);
   useEffect(() => {
@@ -131,7 +131,7 @@ function StatValue({ value }: { value: string }) {
     setFade(true);
   }, [value]);
   return (
-    <strong className={`stat-value${fade ? " changed" : ""}`} onAnimationEnd={() => setFade(false)}>
+    <strong className={`${className}${fade ? " changed" : ""}`} onAnimationEnd={() => setFade(false)}>
       {value}
     </strong>
   );
@@ -177,37 +177,57 @@ function StatRow({
   );
 }
 
-function WeekBar({ pct, covered, calm }: { pct: number; covered: boolean; calm: boolean }) {
+function WeekBar({
+  collected,
+  needed,
+  covered,
+  calm,
+}: {
+  collected: number;
+  needed: number;
+  covered: boolean;
+  calm: boolean;
+}) {
+  const total = Math.max(0, collected) + Math.max(0, needed);
+  const green = covered || total <= 0 ? 100 : (Math.max(0, collected) / total) * 100;
+  const red = covered || total <= 0 ? 0 : 100 - green;
+  const transition = calm ? "none" : undefined;
   return (
     <span className={`menu-bar${covered ? " won" : ""}`} aria-hidden>
-      <i style={{ width: `${Math.min(100, Math.max(0, pct))}%`, transition: calm ? "none" : undefined }} />
+      {green > 0 && <i className="in" style={{ width: `${green}%`, transition }} />}
+      {red > 0 && <i className="out" style={{ width: `${red}%`, transition }} />}
     </span>
   );
+}
+
+function streakLine(count: number): string {
+  const weeks = Math.max(0, count);
+  return `🔥 ${weeks} ${weeks === 1 ? "week" : "weeks"}`;
 }
 
 function GameMenu({ fight, calm, onSettings }: { fight: FightView | null; calm: boolean; onSettings: () => void }) {
   const week = fight?.week ?? null;
   if (!week) return null;
-  const cushion =
-    week.cushionUsedCents > 0 ? `+${whole(week.cushionUsedCents)} cushion` : undefined;
   const expiry = week.bankedCents > 0 ? `expires in ${week.expiresInWeeks} wks` : undefined;
+  const goal = week.covered ? "Goal reached" : `You need ${whole(week.remainingCents)} to reach your goal`;
+  const filled = week.ownCents + week.cushionUsedCents;
   return (
     <>
       <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
         <GearIcon />
       </button>
       <div className="col">
-        <StatRow
-          label="Week"
-          index={0}
-          calm={calm}
-          bar={<WeekBar pct={week.barPct * 100} covered={week.covered} calm={calm} />}
-          value={`${whole(week.ownCents)} of ${whole(week.targetCents)}`}
-          note={cushion}
-        />
-        <StatRow label="Daily pace" index={1} calm={calm} value={`need ${whole(week.paceCents)}/day`} />
-        <StatRow label="Weeks covered" index={2} calm={calm} value={String(week.weeksCovered)} />
-        <StatRow label="Banked" index={3} calm={calm} value={whole(week.bankedCents)} note={expiry} />
+        <motion.div
+          className={`stat week-row${week.covered ? " won" : ""}`}
+          initial={calm ? false : { opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+        >
+          <WeekBar collected={filled} needed={week.remainingCents} covered={week.covered} calm={calm} />
+          <StatValue className={`goal-line${week.covered ? " won" : ""}`} value={goal} />
+        </motion.div>
+        <StatRow label="Streak" index={1} calm={calm} value={streakLine(week.weeksCovered)} />
+        <StatRow label="Banked" index={2} calm={calm} value={whole(week.bankedCents)} note={expiry} />
       </div>
     </>
   );

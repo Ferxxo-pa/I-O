@@ -578,9 +578,38 @@ button {
   cursor: pointer;
 }
 
-.menu.game .menu-bar {
+.menu.game .week-row {
+  gap: 8px;
+  padding-top: 16px;
+}
+
+.menu.game .goal-line {
   display: block;
   width: 214px;
+  max-width: 214px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.menu.game .goal-line.won,
+.menu.game .week-row.won .goal-line {
+  color: #12c45a;
+}
+
+.menu.game .goal-line.changed {
+  animation: num-fade 180ms ease-out;
+}
+
+.menu.game .menu-bar {
+  display: flex;
+  width: 214px;
+  min-width: 214px;
+  max-width: 214px;
   height: 3px;
   min-height: 3px;
   max-height: 3px;
@@ -592,16 +621,26 @@ button {
 .menu.game .menu-bar i {
   display: block;
   height: 3px;
-  border-radius: 99px;
-  background: #12c45a;
   transition: width 300ms ease;
 }
 
-.menu.game .menu-bar.won {
+.menu.game .menu-bar .in {
   background: #12c45a;
+  border-radius: 99px 0 0 99px;
 }
 
-.menu.game .menu-bar.won i {
+.menu.game .menu-bar .out {
+  background: #ff3b30;
+  border-radius: 0 99px 99px 0;
+}
+
+.menu.game .menu-bar i:only-child {
+  border-radius: 99px;
+}
+
+.menu.game .menu-bar.won,
+.menu.game .menu-bar.won .in,
+.menu.game .menu-bar.won .out {
   background: #12c45a;
 }
 
@@ -616,6 +655,7 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .menu.game .stat-value.changed,
+  .menu.game .goal-line.changed,
   .menu.game .menu-bar i {
     animation: none;
     transition: none;

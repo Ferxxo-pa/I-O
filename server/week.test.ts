@@ -156,7 +156,7 @@ const missed = closeWeek({
   weeksCovered: 4,
 });
 assert.equal(missed.covered, false);
-assert.equal(missed.weeksCovered, 4);
+assert.equal(missed.weeksCovered, 0);
 assert.equal(cushionTotal(missed.lots), 200_000 - half);
 
 const expiredOnRoll = closeWeek({
