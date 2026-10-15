@@ -286,6 +286,17 @@ button {
   height: var(--ctrl);
 }
 
+.strip.menu-card .actions {
+  gap: 1px;
+}
+
+.strip.menu-card .actions .plus.ctrl,
+.strip.menu-card .actions .fold.ctrl {
+  width: auto;
+  min-width: 0;
+  padding: 0 1px;
+}
+
 .num {
   font-variant-numeric: tabular-nums;
   font-weight: 560;
@@ -599,11 +610,11 @@ button {
 }
 
 .menu.game .streak-line {
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 600;
+  color: #ff5c1a;
+  font-size: 17px;
+  font-weight: 700;
   letter-spacing: -0.03em;
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .menu.game .upgrade {
@@ -650,19 +661,12 @@ button {
   width: 214px;
 }
 
-.menu.game .level-now {
+.menu.game .level-now,
+.menu.game .level-next {
   color: #c89600;
   font-size: 13px;
   font-weight: 650;
   letter-spacing: -0.03em;
-  line-height: 1.2;
-}
-
-.menu.game .level-next {
-  color: #c89600;
-  font-size: 10px;
-  font-weight: 560;
-  letter-spacing: -0.02em;
   line-height: 1.2;
 }
 

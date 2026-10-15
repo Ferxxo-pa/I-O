@@ -119,6 +119,15 @@ function calmMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+function ClockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8.5V12l2.5 1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function GearIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -282,8 +291,9 @@ function GameMenu({
           onClick={onClock}
           disabled={pending || !ready}
           title={clockTitle}
+          aria-label={clockTitle}
         >
-          I/O
+          <ClockIcon />
           <span className="tip">{clockTitle}</span>
         </button>
         <span className="streak-line">{formatWorkStreak(streakDays)}</span>
@@ -330,7 +340,7 @@ function MenuTop({
   const widths = splitWidths(filled, week.remainingCents, week.covered);
   const work = menuWorkLine(week.covered, filled, week.targetCents);
   return (
-    <div className={`strip ${live ? "live" : "idle"}${won ? " won" : ""}`} data-clock={live ? "in" : "out"}>
+    <div className={`strip menu-card ${live ? "live" : "idle"}${won ? " won" : ""}`} data-clock={live ? "in" : "out"}>
       <span className="chips" aria-hidden>
         {chips.map((color, index) => (
           <i key={index} style={live && !won ? { background: color } : undefined} />
