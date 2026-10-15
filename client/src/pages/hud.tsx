@@ -11,7 +11,8 @@ import {
   type FightSettings,
   type FightView,
 } from "@shared/fight";
-import { demoOps, demoReadiness, type OpsView, type ReadinessCheck } from "@shared/ops";
+import { demoOps, demoReadiness, unlockName, type OpsView, type ReadinessCheck } from "@shared/ops";
+import { SALE_CAP_CENTS, copyLine, demoWeek, netOfSale, type WeekPreset, type WeekView } from "@shared/week";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -55,17 +56,8 @@ function dollars(cents: number): number {
   return Math.round(cents / 100);
 }
 
-/** Short enough for the center of the 232px strip. */
-function encouragement(dollarsLeft: number): string {
-  return `Let's get $${dollarsLeft.toLocaleString("en-US")}`;
-}
-
-const WIN_LINE = "Now it's profit";
-
-function fightLine(fight: FightView, shownLeft?: number): string {
-  const left = shownLeft ?? Math.max(0, dollars(fight.breakEvenCents) - dollars(fight.todayCollectedCents));
-  if (fight.cleared || left <= 0) return WIN_LINE;
-  return encouragement(left);
+function weekLine(week: WeekView, variant: number): string {
+  return copyLine(week, variant);
 }
 
 function readDemo(): DemoScene | null {
@@ -82,6 +74,27 @@ function readPanel(): "menu" | "levels" | "checklist" | null {
 
 function readStill(): boolean {
   return new URLSearchParams(window.location.search).get("still") === "1";
+}
+
+function readWeek(): WeekPreset | null {
+  const value = new URLSearchParams(window.location.search).get("week");
+  if (value === "low" || value === "mid" || value === "stretch" || value === "covered" || value === "cushion") return value;
+  return null;
+}
+
+function useCopyVariant(): number {
+  const pinned = useMemo(() => {
+    const raw = new URLSearchParams(window.location.search).get("copy");
+    if (raw === "0" || raw === "1" || raw === "2") return Number(raw);
+    return null;
+  }, []);
+  const [variant, setVariant] = useState(pinned ?? 0);
+  useEffect(() => {
+    if (pinned != null) return;
+    const id = window.setInterval(() => setVariant((current) => (current + 1) % 3), 4_000);
+    return () => window.clearInterval(id);
+  }, [pinned]);
+  return variant;
 }
 
 const RING_R = 26;
@@ -142,11 +155,13 @@ function GearIcon() {
 
 function GameMenu({
   fight,
+  ops,
   freshEvents,
   error,
   onSettings,
 }: {
   fight: FightView | null;
+  ops: OpsView | null;
   freshEvents: PrintEvent[];
   error: string | null;
   onSettings: () => void;
@@ -155,6 +170,8 @@ function GameMenu({
   const ringRef = useRef<HTMLDivElement>(null);
   const heardSale = useRef<Set<string> | null>(null);
   const [bump, setBump] = useState(0);
+  const [big, setBig] = useState(false);
+  const week = fight?.week ?? null;
 
   useEffect(() => {
     if (heardSale.current == null) {
@@ -164,9 +181,15 @@ function GameMenu({
     for (const event of freshEvents) {
       if (heardSale.current.has(event.id)) continue;
       heardSale.current.add(event.id);
-      if (event.kind === "sale" && event.outputCents > 0) setBump((n) => n + 1);
+      if (event.kind === "sale" && event.outputCents > 0) {
+        const net = fight
+          ? netOfSale(event.outputCents, null, fight.settings.materialsBps, fight.settings.feeBps)
+          : event.outputCents;
+        setBig(net >= SALE_CAP_CENTS);
+        setBump((n) => n + 1);
+      }
     }
-  }, [freshEvents]);
+  }, [freshEvents, fight]);
 
   useEffect(() => {
     const node = ringRef.current;
@@ -176,25 +199,29 @@ function GameMenu({
     node.classList.add("bump");
   }, [bump]);
 
-  const collected = fight ? dollars(fight.todayCollectedCents) : 0;
-  const target = fight ? dollars(fight.breakEvenCents) : 0;
-  const left = Math.max(0, target - collected);
-  const shownLeft = Math.round(left * progress);
-  const covered = Boolean(fight && (fight.cleared || left <= 0));
-  const ringAmount = covered ? Math.max(0, collected - target) : shownLeft;
-  const caption = covered ? "Profit" : "Let's get";
-  const ratio = fight && fight.breakEvenCents > 0 ? Math.min(1, fight.todayCollectedCents / fight.breakEvenCents) : 0;
-  const ringShown = covered ? 1 : ratio * progress;
-  const line = covered ? `${caption} $${ringAmount.toLocaleString("en-US")}` : `${caption} $${shownLeft.toLocaleString("en-US")}`;
+  const covered = Boolean(week?.covered);
+  const shownPct = week ? Math.round(week.shownPct * 100 * progress) : 0;
+  const ringShown = covered ? 1 : Math.min(1, (week?.barPct ?? 0) * progress);
+  const reward = covered && week && ops ? unlockName(week.weeksCovered, ops.rules) : null;
+  const banked = week ? dollars(week.bankedCents) : 0;
+  const bankedLabel =
+    week && week.bankedCents > 0
+      ? `Banked $${banked.toLocaleString("en-US")} (expires in ${week.expiresInWeeks} wks)`
+      : "Banked $0";
 
   return (
     <>
       <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
         <GearIcon />
       </button>
-      {fight && (
+      {week && (
         <div className="hero">
-          <div className={`ring${covered ? " won" : ""}`} ref={ringRef} role="img" aria-label={line}>
+          <div
+            className={`ring${covered ? " won" : ""}${bump ? " bump" : ""}${big ? " big" : ""}`}
+            ref={ringRef}
+            role="img"
+            aria-label={`${shownPct}% of the week`}
+          >
             <svg viewBox="0 0 64 64" aria-hidden>
               <circle className="track" cx="32" cy="32" r={RING_R} />
               <circle
@@ -207,25 +234,33 @@ function GameMenu({
               />
             </svg>
             <span className="ring-copy">
-              <strong>${ringAmount.toLocaleString("en-US")}</strong>
-              <em>{caption}</em>
+              <strong>{shownPct}%</strong>
+              <em>of week</em>
             </span>
           </div>
+          {reward && <div className="unlock pop">{reward}</div>}
         </div>
       )}
-      {fight && (
+      {week && (
         <div className="money">
           <div className="money-row got">
-            <span>Collected</span>
-            <strong>${collected.toLocaleString("en-US")}</strong>
+            <span>This week</span>
+            <strong>${dollars(week.ownCents).toLocaleString("en-US")}</strong>
+          </div>
+          <div className="money-row bank">
+            <span>{bankedLabel}</span>
           </div>
           <div className="money-row">
             <span>Target</span>
-            <strong>${target.toLocaleString("en-US")}</strong>
+            <strong>${dollars(week.targetCents).toLocaleString("en-US")}</strong>
           </div>
-          <div className="money-row need">
-            <span>Still needed</span>
-            <strong>${left.toLocaleString("en-US")}</strong>
+          <div className="money-row">
+            <span>Daily pace</span>
+            <strong>need ${dollars(week.paceCents).toLocaleString("en-US")}/day</strong>
+          </div>
+          <div className="money-row">
+            <span>Weeks covered</span>
+            <strong>{week.weeksCovered}</strong>
           </div>
         </div>
       )}
@@ -268,11 +303,13 @@ export default function Hud() {
   const [company, setCompany] = useState<CompanyView | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [demoScene] = useState<DemoScene | null>(readDemo);
+  const [weekPreset] = useState<WeekPreset | null>(readWeek);
+  const copyVariant = useCopyVariant();
   const [pinOpen, setPinOpen] = useState(false);
   const [afterPin, setAfterPin] = useState<"clock" | "settings" | "change" | null>(null);
   const heard = useRef(new Set<string>());
   const wasCleared = useRef<boolean | null>(null);
-  const demo = demoScene ? demoModel(demoScene) : null;
+  const demo = demoScene ? demoModel(demoScene, weekPreset) : null;
 
   useEffect(() => {
     const unlock = () => unlockChing();
@@ -296,13 +333,14 @@ export default function Hud() {
     ching("crit");
   }, [demo?.scene]);
 
-  const fight = demo?.view ?? state?.fight ?? null;
+  const rawFight = demo?.view ?? state?.fight ?? null;
+  const fight = rawFight && weekPreset && !demo ? { ...rawFight, week: demoWeek(weekPreset, rawFight.date) } : rawFight;
   const ops = demo ? demoOps(demo.scene) : (state?.ops ?? null);
   const pinSet = state?.fight.pinSet ?? false;
 
   useEffect(() => {
     if (demo) return;
-    if (!fight?.cleared) {
+    if (!fight?.week.covered) {
       wasCleared.current = fight ? false : wasCleared.current;
       return;
     }
@@ -311,7 +349,7 @@ export default function Hud() {
       return;
     }
     wasCleared.current = true;
-    const key = `io.cleared.${fight.date}`;
+    const key = `io.cleared.${fight.week.weekStart}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
     clearedChime();
@@ -325,24 +363,10 @@ export default function Hud() {
   }, [error]);
 
   const live = demo ? demo.clockedIn : (state?.session.clockedIn ?? false);
-  const moneyOut = fight ? fight.todayWageCents : (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
-  const moneyIn = fight ? fight.todayCollectedCents : (state?.session.collectedCents ?? 0);
-  const combined = moneyIn + moneyOut;
-  const barFloor = 16;
-  let greenShare = 0;
-  let redShare = 0;
-  if (combined > 0) {
-    if (moneyIn === 0) {
-      greenShare = barFloor;
-      redShare = 100 - barFloor;
-    } else if (moneyOut === 0) {
-      redShare = barFloor;
-      greenShare = 100 - barFloor;
-    } else {
-      greenShare = Math.min(100 - barFloor, Math.max(barFloor, (moneyIn / combined) * 100));
-      redShare = 100 - greenShare;
-    }
-  }
+  const week = fight?.week ?? null;
+  const won = Boolean(week?.covered && live);
+  const barPct = week ? Math.min(100, week.barPct * 100) : 0;
+  const headline = week ? weekLine(week, copyVariant) : "";
   const wide = (menu || settings || levelsOpen || checklistOpen || change || whoOpen || pinOpen) && !collapsed;
   const demoHit = useMemo<PrintEvent | null>(() => {
     if (!demo?.hitCents) return null;
@@ -521,13 +545,14 @@ export default function Hud() {
         />
 
         <div
-          className={`strip ${live ? "live" : "idle"}${fight?.cleared && live ? " won" : ""}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
+          className={`strip ${live ? "live" : "idle"}${won ? " won" : ""}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
           data-clock={live ? "in" : "out"}
-          data-fight={fight?.cleared && live ? "cleared" : "behind"}
+          data-fight={won ? "cleared" : "behind"}
+          data-week={week?.state ?? "bank"}
         >
           <span className="chips" aria-hidden>
             {chips.map((color, index) => (
-              <i key={index} style={live && !(fight?.cleared) ? { background: color } : undefined} />
+              <i key={index} style={live && !won ? { background: color } : undefined} />
             ))}
           </span>
           <div className="ctrl-row">
@@ -542,8 +567,8 @@ export default function Hud() {
               <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
             </button>
             {!collapsed && (
-              <span className={`fight-cta${fight?.cleared && live ? " won" : ""}`}>
-                {fight ? fightLine(fight) : ""}
+              <span className={`fight-cta${won ? " won" : ""}`} data-cta={headline}>
+                {headline}
               </span>
             )}
             <span className="actions">
@@ -570,19 +595,18 @@ export default function Hud() {
             </span>
           </div>
           {!collapsed && (
-            <span className={`balance-bar${fight?.cleared && live ? " won" : ""}`} aria-hidden>
-              {combined > 0 && (
-                <>
-                  <i className="in" style={{ width: `${greenShare}%` }} />
-                  <i className="out" style={{ width: `${redShare}%` }} />
-                </>
-              )}
+            <span className={`balance-bar${won ? " won" : ""}`} aria-hidden>
+              {barPct > 0 && <i className="in" style={{ width: `${barPct}%` }} />}
             </span>
           )}
-          {!collapsed && (
+          {!collapsed && week && (
             <span className="nums">
-              <span className="num up">Collected ${fight ? dollars(fight.todayCollectedCents).toLocaleString("en-US") : dollars(moneyIn).toLocaleString("en-US")}</span>
-              <span className="num down">Still needed ${fight ? Math.max(0, dollars(fight.breakEvenCents) - dollars(fight.todayCollectedCents)).toLocaleString("en-US") : "0"}</span>
+              <span className="num up">This week ${dollars(week.ownCents).toLocaleString("en-US")}</span>
+              <span className={`num ${week.overCents > 0 ? "up" : "down"}`}>
+                {week.overCents > 0
+                  ? `+$${dollars(week.overCents).toLocaleString("en-US")} over`
+                  : `Left $${dollars(week.remainingCents).toLocaleString("en-US")}`}
+              </span>
             </span>
           )}
         </div>
@@ -598,6 +622,7 @@ export default function Hud() {
             >
               <GameMenu
                 fight={fight}
+                ops={ops}
                 freshEvents={demo ? [] : freshEvents}
                 error={error}
                 onSettings={() => {
@@ -815,6 +840,8 @@ function SettingsPanel({
   const [fee, setFee] = useState("");
   const [pot, setPot] = useState("");
   const [goal, setGoal] = useState("");
+  const [weekly, setWeekly] = useState("");
+  const [rentAmt, setRentAmt] = useState("");
   const [days, setDays] = useState<number[]>(DEFAULT_FIGHT_SETTINGS.openWeekdays);
   const [rent, setRent] = useState(false);
   const [ready, setReady] = useState(false);
@@ -827,6 +854,8 @@ function SettingsPanel({
     setFee(String(settings.feeBps / 100));
     setPot(String(settings.potBps / 100));
     setGoal(String(settings.avgGoalCents / 100));
+    setWeekly(String(settings.weeklyTargetCents / 100));
+    setRentAmt(String(settings.rentMonthlyCents / 100));
     setDays(settings.openWeekdays);
     setRent(settings.rentEntered);
     setReady(true);
@@ -925,6 +954,8 @@ function SettingsPanel({
             potBps: Math.round(Number(pot) * 100),
             avgGoalCents: Math.round(Number(goal) * 100),
             rentEntered: rent,
+            weeklyTargetCents: Math.round(Number(weekly) * 100),
+            rentMonthlyCents: Math.round(Number(rentAmt) * 100),
           });
         }}
       >
@@ -944,6 +975,14 @@ function SettingsPanel({
             <label className="settings-line">
               <span>Fixed / month</span>
               <input value={fixed} onChange={(event) => setFixed(event.target.value)} inputMode="decimal" aria-label="Fixed costs per month" />
+            </label>
+            <label className="settings-line">
+              <span>Week target</span>
+              <input value={weekly} onChange={(event) => setWeekly(event.target.value)} inputMode="decimal" aria-label="Weekly target" />
+            </label>
+            <label className="settings-line">
+              <span>Rent / month</span>
+              <input value={rentAmt} onChange={(event) => setRentAmt(event.target.value)} inputMode="decimal" aria-label="Rent per month" />
             </label>
             <label className="settings-line">
               <span>Materials %</span>
@@ -967,7 +1006,7 @@ function SettingsPanel({
                 type="checkbox"
                 checked={rent}
                 onChange={(event) => setRent(event.target.checked)}
-                aria-label="Rent is included in fixed costs"
+                aria-label="Rent is included in the weekly target"
               />
             </label>
           </>

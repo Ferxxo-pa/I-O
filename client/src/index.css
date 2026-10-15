@@ -254,10 +254,10 @@ button {
   height: var(--ctrl);
   overflow: hidden;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 560;
   line-height: var(--ctrl);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.06em;
   font-variant-numeric: tabular-nums;
   text-align: center;
   white-space: nowrap;
@@ -555,6 +555,14 @@ button {
   filter: drop-shadow(0 0 4px #12c45a);
 }
 
+.menu.game .ring.bump.big {
+  animation: ring-bump-big 0.5s ease;
+}
+
+.menu.game .ring.bump.big .value {
+  filter: drop-shadow(0 0 8px #12c45a);
+}
+
 .menu.game .ring-copy {
   position: absolute;
   inset: 8px;
@@ -620,6 +628,25 @@ button {
   color: #ff3b30;
 }
 
+.menu.game .money-row.bank {
+  grid-template-columns: 1fr;
+}
+
+.menu.game .money-row.bank span {
+  color: var(--ink);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.menu.game .unlock {
+  margin-top: 8px;
+  color: #12c45a;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
 .menu.game .err {
   margin-top: 8px;
 }
@@ -636,8 +663,38 @@ button {
   }
 }
 
+@keyframes ring-bump-big {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes unlock-pop {
+  0% {
+    transform: scale(0.86);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.menu.game .unlock.pop {
+  animation: unlock-pop 0.45s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .menu.game .ring.bump {
+  .menu.game .ring.bump,
+  .menu.game .ring.bump.big,
+  .menu.game .unlock.pop {
     animation: none;
   }
 }

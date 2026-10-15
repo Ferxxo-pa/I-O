@@ -97,6 +97,19 @@ const fileSchema = z.object({
       lastWeekScope: z.string().nullable().default(null),
       weekStreak: z.number().int().min(0).max(100_000).default(0),
       webhookSeenAt: z.number().int().nullable().default(null),
+      weekStart: z.string().nullable().default(null),
+      ownAppliedCents: z.number().int().nonnegative().default(0),
+      weeksCovered: z.number().int().min(0).max(100_000).default(0),
+      cushion: z
+        .array(
+          z.object({
+            cents: z.number().int().positive().max(290_000),
+            earnedMonday: z.string().max(10),
+          }),
+        )
+        .max(80)
+        .default([]),
+      weekSaleIds: z.array(z.string().max(80)).max(500).default([]),
     })
     .optional(),
 });

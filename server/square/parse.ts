@@ -29,6 +29,10 @@ export type InvoiceSnapshot = {
   /** Balance still due, in cents. Absent on older snapshots. */
   dueCents?: number;
   teamMemberId?: string | null;
+  /** When Square took the payment. The week bar uses this, not when we saw it. */
+  paidAt?: string;
+  /** Real materials for this job, in cents. Absent means use the materials percent. */
+  materialsCents?: number | null;
 };
 
 const SENT = new Set([
@@ -88,6 +92,12 @@ export function snapshotFromInvoice(invoice: unknown): InvoiceSnapshot | null {
 
   const title = typeof row.title === "string" ? row.title.trim() : "";
   const updatedAt = typeof row.updated_at === "string" ? row.updated_at : undefined;
+  let paidAt = "";
+  for (const request of requests) {
+    if (!request || typeof request !== "object") continue;
+    const paid = (request as { paid_at?: unknown }).paid_at;
+    if (typeof paid === "string" && paid > paidAt) paidAt = paid;
+  }
   const member = row.team_member_id ?? row.employee_id;
   let dueCents = 0;
   for (const request of requests) {
@@ -112,7 +122,30 @@ export function snapshotFromInvoice(invoice: unknown): InvoiceSnapshot | null {
     updatedAt,
     dueCents,
     teamMemberId: typeof member === "string" && member ? member : null,
+    paidAt: paidAt || updatedAt,
+    materialsCents: jobMaterials(row),
   };
+}
+
+function jobMaterials(row: Record<string, unknown>): number | null {
+  if (typeof row.materials_cents === "number" && Number.isFinite(row.materials_cents) && row.materials_cents >= 0) {
+    return Math.round(row.materials_cents);
+  }
+  const items = Array.isArray(row.line_items) ? row.line_items : [];
+  let sum = 0;
+  let found = false;
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const named = item as { name?: unknown; description?: unknown; total_money?: SquareMoney; base_price_money?: SquareMoney };
+    const name = `${typeof named.name === "string" ? named.name : ""} ${typeof named.description === "string" ? named.description : ""}`;
+    if (!/material/i.test(name)) continue;
+    const amount = named.total_money?.amount ?? named.base_price_money?.amount;
+    if (positive(amount)) {
+      sum += amount;
+      found = true;
+    }
+  }
+  return found ? sum : null;
 }
 
 export function snapshotFromWebhook(body: unknown): InvoiceSnapshot | null {

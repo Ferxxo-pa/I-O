@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { emptyWeek, weekViewSchema, type WeekPreset, type WeekView, demoWeek } from "./week";
 
 /**
  * Fight the bar.
@@ -24,8 +25,12 @@ export const fightSettingsSchema = z
     potBps: z.number().int().min(0).max(10_000),
     /** Average-sale goal in cents. Default $1,040. */
     avgGoalCents: z.number().int().positive().max(100_000_000),
-    /** Owner confirmed rent is inside the monthly fixed number. */
+    /** Owner confirmed rent is inside the weekly target. */
     rentEntered: z.boolean().default(false),
+    /** Gross weekly bar before materials, fees, and rent. Default $2,900. */
+    weeklyTargetCents: z.number().int().min(0).max(100_000_000).default(290_000),
+    /** Monthly rent in cents. Added to the week unless rent is already in the target. */
+    rentMonthlyCents: z.number().int().min(0).max(100_000_000).default(0),
   })
   .superRefine((value, ctx) => {
     if (value.materialsBps + value.feeBps >= 10_000) {
@@ -54,6 +59,8 @@ export const DEFAULT_FIGHT_SETTINGS: FightSettings = {
   potBps: 1_000,
   avgGoalCents: 104_000,
   rentEntered: false,
+  weeklyTargetCents: 290_000,
+  rentMonthlyCents: 0,
 };
 
 const WEEKDAY: Record<string, number> = {
@@ -298,6 +305,7 @@ export const fightViewSchema = z.object({
   saleCount: z.number().int(),
   goalCents: z.number().int(),
   settings: fightSettingsSchema,
+  week: weekViewSchema,
 });
 
 export type FightView = {
@@ -316,6 +324,7 @@ export type FightView = {
   saleCount: number;
   goalCents: number;
   settings: FightSettings;
+  week: WeekView;
 };
 
 export function buildFightView(input: {
@@ -328,6 +337,7 @@ export function buildFightView(input: {
   streak: number;
   settings: FightSettings;
   openDays: number;
+  week?: WeekView;
 }): FightView {
   const target = breakEvenCents({
     wagesCents: input.wageCents,
@@ -354,6 +364,19 @@ export function buildFightView(input: {
     saleCount: input.sales.length,
     goalCents: input.settings.avgGoalCents,
     settings: input.settings,
+    week:
+      input.week ??
+      emptyWeek({
+        today: input.date,
+        weeksCovered: 0,
+        weeklyTargetCents: input.settings.weeklyTargetCents,
+        materialsBps: input.settings.materialsBps,
+        feeBps: input.settings.feeBps,
+        rentMonthlyCents: input.settings.rentMonthlyCents,
+        rentEntered: input.settings.rentEntered,
+        openWeekdays: input.settings.openWeekdays,
+        monthOpenDays: input.openDays,
+      }),
   };
 }
 
@@ -393,13 +416,18 @@ function demoView(
 }
 
 /** Fixed scenes so the shop can preview the bar without Square sales. */
-export function demoModel(scene: DemoScene): DemoModel {
+function withWeek(view: FightView, preset?: WeekPreset | null): FightView {
+  if (!preset) return view;
+  return { ...view, week: demoWeek(preset, view.date) };
+}
+
+export function demoModel(scene: DemoScene, preset?: WeekPreset | null): DemoModel {
   if (scene === "crit") {
     return {
       scene,
       clockedIn: true,
       hitCents: 240_000,
-      view: demoView("crit", 240_000, 220_000, [240_000], [], 2),
+      view: withWeek(demoView("crit", 240_000, 220_000, [240_000], [], 2), preset),
     };
   }
   if (scene === "cleared") {
@@ -407,17 +435,20 @@ export function demoModel(scene: DemoScene): DemoModel {
       scene,
       clockedIn: true,
       hitCents: null,
-      view: demoView(
-        "cleared",
-        164_000,
-        48_000,
-        [90_000, 40_000, 34_000],
-        [
-          { id: "ada", name: "Ada", ms: 5 * HOUR_MS },
-          { id: "ben", name: "Ben", ms: 3 * HOUR_MS },
-          { id: "sol", name: "Sol", ms: 2 * HOUR_MS },
-        ],
-        4,
+      view: withWeek(
+        demoView(
+          "cleared",
+          164_000,
+          48_000,
+          [90_000, 40_000, 34_000],
+          [
+            { id: "ada", name: "Ada", ms: 5 * HOUR_MS },
+            { id: "ben", name: "Ben", ms: 3 * HOUR_MS },
+            { id: "sol", name: "Sol", ms: 2 * HOUR_MS },
+          ],
+          4,
+        ),
+        preset,
       ),
     };
   }
@@ -426,6 +457,6 @@ export function demoModel(scene: DemoScene): DemoModel {
     scene,
     clockedIn: scene !== "idle",
     hitCents: null,
-    view: morning,
+    view: withWeek(morning, preset),
   };
 }

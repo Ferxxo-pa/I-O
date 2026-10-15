@@ -112,7 +112,7 @@ export const appStateSchema = z.object({
   you: viewerSchema,
   /** Today's fight-the-bar snapshot. No secrets. */
   fight: fightViewSchema,
-  /** Levels, week target, and who is clocked in. The strip does not read this. */
+  /** Levels and who is clocked in. The weekly bar lives on fight.week. */
   ops: opsViewSchema,
 });
 export type AppState = z.infer<typeof appStateSchema>;

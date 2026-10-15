@@ -9,7 +9,7 @@
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
-    "test": "tsx server/square/signature.test.ts && tsx server/square/parse.test.ts && tsx server/labor.test.ts && tsx server/shifts.test.ts && tsx server/store.test.ts && tsx server/fight.test.ts && tsx server/ops.test.ts && tsx server/auth.routes.test.ts"
+    "test": "tsx server/square/signature.test.ts && tsx server/square/parse.test.ts && tsx server/labor.test.ts && tsx server/shifts.test.ts && tsx server/store.test.ts && tsx server/fight.test.ts && tsx server/week.test.ts && tsx server/ops.test.ts && tsx server/auth.routes.test.ts"
   },
   "dependencies": {
     "@fontsource/silkscreen": "^5.2.7",

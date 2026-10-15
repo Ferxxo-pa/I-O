@@ -28,6 +28,19 @@ import {
   type OpsView,
   type ShopScope,
 } from "@shared/ops";
+import {
+  closeWeek,
+  depositCushion,
+  netOfSale,
+  splitSale,
+  countOpenDays,
+  summarizeWeekBar,
+  weekBarTarget,
+  weekMonday,
+  type CushionLot,
+  type WeekSale,
+  type WeekView,
+} from "@shared/week";
 import { hashPin, verifyPin } from "../auth/pin";
 import { currentScope } from "../company";
 
@@ -66,6 +79,11 @@ export type FightPersist = {
   lastWeekScope: string | null;
   weekStreak: number;
   webhookSeenAt: number | null;
+  weekStart: string | null;
+  ownAppliedCents: number;
+  weeksCovered: number;
+  cushion: CushionLot[];
+  weekSaleIds: string[];
 };
 
 export type FightSync = {
@@ -73,6 +91,7 @@ export type FightSync = {
   lifetimeCollected: number;
   lifetimeSettled: number;
   saleCents?: number;
+  weekSale?: WeekSale;
   accrualSince: (since: number) => number;
   liveHoursSince: (since: number) => FightHour[];
 };
@@ -111,6 +130,11 @@ function blank(): FightPersist {
     lastWeekScope: null,
     weekStreak: 0,
     webhookSeenAt: null,
+    weekStart: null,
+    ownAppliedCents: 0,
+    weeksCovered: 0,
+    cushion: [],
+    weekSaleIds: [],
   };
 }
 
@@ -204,6 +228,11 @@ export class FightBook {
       lastWeekScope: this.data.lastWeekScope,
       weekStreak: this.data.weekStreak,
       webhookSeenAt: this.data.webhookSeenAt,
+      weekStart: this.data.weekStart,
+      ownAppliedCents: this.data.ownAppliedCents,
+      weeksCovered: this.data.weeksCovered,
+      cushion: this.data.cushion.map((lot) => ({ ...lot })),
+      weekSaleIds: this.data.weekSaleIds.slice(),
     };
   }
 
@@ -232,6 +261,11 @@ export class FightBook {
         lastResolvedWeek: next.lastResolvedWeek ?? null,
         lastWeekScope: next.lastWeekScope ?? null,
         webhookSeenAt: next.webhookSeenAt ?? null,
+        weekStart: next.weekStart ?? null,
+        ownAppliedCents: next.ownAppliedCents ?? 0,
+        weeksCovered: next.weeksCovered ?? 0,
+        cushion: (next.cushion ?? []).map((lot) => ({ ...lot })),
+        weekSaleIds: next.weekSaleIds?.slice() ?? [],
         sales: next.sales?.slice() ?? [],
         hours: (next.hours ?? []).map((row) => ({ ...row })),
         history: (next.history ?? []).map((row) => ({ ...row })),
@@ -276,6 +310,8 @@ export class FightBook {
   sync(input: FightSync): FightView {
     const sale = input.saleCents && input.saleCents > 0 ? Math.round(input.saleCents) : 0;
     const baselineCollected = input.lifetimeCollected - sale;
+    if (input.weekSale) this.applyWeekSale(input.weekSale, input.now);
+    else this.rollWeekTo(weekMonday(zonedParts(input.now, SHOP_ZONE).key));
     const rolled = this.roll(input.now, baselineCollected, input.lifetimeSettled);
     if (sale > 0) this.data.sales.push(sale);
     if (this.data.sales.length > 500) this.data.sales.splice(0, this.data.sales.length - 500);
@@ -542,7 +578,83 @@ export class FightBook {
       streak: this.data.streak,
       settings: this.data.settings,
       openDays: openDaysInMonth(year, month, this.data.settings.openWeekdays, SHOP_ZONE),
+      week: this.weekView(date),
     });
+  }
+
+  private weekTarget(monday: string): number {
+    const [year, month] = monday.split("-").map(Number);
+    return weekBarTarget({
+      weeklyTargetCents: this.data.settings.weeklyTargetCents,
+      materialsBps: this.data.settings.materialsBps,
+      feeBps: this.data.settings.feeBps,
+      rentMonthlyCents: this.data.settings.rentMonthlyCents,
+      rentEntered: this.data.settings.rentEntered,
+      weekOpenDays: countOpenDays(monday, this.data.settings.openWeekdays),
+      monthOpenDays: openDaysInMonth(year, month, this.data.settings.openWeekdays, SHOP_ZONE),
+    });
+  }
+
+  private weekView(today: string): WeekView {
+    const monday = weekMonday(today);
+    const [year, month] = monday.split("-").map(Number);
+    return summarizeWeekBar({
+      today,
+      ownCents: this.data.ownAppliedCents,
+      lots: this.data.cushion,
+      weeksCovered: this.data.weeksCovered,
+      weeklyTargetCents: this.data.settings.weeklyTargetCents,
+      materialsBps: this.data.settings.materialsBps,
+      feeBps: this.data.settings.feeBps,
+      rentMonthlyCents: this.data.settings.rentMonthlyCents,
+      rentEntered: this.data.settings.rentEntered,
+      openWeekdays: this.data.settings.openWeekdays,
+      monthOpenDays: openDaysInMonth(year, month, this.data.settings.openWeekdays, SHOP_ZONE),
+    });
+  }
+
+  private rollWeekTo(monday: string) {
+    if (!this.data.weekStart) {
+      this.data.weekStart = monday;
+      return;
+    }
+    while (this.data.weekStart < monday) {
+      const closed = closeWeek({
+        weekStart: this.data.weekStart,
+        ownCents: this.data.ownAppliedCents,
+        lots: this.data.cushion,
+        targetCents: this.weekTarget(this.data.weekStart),
+        weeksCovered: this.data.weeksCovered,
+      });
+      this.data.cushion = closed.lots;
+      this.data.weeksCovered = closed.weeksCovered;
+      this.data.ownAppliedCents = 0;
+      this.data.weekStart = closed.weekStart;
+    }
+  }
+
+  private applyWeekSale(sale: WeekSale, nowMs: number) {
+    if (!sale.id || this.data.weekSaleIds.includes(sale.id)) return;
+    this.data.weekSaleIds.push(sale.id);
+    if (this.data.weekSaleIds.length > 500) this.data.weekSaleIds.splice(0, this.data.weekSaleIds.length - 500);
+    const payMonday = weekMonday(zonedParts(sale.paidAt, SHOP_ZONE).key);
+    const todayMonday = weekMonday(zonedParts(nowMs, SHOP_ZONE).key);
+    const bucket = payMonday > todayMonday ? todayMonday : payMonday;
+    this.rollWeekTo(bucket);
+    const net = netOfSale(
+      sale.grossCents,
+      sale.materialsCents,
+      this.data.settings.materialsBps,
+      this.data.settings.feeBps,
+    );
+    const split = splitSale(net);
+    if (this.data.weekStart === bucket) {
+      this.data.ownAppliedCents += split.barCents;
+      this.data.cushion = depositCushion(this.data.cushion, split.bankCents, bucket);
+    } else {
+      this.data.cushion = depositCushion(this.data.cushion, split.bankCents, payMonday);
+    }
+    this.rollWeekTo(todayMonday);
   }
 }
 

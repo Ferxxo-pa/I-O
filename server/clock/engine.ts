@@ -442,7 +442,7 @@ export class EarnEngine {
   ingestSquareInvoice(snapshot: InvoiceSnapshot): { sale: boolean; points: boolean } {
     const points = snapshot.sent ? this.awardMessage(snapshot.id) : false;
     const sale = snapshot.collected
-      ? this.celebrateSale(snapshot.id, snapshot.centsPaid, snapshot.title)
+      ? this.celebrateSale(snapshot.id, snapshot.centsPaid, snapshot.title, snapshot.paidAt, snapshot.materialsCents)
       : false;
     return { sale, points };
   }
@@ -473,7 +473,13 @@ export class EarnEngine {
     return true;
   }
 
-  private celebrateSale(id: string, cents: number, title?: string): boolean {
+  private celebrateSale(
+    id: string,
+    cents: number,
+    title?: string,
+    paidAt?: string,
+    materialsCents?: number | null,
+  ): boolean {
     const key = `sale:${id}`;
     if (this.seenExternal.has(key)) return false;
     this.remember(key);
@@ -482,7 +488,14 @@ export class EarnEngine {
       ...this.session,
       collectedCents: this.session.collectedCents + amount,
     };
-    this.syncFight(now(), amount);
+    const parsedPaid = paidAt ? Date.parse(paidAt) : Number.NaN;
+    const at = now();
+    this.syncFight(at, amount, {
+      id,
+      grossCents: amount,
+      paidAt: Number.isFinite(parsedPaid) ? parsedPaid : at,
+      materialsCents: materialsCents ?? null,
+    });
     this.pushEvent(
       makeEvent({
         kind: "sale",
@@ -606,12 +619,17 @@ export class EarnEngine {
     );
   }
 
-  private syncFight(at: number, saleCents?: number): FightView {
+  private syncFight(
+    at: number,
+    saleCents?: number,
+    weekSale?: { id: string; grossCents: number; paidAt: number; materialsCents: number | null },
+  ): FightView {
     return fightBook.sync({
       now: at,
       lifetimeCollected: this.session.collectedCents,
       lifetimeSettled: this.settledWages(),
       saleCents,
+      weekSale,
       accrualSince: (since) => this.accrualSince(since, at),
       liveHoursSince: (since) => this.liveHoursSince(since, at),
     });
