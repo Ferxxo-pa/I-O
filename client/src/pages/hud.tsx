@@ -218,24 +218,20 @@ function splitWidths(collected: number, needed: number, covered: boolean): { gre
   return { green, red };
 }
 
-function SparkIcon() {
-  return (
-    <svg className="flame" width="14" height="14" viewBox="0 0 16 16" aria-hidden>
-      <path
-        fill="currentColor"
-        d="M8 .4 9.7 5.4 15 6.1 11.2 9.3 12.4 14.6 8 11.9 3.6 14.6 4.8 9.3 1 6.1 6.3 5.4Z"
-      />
-    </svg>
-  );
+function signedMoney(cents: number, sign: "+" | "−"): string {
+  const rounded = Math.abs(dollars(cents)).toLocaleString("en-US");
+  return `${sign}$${rounded}.00`;
 }
 
-function UpgradeLine({
+function UpgradeBar({
+  progress,
   remainingCents,
   covered,
   current,
   upcoming,
   calm,
 }: {
+  progress: number;
   remainingCents: number;
   covered: boolean;
   current: string | null;
@@ -261,16 +257,19 @@ function UpgradeLine({
       : phase === "next"
         ? (upcoming ?? (current ? `Upgrade unlocked: ${current}` : "Upgrade unlocked"))
         : `${whole(remainingCents)} until your next upgrade`;
+  const fill = phase === "rest" ? progress : 100;
   const sparks = [0, 45, 90, 135, 180, 225, 270, 315];
   return (
     <motion.div
       className={`upgrade${phase === "burst" ? " burst" : ""}${calm ? " calm" : " live"}`}
       initial={calm ? false : { opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.06 }}
+      transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.03 }}
     >
-      <span className="mark">
-        <SparkIcon />
+      <span className="gold-wrap">
+        <span className="gold-bar" aria-hidden>
+          <i style={{ width: `${fill}%`, transition: calm ? "none" : undefined }} />
+        </span>
         {phase === "burst" && (
           <span className="burst" aria-hidden>
             {sparks.map((deg) => (
@@ -299,32 +298,29 @@ function GameMenu({
   if (!week) return null;
   const filled = week.ownCents + week.cushionUsedCents;
   const widths = splitWidths(filled, week.remainingCents, week.covered);
-  const showNeed = !week.covered && week.remainingCents > 0;
   return (
     <div className="col">
       <motion.div
-        className={`stat week-row${week.covered ? " won" : ""}`}
+        className={`io-block${week.covered ? " won" : ""}`}
         initial={calm ? false : { opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
       >
         <WeekBar collected={filled} needed={week.remainingCents} covered={week.covered} calm={calm} />
-        <span
-          className={`bar-split${week.covered ? " won" : ""}`}
-          style={{ gridTemplateColumns: showNeed ? `${widths.green}% ${widths.red}%` : "1fr" }}
-        >
-          <span className="got">{whole(week.ownCents)}</span>
-          {showNeed ? <span className="need">{whole(week.remainingCents)}</span> : null}
+        <span className="io-nums">
+          <span className="up">{signedMoney(week.ownCents, "+")}</span>
+          <span className="down">{signedMoney(week.remainingCents, "−")}</span>
         </span>
       </motion.div>
-      <StatRow label="Streak" index={1} calm={calm} value={streakLine(week.weeksCovered)} />
-      <UpgradeLine
+      <UpgradeBar
+        progress={widths.green}
         remainingCents={week.remainingCents}
         covered={week.covered}
         current={rewardAt(ops, 1)}
         upcoming={rewardAt(ops, 2)}
         calm={calm}
       />
+      <StatRow label="Streak" index={2} calm={calm} value={streakLine(week.weeksCovered)} />
       <motion.button
         type="button"
         className="gear dock"

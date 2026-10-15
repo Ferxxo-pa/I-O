@@ -578,8 +578,41 @@ button {
   cursor: pointer;
 }
 
-.menu.game .week-row {
+.menu.game .io-block {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+  width: 214px;
+}
+
+.menu.game .io-nums {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 214px;
+  height: 14px;
+  white-space: nowrap;
+}
+
+.menu.game .io-nums .up,
+.menu.game .io-nums .down {
+  font-variant-numeric: tabular-nums;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.menu.game .io-nums .up {
+  color: #12c45a;
+}
+
+.menu.game .io-nums .down {
+  color: #ff3b30;
+}
+
+.menu.game .io-block.won .io-nums .down {
+  color: #12c45a;
 }
 
 .menu.game .gear.dock {
@@ -589,72 +622,47 @@ button {
   z-index: auto;
 }
 
-.menu.game .bar-split {
-  display: grid;
-  width: 214px;
-  min-height: 14px;
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-}
-
-.menu.game .bar-split .got,
-.menu.game .bar-split .need {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.menu.game .bar-split .got {
-  color: #12c45a;
-  text-align: right;
-  padding-right: 7px;
-}
-
-.menu.game .bar-split .need {
-  color: #ff3b30;
-  text-align: left;
-  padding-left: 7px;
-}
-
-.menu.game .bar-split.won .got {
-  text-align: left;
-  padding-right: 0;
-}
-
 .menu.game .upgrade {
   position: relative;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
   width: 214px;
-  min-height: 18px;
   color: #c89600;
 }
 
-.menu.game .upgrade .mark {
+.menu.game .gold-wrap {
   position: relative;
-  flex: none;
-  width: 14px;
-  height: 14px;
-  color: #ffc800;
+  width: 214px;
+  height: 3px;
 }
 
-.menu.game .upgrade .flame {
+.menu.game .gold-bar {
   display: block;
-  filter: drop-shadow(0 0 2px rgba(255, 200, 0, 0.55));
+  width: 214px;
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(255, 200, 0, 0.22);
+  overflow: hidden;
 }
 
-.menu.game .upgrade.live .flame {
+.menu.game .gold-bar i {
+  display: block;
+  height: 3px;
+  border-radius: 99px;
+  background: #ffc800;
+  box-shadow: 0 0 6px rgba(255, 200, 0, 0.7);
+}
+
+.menu.game .upgrade.live .gold-bar i {
   animation: gold-shimmer 2.4s ease-in-out infinite;
 }
 
 .menu.game .upgrade-line {
   display: block;
-  width: 194px;
-  max-width: 194px;
+  width: 214px;
+  max-width: 214px;
   color: #c89600;
   font-size: 13px;
   font-weight: 650;
@@ -673,10 +681,14 @@ button {
   animation: gold-glow 600ms ease-out;
 }
 
+.menu.game .upgrade.burst .gold-bar {
+  box-shadow: 0 0 10px rgba(255, 200, 0, 0.95);
+}
+
 .menu.game .upgrade .burst {
   position: absolute;
-  left: 7px;
-  top: 7px;
+  left: 107px;
+  top: 1px;
   width: 0;
   height: 0;
   pointer-events: none;
@@ -787,7 +799,7 @@ button {
   .menu.game .stat-value.changed,
   .menu.game .upgrade-line.changed,
   .menu.game .menu-bar i,
-  .menu.game .upgrade .flame,
+  .menu.game .upgrade .gold-bar i,
   .menu.game .upgrade .burst i {
     animation: none;
     transition: none;
