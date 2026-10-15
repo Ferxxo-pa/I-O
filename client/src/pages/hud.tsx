@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
 import { ching, clearedChime, unlockChing } from "@/lib/ching";
@@ -11,8 +11,8 @@ import {
   type FightSettings,
   type FightView,
 } from "@shared/fight";
-import { demoOps, demoReadiness, unlockName, type OpsView, type ReadinessCheck } from "@shared/ops";
-import { SALE_CAP_CENTS, copyLine, demoWeek, netOfSale, type WeekPreset, type WeekView } from "@shared/week";
+import { demoOps, demoReadiness, type OpsView, type ReadinessCheck } from "@shared/ops";
+import { copyLine, demoWeek, type WeekPreset, type WeekView } from "@shared/week";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -66,9 +66,9 @@ function readDemo(): DemoScene | null {
   return null;
 }
 
-function readPanel(): "menu" | "levels" | "checklist" | null {
+function readPanel(): "menu" | "levels" | "checklist" | "settings" | null {
   const value = new URLSearchParams(window.location.search).get("panel");
-  if (value === "menu" || value === "levels" || value === "checklist") return value;
+  if (value === "menu" || value === "levels" || value === "checklist" || value === "settings") return value;
   return null;
 }
 
@@ -97,48 +97,9 @@ function useCopyVariant(): number {
   return variant;
 }
 
-const RING_R = 26;
-const RING_C = 2 * Math.PI * RING_R;
-
-function useReveal(): { progress: number; still: boolean } {
-  const still = useMemo(readStill, []);
-  const hold = useMemo(() => new URLSearchParams(window.location.search).get("hold") === "1", []);
-  const reduce = useMemo(
-    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-    [],
-  );
-  const skip = still || (reduce && !hold);
-  const [progress, setProgress] = useState(skip ? 1 : 0);
-  useEffect(() => {
-    if (skip) {
-      setProgress(1);
-      return;
-    }
-    let start = 0;
-    let frame = 0;
-    const tick = (now: number) => {
-      if (!start) start = now;
-      const t = Math.min(1, (now - start) / 600);
-      setProgress(1 - (1 - t) ** 3);
-      if (t < 1) frame = requestAnimationFrame(tick);
-    };
-    const play = () => {
-      cancelAnimationFrame(frame);
-      start = 0;
-      setProgress(0);
-      frame = requestAnimationFrame(tick);
-    };
-    if (hold) {
-      (window as unknown as { __ioReveal?: () => void }).__ioReveal = play;
-      return () => {
-        cancelAnimationFrame(frame);
-        delete (window as unknown as { __ioReveal?: () => void }).__ioReveal;
-      };
-    }
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [skip, hold]);
-  return { progress, still };
+function calmMotion(): boolean {
+  if (readStill()) return true;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function GearIcon() {
@@ -153,119 +114,101 @@ function GearIcon() {
   );
 }
 
-function GameMenu({
-  fight,
-  ops,
-  freshEvents,
-  error,
-  onSettings,
-}: {
-  fight: FightView | null;
-  ops: OpsView | null;
-  freshEvents: PrintEvent[];
-  error: string | null;
-  onSettings: () => void;
-}) {
-  const { progress } = useReveal();
-  const ringRef = useRef<HTMLDivElement>(null);
-  const heardSale = useRef<Set<string> | null>(null);
-  const [bump, setBump] = useState(0);
-  const [big, setBig] = useState(false);
-  const week = fight?.week ?? null;
+function whole(cents: number): string {
+  return `$${dollars(cents).toLocaleString("en-US")}`;
+}
 
+function StatValue({ value }: { value: string }) {
+  const seen = useRef<string | null>(null);
+  const [fade, setFade] = useState(false);
   useEffect(() => {
-    if (heardSale.current == null) {
-      heardSale.current = new Set(freshEvents.map((event) => event.id));
+    if (seen.current == null) {
+      seen.current = value;
       return;
     }
-    for (const event of freshEvents) {
-      if (heardSale.current.has(event.id)) continue;
-      heardSale.current.add(event.id);
-      if (event.kind === "sale" && event.outputCents > 0) {
-        const net = fight
-          ? netOfSale(event.outputCents, null, fight.settings.materialsBps, fight.settings.feeBps)
-          : event.outputCents;
-        setBig(net >= SALE_CAP_CENTS);
-        setBump((n) => n + 1);
-      }
-    }
-  }, [freshEvents, fight]);
+    if (seen.current === value) return;
+    seen.current = value;
+    setFade(true);
+  }, [value]);
+  return (
+    <strong className={`stat-value${fade ? " changed" : ""}`} onAnimationEnd={() => setFade(false)}>
+      {value}
+    </strong>
+  );
+}
 
-  useEffect(() => {
-    const node = ringRef.current;
-    if (!node || bump === 0) return;
-    node.classList.remove("bump");
-    void node.offsetWidth;
-    node.classList.add("bump");
-  }, [bump]);
+function StatRow({
+  label,
+  value,
+  note,
+  index,
+  calm,
+  bar,
+  onNote,
+}: {
+  label: string;
+  value: ReactNode;
+  note?: string;
+  index: number;
+  calm: boolean;
+  bar?: ReactNode;
+  onNote?: () => void;
+}) {
+  return (
+    <motion.div
+      className="stat"
+      initial={calm ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : index * 0.03 }}
+    >
+      <span className="stat-label">{label}</span>
+      {bar}
+      {typeof value === "string" ? <StatValue value={value} /> : value}
+      {note ? (
+        onNote ? (
+          <button type="button" className="stat-note" onClick={onNote}>
+            {note}
+          </button>
+        ) : (
+          <span className="stat-note">{note}</span>
+        )
+      ) : null}
+    </motion.div>
+  );
+}
 
-  const covered = Boolean(week?.covered);
-  const shownPct = week ? Math.round(week.shownPct * 100 * progress) : 0;
-  const ringShown = covered ? 1 : Math.min(1, (week?.barPct ?? 0) * progress);
-  const reward = covered && week && ops ? unlockName(week.weeksCovered, ops.rules) : null;
-  const banked = week ? dollars(week.bankedCents) : 0;
-  const bankedLabel =
-    week && week.bankedCents > 0
-      ? `Banked $${banked.toLocaleString("en-US")} (expires in ${week.expiresInWeeks} wks)`
-      : "Banked $0";
+function WeekBar({ pct, covered, calm }: { pct: number; covered: boolean; calm: boolean }) {
+  return (
+    <span className={`menu-bar${covered ? " won" : ""}`} aria-hidden>
+      <i style={{ width: `${Math.min(100, Math.max(0, pct))}%`, transition: calm ? "none" : undefined }} />
+    </span>
+  );
+}
 
+function GameMenu({ fight, calm, onSettings }: { fight: FightView | null; calm: boolean; onSettings: () => void }) {
+  const week = fight?.week ?? null;
+  if (!week) return null;
+  const cushion =
+    week.cushionUsedCents > 0 ? `+${whole(week.cushionUsedCents)} cushion` : undefined;
+  const expiry = week.bankedCents > 0 ? `expires in ${week.expiresInWeeks} wks` : undefined;
   return (
     <>
       <button type="button" className="gear" aria-label="Settings" onClick={onSettings}>
         <GearIcon />
       </button>
-      {week && (
-        <div className="hero">
-          <div
-            className={`ring${covered ? " won" : ""}${bump ? " bump" : ""}${big ? " big" : ""}`}
-            ref={ringRef}
-            role="img"
-            aria-label={`${shownPct}% of the week`}
-          >
-            <svg viewBox="0 0 64 64" aria-hidden>
-              <circle className="track" cx="32" cy="32" r={RING_R} />
-              <circle
-                className="value"
-                cx="32"
-                cy="32"
-                r={RING_R}
-                strokeDasharray={RING_C}
-                strokeDashoffset={RING_C * (1 - ringShown)}
-              />
-            </svg>
-            <span className="ring-copy">
-              <strong>{shownPct}%</strong>
-              <em>of week</em>
-            </span>
-          </div>
-          {reward && <div className="unlock pop">{reward}</div>}
-        </div>
-      )}
-      {week && (
-        <div className="money">
-          <div className="money-row got">
-            <span>This week</span>
-            <strong>${dollars(week.ownCents).toLocaleString("en-US")}</strong>
-          </div>
-          <div className="money-row bank">
-            <span>{bankedLabel}</span>
-          </div>
-          <div className="money-row">
-            <span>Target</span>
-            <strong>${dollars(week.targetCents).toLocaleString("en-US")}</strong>
-          </div>
-          <div className="money-row">
-            <span>Daily pace</span>
-            <strong>need ${dollars(week.paceCents).toLocaleString("en-US")}/day</strong>
-          </div>
-          <div className="money-row">
-            <span>Weeks covered</span>
-            <strong>{week.weeksCovered}</strong>
-          </div>
-        </div>
-      )}
-      {error && <div className="err">{error}</div>}
-      <span className="reveal" data-reveal={progress.toFixed(3)} hidden />
+      <div className="col">
+        <StatRow
+          label="Week"
+          index={0}
+          calm={calm}
+          bar={<WeekBar pct={week.barPct * 100} covered={week.covered} calm={calm} />}
+          value={`${whole(week.ownCents)} of ${whole(week.targetCents)}`}
+          note={cushion}
+        />
+        <StatRow label="Daily pace" index={1} calm={calm} value={`need ${whole(week.paceCents)}/day`} />
+        <StatRow label="Weeks covered" index={2} calm={calm} value={String(week.weeksCovered)} />
+        <StatRow label="Banked" index={3} calm={calm} value={whole(week.bankedCents)} note={expiry} />
+      </div>
     </>
   );
 }
@@ -289,7 +232,8 @@ function rateText(cents: number): string {
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, refresh, clockIn, clockOut } = useIoState();
   const [menu, setMenu] = useState(() => readPanel() === "menu");
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState(() => readPanel() === "settings");
+  const calm = useMemo(calmMotion, []);
   const [levelsOpen, setLevelsOpen] = useState(() => readPanel() === "levels");
   const [checklistOpen, setChecklistOpen] = useState(() => readPanel() === "checklist");
   const [change, setChange] = useState(false);
@@ -612,25 +556,46 @@ export default function Hud() {
         </div>
 
         <AnimatePresence>
-          {menu && (
+          {(menu || settings) && (
             <motion.div
               className="menu game"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.12 }}
+              initial={calm ? false : { opacity: 0, scaleY: 0.92 }}
+              animate={{ opacity: 1, scaleY: 1 }}
+              exit={{ opacity: 0, scaleY: 0.92 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              style={{ transformOrigin: "top right" }}
             >
-              <GameMenu
-                fight={fight}
-                ops={ops}
-                freshEvents={demo ? [] : freshEvents}
-                error={error}
-                onSettings={() => {
-                  closePanels();
-                  if (!guard("settings")) return;
-                  setSettings(true);
-                }}
-              />
+              {settings ? (
+                <GearScreen
+                  fight={fight}
+                  ops={ops}
+                  calm={calm}
+                  demo={Boolean(demo)}
+                  error={settingsError}
+                  onBack={() => {
+                    setSettings(false);
+                    setMenu(true);
+                  }}
+                  onFight={async (path, body) => {
+                    if (demo) return;
+                    try {
+                      await saveFight(path, body);
+                    } catch (err) {
+                      setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
+                      throw err;
+                    }
+                  }}
+                />
+              ) : (
+                <GameMenu
+                  fight={fight}
+                  calm={calm}
+                  onSettings={() => {
+                    if (!demo && !guard("settings")) return;
+                    setSettings(true);
+                  }}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -649,50 +614,6 @@ export default function Hud() {
         <AnimatePresence>
           {checklistOpen && (
             <ChecklistPanel demo={Boolean(demo)} onClose={() => setChecklistOpen(false)} />
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {settings && (
-            <SettingsPanel
-              company={company}
-              youName={youName}
-              live={live && !demo}
-              settings={state?.fight.settings ?? null}
-              pinSet={pinSet}
-              error={settingsError}
-              onLink={() => void openWho("link")}
-              onClose={() => setSettings(false)}
-              onLevels={() => {
-                closePanels();
-                setLevelsOpen(true);
-              }}
-              onReady={() => {
-                closePanels();
-                setChecklistOpen(true);
-              }}
-              onChange={() => {
-                closePanels();
-                if (!guard("change")) return;
-                setChange(true);
-              }}
-              onFight={async (path, body) => {
-                try {
-                  await saveFight(path, body);
-                } catch (err) {
-                  setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
-                  throw err;
-                }
-              }}
-              onSave={async (path, body) => {
-                try {
-                  await saveCompany(path, body);
-                } catch (err) {
-                  setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
-                  throw err;
-                }
-              }}
-            />
           )}
         </AnimatePresence>
 
@@ -803,253 +724,206 @@ function PinPanel({ onClose, onSubmit }: { onClose: () => void; onSubmit: (pin: 
   );
 }
 
-function SettingsPanel({
-  company,
-  youName,
-  live,
-  settings,
-  pinSet,
-  error,
-  onLink,
-  onClose,
-  onFight,
-  onSave,
-  onLevels,
-  onReady,
-  onChange,
+function BackIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M14.5 6.5 9 12l5.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function MoneyEdit({
+  cents,
+  label,
+  onCommit,
 }: {
-  company: CompanyView | null;
-  youName: string | null;
-  live: boolean;
-  settings: FightSettings | null;
-  pinSet: boolean;
-  error: string | null;
-  onLink: () => void;
-  onClose: () => void;
-  onFight: (path: string, body: unknown) => Promise<void>;
-  onSave: (path: string, body: unknown) => Promise<void>;
-  onLevels: () => void;
-  onReady: () => void;
-  onChange: () => void;
+  cents: number;
+  label: string;
+  onCommit: (cents: number) => void;
 }) {
-  const [mode, setMode] = useState<"join" | "create" | null>(null);
-  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(cents / 100));
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="stat-value"
+        onClick={() => {
+          setDraft(String(cents / 100));
+          setEditing(true);
+        }}
+      >
+        {whole(cents)}
+      </button>
+    );
+  }
+  return (
+    <input
+      className="stat-value"
+      value={draft}
+      autoFocus
+      inputMode="decimal"
+      aria-label={label}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        setEditing(false);
+        const next = Math.round(Number(draft) * 100);
+        if (Number.isFinite(next) && next >= 0) onCommit(next);
+      }}
+    />
+  );
+}
+
+function GearScreen({
+  fight,
+  ops,
+  calm,
+  demo,
+  error,
+  onBack,
+  onFight,
+}: {
+  fight: FightView | null;
+  ops: OpsView | null;
+  calm: boolean;
+  demo: boolean;
+  error: string | null;
+  onBack: () => void;
+  onFight: (path: string, body: unknown) => Promise<void>;
+}) {
+  const settings = fight?.settings ?? DEFAULT_FIGHT_SETTINGS;
+  const rewards = ops?.rules.table ?? [];
+  const [editingLevels, setEditingLevels] = useState(false);
+  const [rows, setRows] = useState(rewards.map((row) => ({ level: String(row.level), reward: row.reward })));
   const [pin, setPin] = useState("");
-  const [fixed, setFixed] = useState("");
-  const [materials, setMaterials] = useState("");
-  const [fee, setFee] = useState("");
-  const [pot, setPot] = useState("");
-  const [goal, setGoal] = useState("");
-  const [weekly, setWeekly] = useState("");
-  const [rentAmt, setRentAmt] = useState("");
-  const [days, setDays] = useState<number[]>(DEFAULT_FIGHT_SETTINGS.openWeekdays);
-  const [rent, setRent] = useState(false);
-  const [ready, setReady] = useState(false);
-  const invite = company?.code ? `${window.location.origin}/?join=${company.code}` : "";
+  const first = rewards[0]?.reward ?? "None";
+  const rest = rewards
+    .slice(1)
+    .map((row) => row.reward)
+    .join(" · ");
 
-  useEffect(() => {
-    if (!settings || ready) return;
-    setFixed(String(settings.fixedMonthlyCents / 100));
-    setMaterials(String(settings.materialsBps / 100));
-    setFee(String(settings.feeBps / 100));
-    setPot(String(settings.potBps / 100));
-    setGoal(String(settings.avgGoalCents / 100));
-    setWeekly(String(settings.weeklyTargetCents / 100));
-    setRentAmt(String(settings.rentMonthlyCents / 100));
-    setDays(settings.openWeekdays);
-    setRent(settings.rentEntered);
-    setReady(true);
-  }, [settings, ready]);
-
-  const submit = (next: "join" | "create", value: string) => {
-    const save =
-      next === "create"
-        ? onSave("/api/company", { name: value })
-        : onSave("/api/company/join", { code: value });
-    void save.then(() => {
-      setDraft("");
-      setMode(null);
+  const saveSettings = (patch: Partial<FightSettings>) => {
+    if (demo) return;
+    void onFight("/api/fight/settings", {
+      ...settings,
+      openWeekdays: [...settings.openWeekdays],
+      ...patch,
     });
   };
 
-  const pick = (next: "join" | "create") => {
-    if (mode === next && draft.trim()) {
-      submit(next, draft);
-      return;
-    }
-    setMode((current) => (current === next ? null : next));
-    setDraft("");
+  const saveLevels = (next = rows) => {
+    if (demo) return;
+    const table = next
+      .map((row) => ({ level: Math.round(Number(row.level)), reward: row.reward.trim() }))
+      .filter((row) => row.reward.length > 0 && Number.isFinite(row.level));
+    if (table.length === 0) return;
+    void onFight("/api/fight/levels", {
+      clearsInARow: ops?.rules.clearsInARow ?? 5,
+      table,
+    });
   };
 
   return (
-    <motion.div
-      className="menu settings"
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 4 }}
-      transition={{ duration: 0.12 }}
-    >
-      <div className="settings-head">
-        <span>Settings</span>
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
-      </div>
-
-      <div className="settings-line">
-        <button type="button" className="settings-name" onClick={() => { if (!live) onLink(); }}>
-          {youName || "Link"}
-        </button>
-      </div>
-
-      <div className="settings-line">
-        <span className="company-id">
-          {company?.name ? <span className="settings-name">{company.name}</span> : <span>Company</span>}
-        </span>
-        {company?.code ? (
-          <a className="company-code" href={invite}>
-            {company.code}
-          </a>
-        ) : (
-          <span className="settings-actions">
-            <button type="button" aria-pressed={mode === "join"} onClick={() => pick("join")}>
-              Join
-            </button>
-            <button type="button" aria-pressed={mode === "create"} onClick={() => pick("create")}>
-              Create
-            </button>
-          </span>
-        )}
-      </div>
-      {mode && !company?.name && (
-        <form
-          className="ask"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(mode, draft);
-          }}
-        >
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={mode === "create" ? "Name" : "Code"}
-            aria-label={mode === "create" ? "Company name" : "Company code"}
-            autoFocus
-          />
-        </form>
-      )}
-      <form
-        className="stack"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!pinSet) {
-            void onFight("/api/fight/pin", { pin });
-            return;
+    <>
+      <button type="button" className="gear" aria-label="Back" onClick={onBack}>
+        <BackIcon />
+      </button>
+      <div className="col">
+        <StatRow
+          label="Settings"
+          index={0}
+          calm={calm}
+          note="Week target"
+          value={
+            <MoneyEdit
+              cents={settings.weeklyTargetCents}
+              label="Weekly target"
+              onCommit={(weeklyTargetCents) => saveSettings({ weeklyTargetCents })}
+            />
           }
-          void onFight("/api/fight/settings", {
-            fixedMonthlyCents: Math.round(Number(fixed) * 100),
-            materialsBps: Math.round(Number(materials) * 100),
-            feeBps: Math.round(Number(fee) * 100),
-            openWeekdays: days,
-            potBps: Math.round(Number(pot) * 100),
-            avgGoalCents: Math.round(Number(goal) * 100),
-            rentEntered: rent,
-            weeklyTargetCents: Math.round(Number(weekly) * 100),
-            rentMonthlyCents: Math.round(Number(rentAmt) * 100),
-          });
-        }}
-      >
-        {!pinSet && company?.owner && (
-          <input
-            value={pin}
-            onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
-            placeholder="Shop PIN"
-            aria-label="Shop PIN"
-            inputMode="numeric"
-            autoComplete="off"
-            type="password"
+        />
+        <StatRow
+          label="PIN"
+          index={1}
+          calm={calm}
+          note="Shop lock"
+          value={
+            fight?.pinSet ? (
+              "On"
+            ) : (
+              <input
+                className="stat-value"
+                value={pin}
+                placeholder="Set"
+                aria-label="Shop PIN"
+                inputMode="numeric"
+                autoComplete="off"
+                type="password"
+                onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                onBlur={() => {
+                  if (!/^\d{4,8}$/.test(pin) || demo) return;
+                  void onFight("/api/fight/pin", { pin });
+                }}
+              />
+            )
+          }
+        />
+        {editingLevels ? (
+          rows.map((row, index) => (
+            <StatRow
+              key={`${row.level}-${index}`}
+              label={`Lv ${row.level}`}
+              index={2 + index}
+              calm={calm}
+              value={
+                <input
+                  className="stat-value"
+                  value={row.reward}
+                  aria-label={`Level ${row.level} reward`}
+                  onChange={(event) =>
+                    setRows((current) =>
+                      current.map((item, i) => (i === index ? { ...item, reward: event.target.value } : item)),
+                    )
+                  }
+                  onBlur={() => saveLevels()}
+                />
+              }
+            />
+          ))
+        ) : (
+          <StatRow
+            label="Levels"
+            index={2}
+            calm={calm}
+            note={rest || undefined}
+            value={
+              <button type="button" className="stat-value" onClick={() => setEditingLevels(true)}>
+                {first}
+              </button>
+            }
           />
         )}
-        {pinSet && (
-          <>
-            <label className="settings-line">
-              <span>Fixed / month</span>
-              <input value={fixed} onChange={(event) => setFixed(event.target.value)} inputMode="decimal" aria-label="Fixed costs per month" />
-            </label>
-            <label className="settings-line">
-              <span>Week target</span>
-              <input value={weekly} onChange={(event) => setWeekly(event.target.value)} inputMode="decimal" aria-label="Weekly target" />
-            </label>
-            <label className="settings-line">
-              <span>Rent / month</span>
-              <input value={rentAmt} onChange={(event) => setRentAmt(event.target.value)} inputMode="decimal" aria-label="Rent per month" />
-            </label>
-            <label className="settings-line">
-              <span>Materials %</span>
-              <input value={materials} onChange={(event) => setMaterials(event.target.value)} inputMode="decimal" aria-label="Materials percent" />
-            </label>
-            <label className="settings-line">
-              <span>Fee %</span>
-              <input value={fee} onChange={(event) => setFee(event.target.value)} inputMode="decimal" aria-label="Fee percent" />
-            </label>
-            <label className="settings-line">
-              <span>Pot %</span>
-              <input value={pot} onChange={(event) => setPot(event.target.value)} inputMode="decimal" aria-label="Team pot percent" />
-            </label>
-            <label className="settings-line">
-              <span>Avg goal</span>
-              <input value={goal} onChange={(event) => setGoal(event.target.value)} inputMode="decimal" aria-label="Average sale goal" />
-            </label>
-            <label className="settings-line">
-              <span>Rent included</span>
-              <input
-                type="checkbox"
-                checked={rent}
-                onChange={(event) => setRent(event.target.checked)}
-                aria-label="Rent is included in the weekly target"
-              />
-            </label>
-          </>
-        )}
-        {(pinSet || company?.owner) && (
-          <button type="submit">{pinSet ? "Save" : "Set PIN"}</button>
-        )}
-      </form>
-      {pinSet && (
-        <div className="settings-actions">
-          {OPEN_DAYS.map(([day, letter, name]) => (
-            <button
-              key={name}
-              type="button"
-              aria-label={name}
-              aria-pressed={days.includes(day)}
-              onClick={() =>
-                setDays((current) => {
-                  if (current.includes(day)) return current.length === 1 ? current : current.filter((item) => item !== day);
-                  return [...current, day];
-                })
-              }
-            >
-              {letter}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="menu-actions">
-        <button type="button" onClick={onLevels}>
-          Levels
-        </button>
-        <button type="button" onClick={onReady}>
-          Checklist
-        </button>
-        {company?.owner && (
-          <button type="button" onClick={onChange}>
-            Pay rates
-          </button>
-        )}
+        <StatRow
+          label="Rent"
+          index={editingLevels ? 2 + rows.length : 3}
+          calm={calm}
+          note={settings.rentEntered ? "Included" : "Not included"}
+          onNote={
+            demo
+              ? undefined
+              : () => saveSettings({ rentEntered: !settings.rentEntered })
+          }
+          value={
+            <MoneyEdit
+              cents={settings.rentMonthlyCents}
+              label="Rent per month"
+              onCommit={(rentMonthlyCents) => saveSettings({ rentMonthlyCents })}
+            />
+          }
+        />
+        {error ? <span className="stat-note">{error}</span> : null}
       </div>
-      {error && <div className="err">{error}</div>}
-    </motion.div>
+    </>
   );
 }
 

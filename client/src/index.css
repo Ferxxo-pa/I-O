@@ -493,209 +493,132 @@ button {
 
 .menu.game {
   width: 232px;
-  padding: 16px;
+  min-width: 232px;
+  max-width: 232px;
+  padding: 12px 8px 14px;
+  text-align: left;
 }
 
 .menu.game .gear {
   position: absolute;
-  top: 8px;
+  top: 10px;
   right: 8px;
   z-index: 2;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
   color: var(--mute);
 }
 
-.menu.game .hero {
-  display: flex;
-  justify-content: center;
-  padding-top: 2px;
-}
-
-.menu.game .ring {
-  position: relative;
-  flex: none;
-  width: 64px;
-  height: 64px;
-}
-
-.menu.game .ring svg {
-  display: block;
-  width: 64px;
-  height: 64px;
-  transform: rotate(-90deg);
-}
-
-.menu.game .ring circle {
-  fill: none;
-  stroke-width: 5;
-}
-
-.menu.game .ring .track {
-  stroke: rgba(0, 0, 0, 0.08);
-}
-
-.menu.game .ring .value {
-  stroke: #12c45a;
-  stroke-linecap: round;
-}
-
-.menu.game .ring.won .track,
-.menu.game .ring.won .value {
-  stroke: #12c45a;
-}
-
-.menu.game .ring.bump {
-  animation: ring-bump 0.42s ease;
-}
-
-.menu.game .ring.bump .value {
-  filter: drop-shadow(0 0 4px #12c45a);
-}
-
-.menu.game .ring.bump.big {
-  animation: ring-bump-big 0.5s ease;
-}
-
-.menu.game .ring.bump.big .value {
-  filter: drop-shadow(0 0 8px #12c45a);
-}
-
-.menu.game .ring-copy {
-  position: absolute;
-  inset: 8px;
+.menu.game .col {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  text-align: center;
+  align-items: flex-start;
+  gap: 14px;
+  width: 214px;
 }
 
-.menu.game .ring-copy strong {
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  white-space: nowrap;
+.menu.game .stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 214px;
+  min-width: 0;
 }
 
-.menu.game .ring-copy em {
+.menu.game .stat-label {
   color: var(--mute);
-  font-style: normal;
   font-size: 10px;
   font-weight: 560;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
-.menu.game .money {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.menu.game .money-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  column-gap: 12px;
-}
-
-.menu.game .money-row span {
-  color: var(--mute);
-  font-size: 11px;
-  letter-spacing: -0.02em;
-}
-
-.menu.game .money-row strong {
-  font-size: 13px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  text-align: right;
-}
-
-.menu.game .money-row.got strong {
-  color: #12c45a;
-}
-
-.menu.game .money-row.need strong {
-  color: #ff3b30;
-}
-
-.menu.game .money-row.bank {
-  grid-template-columns: 1fr;
-}
-
-.menu.game .money-row.bank span {
+.menu.game .stat-value {
+  display: block;
+  width: 214px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--ink);
-  font-size: 11px;
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.menu.game .unlock {
-  margin-top: 8px;
-  color: #12c45a;
+.menu.game button.stat-value {
+  cursor: pointer;
+}
+
+.menu.game .stat-value.changed {
+  animation: num-fade 180ms ease-out;
+}
+
+.menu.game .stat-note {
+  display: block;
+  max-width: 214px;
+  color: var(--mute);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  text-align: center;
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  text-align: left;
 }
 
-.menu.game .err {
-  margin-top: 8px;
+.menu.game button.stat-note {
+  cursor: pointer;
 }
 
-@keyframes ring-bump {
-  0% {
-    transform: scale(1);
-  }
-  40% {
-    transform: scale(1.08);
-  }
-  100% {
-    transform: scale(1);
-  }
+.menu.game .menu-bar {
+  display: block;
+  width: 214px;
+  height: 3px;
+  min-height: 3px;
+  max-height: 3px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow: hidden;
 }
 
-@keyframes ring-bump-big {
-  0% {
-    transform: scale(1);
-  }
-  35% {
-    transform: scale(1.22);
-  }
-  100% {
-    transform: scale(1);
-  }
+.menu.game .menu-bar i {
+  display: block;
+  height: 3px;
+  border-radius: 99px;
+  background: #12c45a;
+  transition: width 300ms ease;
 }
 
-@keyframes unlock-pop {
-  0% {
-    transform: scale(0.86);
-  }
-  60% {
-    transform: scale(1.06);
-  }
-  100% {
-    transform: scale(1);
-  }
+.menu.game .menu-bar.won {
+  background: #12c45a;
 }
 
-.menu.game .unlock.pop {
-  animation: unlock-pop 0.45s ease;
+.menu.game .menu-bar.won i {
+  background: #12c45a;
+}
+
+@keyframes num-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .menu.game .ring.bump,
-  .menu.game .ring.bump.big,
-  .menu.game .unlock.pop {
+  .menu.game .stat-value.changed,
+  .menu.game .menu-bar i {
     animation: none;
+    transition: none;
   }
 }
 
