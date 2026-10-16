@@ -9,8 +9,12 @@ import {
   squareLinkSchema,
   type CompanyState,
 } from "@shared/schema";
+import { fightSettingsSchema } from "@shared/fight";
+import { DEFAULT_LEVEL_RULES, levelRulesSchema } from "@shared/ops";
+import { pinShape } from "./auth/pin";
 import { earnEngine } from "./clock/engine";
-import { getCompany, getOwnerKey, hydrateCompany, setCompanyListener } from "./company";
+import { ensureScope, getCompany, getOwnerKey, hydrateCompany, setCompanyListener } from "./company";
+import { fightBook } from "./fight/book";
 import { log } from "./vite";
 
 const fileSchema = z.object({
@@ -24,7 +28,95 @@ const fileSchema = z.object({
   square: squareLinkSchema,
   company: companyStateSchema,
   ownerKey: z.string().nullable().default(null),
+  fight: z
+    .object({
+      settings: fightSettingsSchema,
+      pinHash: z.string().max(200).nullable().default(null),
+      streak: z.number().int().min(0).max(100_000).default(0),
+      lastResolvedDate: z.string().nullable().default(null),
+      todayCounted: z.boolean().default(false),
+      anchorDate: z.string().nullable().default(null),
+      collectedAnchor: z.number().int().nonnegative().default(0),
+      wageAnchor: z.number().int().nonnegative().default(0),
+      sales: z.array(z.number().int().nonnegative()).max(500).default([]),
+      hours: z
+        .array(
+          z.object({
+            personId: z.string().max(80),
+            name: z.string().max(80),
+            ms: z.number().int().nonnegative(),
+          }),
+        )
+        .max(80)
+        .default([]),
+      level: z.number().int().min(0).max(1_000).default(0),
+      consecutiveClears: z.number().int().min(0).max(100_000).default(0),
+      levelNotedDate: z.string().nullable().default(null),
+      levelRules: levelRulesSchema.catch(DEFAULT_LEVEL_RULES),
+      history: z
+        .array(
+          z.object({
+            at: z.number(),
+            date: z.string(),
+            fromLevel: z.number().int(),
+            toLevel: z.number().int(),
+            reason: z.string().max(120),
+            companyId: z.string().max(80),
+            locationId: z.string().max(80),
+          }),
+        )
+        .max(200)
+        .default([]),
+      days: z
+        .array(
+          z.object({
+            companyId: z.string().max(80),
+            locationId: z.string().max(80),
+            date: z.string(),
+            collectedCents: z.number().int().nonnegative(),
+            wageCents: z.number().int().nonnegative(),
+            breakEvenCents: z.number().int().nonnegative(),
+            potCents: z.number().int().nonnegative(),
+            payoutPotCents: z.number().int().nonnegative(),
+            cleared: z.boolean(),
+            hours: z
+              .array(
+                z.object({
+                  personId: z.string().max(80),
+                  name: z.string().max(80),
+                  ms: z.number().int().nonnegative(),
+                }),
+              )
+              .max(80),
+          }),
+        )
+        .max(400)
+        .default([]),
+      resolvedWeeks: z.array(z.string().max(200)).max(200).default([]),
+      lastResolvedWeek: z.string().nullable().default(null),
+      lastWeekScope: z.string().nullable().default(null),
+      weekStreak: z.number().int().min(0).max(100_000).default(0),
+      webhookSeenAt: z.number().int().nullable().default(null),
+      weekStart: z.string().nullable().default(null),
+      ownAppliedCents: z.number().int().nonnegative().default(0),
+      weeksCovered: z.number().int().min(0).max(100_000).default(0),
+      cushion: z
+        .array(
+          z.object({
+            cents: z.number().int().positive().max(290_000),
+            earnedMonday: z.string().max(10),
+          }),
+        )
+        .max(80)
+        .default([]),
+      weekSaleIds: z.array(z.string().max(80)).max(500).default([]),
+    })
+    .optional(),
 });
+
+export function parseSavedState(raw: unknown) {
+  return fileSchema.parse(raw);
+}
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let started = false;
@@ -39,7 +131,10 @@ export function startPersistence() {
   started = true;
   loadState();
   earnEngine.setBookListener(scheduleSave);
+  fightBook.setListener(scheduleSave);
   setCompanyListener(scheduleSave);
+  ensureScope(process.env.SQUARE_LOCATION_ID ?? null, fightBook.scopeHint());
+  bootstrapShopPin();
   applyHourOverride();
 }
 
@@ -74,10 +169,21 @@ export function loadState() {
       square: parsed.square,
     });
     hydrateCompany(parsed.company, parsed.ownerKey);
+    fightBook.hydrate(parsed.fight ?? null);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unreadable state";
     log(`keeping a fresh book, saved state was unreadable: ${message}`, "store");
   }
+}
+
+function bootstrapShopPin() {
+  const raw = process.env.SHOP_PIN?.trim() ?? "";
+  if (!raw || fightBook.pinSet()) return;
+  if (!pinShape(raw)) {
+    log("SHOP_PIN must be 4 to 8 digits", "auth");
+    return;
+  }
+  fightBook.setPin(raw);
 }
 
 function applyHourOverride() {
@@ -97,6 +203,7 @@ function writeState() {
         ...earnEngine.toPersist(),
         company: getCompany() satisfies CompanyState,
         ownerKey: getOwnerKey(),
+        fight: fightBook.toPersist(),
       },
       null,
       2,

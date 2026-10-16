@@ -48,3 +48,20 @@ Every 15 seconds it checks invoices. The first check remembers invoices that alr
 Subscribe Square webhooks to `POST /api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Set `SQUARE_WEBHOOK_SIGNATURE_KEY` plus `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL. A timecard opened in Square still counts that person's wage here.
 
 Square does not publish a customer-messages API. Points follow invoices you send, which is the outbound message Square records.
+
+## Go live
+
+`GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level and closed day is stored on that pair. This build is still one shop on one computer. There is no second login.
+
+Do these before you leave it on the counter:
+
+1. Check out this branch. Do not merge it to main until the strip has been used on the shop computer.
+2. `npm install`, then copy `.env.example` to `.env`. Do not commit `.env`.
+3. Set `SQUARE_ACCESS_TOKEN` and `SQUARE_LOCATION_ID`. The token stays on the server.
+4. Point Square webhooks at `POST /api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Set `SQUARE_WEBHOOK_SIGNATURE_KEY` and `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL. Ready stays open until a signed delivery arrives.
+5. Create the company, set the shop PIN, and set each person's hourly rate. When Square is connected, Square keeps the rates. This app never writes wages back.
+6. Set **Week target** (default $2,900) and **Rent / month**. The bar uses that target after materials and fees: $2,900 × 84% is $2,436. Check **Rent included** only when rent is already inside the week target. Otherwise the week's share of rent is added. The cushion never changes pay.
+7. Each person clocks in under their own name. **Own login** is the share of the roster that has clocked.
+8. Open **+**. The strip is one week, Monday through Sunday, and it stays 232×79. Under halfway the line is `$X so far`. Past halfway it is `NN% to cover`, rotating with `Over the hump`. When about one median sale is left it says `One sale away`. A covered week turns the whole strip green and says `Covered. Now profit.` The strip shows `+$X over` past the target. The menu is one left-aligned column, the same 232px width, inset 9px so its bar lines up with the strip. Opening **+** replaces nothing on the closed strip: that strip stays 232×79. The top of the open menu is one copy of that card: I/O, a work line, + and ‹, then the full-width green|red bar with `+$` collected on the left and `−$` still needed on the right. The work line uses that same net target. Below half of it the line is `Hardly working`. At half or past it, `Working hard`. A covered week says `Working harder`. There is no second bar. Under the card, a gold bar fills with the same share of the week as the green bar, labeled `Level N` and `Level N+1` in the same size. Level 2 is two covered weeks, then 4, 8, 13, and 26. Under the gold bar, the level labels share one row and the streak sits directly under them: an orange flame, a bold day count, and the label `day streak`. Zero is a gray flame. The clock control sits next to the gear. On that top card, + sits tight against ‹. The gear opens Settings, the PIN, Levels, and rent. The cushion still fills the bar in the background. One sale puts at most $870 on the bar. The rest waits in the cushion, up to $2,900, for 4 weeks. The cushion can fill at most half the bar, and the week counts as covered only when your own sales are at least half the target. Sales land on the Square payment date. Real per-job materials replace the 13% when Square sends them.
+
+`npm test` and `npm run check` should pass before you leave it running.

@@ -12,12 +12,25 @@ const { earnEngine } = await import("./clock/engine.ts");
 earnEngine.setConfig({ hourDurationMs: 40 });
 earnEngine.start();
 
+function atOnce<A, B>(left: () => A, right: () => B): [A, B] {
+  const frozen = Date.now();
+  const original = Date.now;
+  Date.now = () => frozen;
+  try {
+    return [left(), right()];
+  } finally {
+    Date.now = original;
+  }
+}
+
 await earnEngine.clockInPerson({ id: "ada", name: "Ada", hourlyCents: 2000 });
 await earnEngine.clockInPerson({ id: "ben", name: "Ben", hourlyCents: 4000 });
 await new Promise((resolve) => setTimeout(resolve, 600));
 
-const ada = earnEngine.getState("ada");
-const ben = earnEngine.getState("ben");
+const [ada, ben] = atOnce(
+  () => earnEngine.getState("ada"),
+  () => earnEngine.getState("ben"),
+);
 assert.equal(ada.session.clockedIn, true);
 assert.equal(ben.session.clockedIn, true);
 assert.equal(ada.you.name, "Ada");
@@ -28,8 +41,10 @@ const running = ada.session.outputCents + ada.accruedOutputCents;
 assert.ok(running >= 2000 + 4000, `both wages should add together, got ${running}`);
 
 await earnEngine.clockOutPerson("ada");
-const adaOut = earnEngine.getState("ada");
-const benStill = earnEngine.getState("ben");
+const [adaOut, benStill] = atOnce(
+  () => earnEngine.getState("ada"),
+  () => earnEngine.getState("ben"),
+);
 assert.equal(adaOut.session.clockedIn, false);
 assert.equal(benStill.session.clockedIn, true);
 assert.equal(adaOut.session.outputCents, benStill.session.outputCents);
@@ -37,8 +52,10 @@ assert.equal(adaOut.accruedOutputCents, benStill.accruedOutputCents);
 assert.ok(benStill.session.outputCents + benStill.accruedOutputCents >= running);
 
 await earnEngine.clockOutPerson("ben");
-const doneAda = earnEngine.getState("ada");
-const doneBen = earnEngine.getState("ben");
+const [doneAda, doneBen] = atOnce(
+  () => earnEngine.getState("ada"),
+  () => earnEngine.getState("ben"),
+);
 assert.equal(doneAda.session.clockedIn, false);
 assert.equal(doneBen.session.clockedIn, false);
 assert.equal(doneAda.accruedOutputCents, 0);
@@ -56,8 +73,11 @@ earnEngine.syncRemoteTimecard({
 assert.equal(earnEngine.getState("TM1").session.clockedIn, true);
 assert.equal(earnEngine.getState("ada").session.clockedIn, false);
 assert.ok(earnEngine.getState("ada").accruedOutputCents >= 0);
-const withSquare = earnEngine.getState("ada");
-assert.equal(withSquare.session.outputCents, earnEngine.getState("TM1").session.outputCents);
+const [withSquare, withSquareMate] = atOnce(
+  () => earnEngine.getState("ada"),
+  () => earnEngine.getState("TM1"),
+);
+assert.equal(withSquare.session.outputCents, withSquareMate.session.outputCents);
 
 earnEngine.syncRemoteTimecard({
   personId: "TM1",

@@ -1,9 +1,14 @@
-import type { Express, Request } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+import { fightSettingsSchema } from "@shared/fight";
+import { levelRulesSchema } from "@shared/ops";
 import { configSchema, inputTypeSchema } from "@shared/schema";
+import { HttpError, assertShopPin, pinShape } from "./auth/pin";
 import { addPerson, companyView, createCompany, joinCompany, setPersonRate } from "./company";
 import { earnEngine } from "./clock/engine";
+import { fightBook } from "./fight/book";
 import { startPersistence } from "./persist";
+import { healthReport } from "./ready";
 import { squareConfigured } from "./square/client";
 import { timecardFromWebhook } from "./square/labor";
 import { signaturesMatch, squareSignature } from "./square/signature";
@@ -44,13 +49,32 @@ function requireOwner(req: Request) {
   return view;
 }
 
+function clientIp(req: Request): string {
+  return req.ip || req.socket.remoteAddress || "local";
+}
+
+function requirePin(req: Request) {
+  assertShopPin(req.header("x-shop-pin"), clientIp(req), fightBook.pinSet(), (pin) => fightBook.verify(pin));
+}
+
+function requirePinIfSet(req: Request) {
+  if (fightBook.pinSet()) requirePin(req);
+}
+
+function sendError(res: Response, err: unknown, fallback: string) {
+  const message = err instanceof Error ? err.message : fallback;
+  const status =
+    err instanceof HttpError ? err.status : message === "Only the owner can change that" ? 403 : 400;
+  res.status(status).json({ message });
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   startPersistence();
   earnEngine.start();
   startSquareSync();
 
   app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
+    res.json(healthReport());
   });
 
   app.get("/api/state", (req, res) => {
@@ -59,6 +83,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/clock/in", async (req, res) => {
     try {
+      requirePin(req);
       const personId = personIdFrom(req);
       if (!personId) throw new Error("Choose who you are");
       const person = (await peopleOnTheBusiness()).find((entry) => entry.id === personId);
@@ -72,19 +97,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }),
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Clock-in failed";
-      res.status(400).json({ message });
+      sendError(res, err, "Clock-in failed");
     }
   });
 
   app.post("/api/clock/out", async (req, res) => {
     try {
+      requirePin(req);
       const personId = personIdFrom(req);
       if (!personId) throw new Error("Choose who you are");
       res.json(await earnEngine.clockOutPerson(personId));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Clock-out failed";
-      res.status(400).json({ message });
+      sendError(res, err, "Clock-out failed");
     }
   });
 
@@ -106,6 +130,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/config", (req, res) => {
+    try {
+      requirePinIfSet(req);
+    } catch (err) {
+      return sendError(res, err, "Couldn't save that");
+    }
     const parsed = configSchema.partial().safeParse(req.body);
     if (!parsed.success) {
       return res
@@ -116,9 +145,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(earnEngine.getState());
   });
 
-  app.post("/api/reset", (_req, res) => {
+  app.post("/api/reset", (req, res) => {
     if (process.env.NODE_ENV === "production") {
       return res.status(404).json({ message: "Not found" });
+    }
+    try {
+      requirePinIfSet(req);
+    } catch (err) {
+      return sendError(res, err, "Couldn't reset");
     }
     res.json(earnEngine.reset());
   });
@@ -129,11 +163,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/company", (req, res) => {
     try {
+      requirePinIfSet(req);
       const name = typeof req.body?.name === "string" ? req.body.name : "";
       res.json(createCompany(name, ownerKeyFrom(req)));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not create the company";
-      res.status(400).json({ message });
+      sendError(res, err, "Could not create the company");
     }
   });
 
@@ -162,18 +196,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/company/roster", async (req, res) => {
     try {
+      requirePinIfSet(req);
       requireOwner(req);
       const squarePeople = await squarePayRoster();
       if (squarePeople) return res.json({ source: "square", people: squarePeople });
       res.json({ source: "manual", people: companyView(ownerKeyFrom(req)).people });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Couldn't load the company";
-      res.status(message === "Only the owner can change that" ? 403 : 400).json({ message });
+      sendError(res, err, "Couldn't load the company");
     }
   });
 
   app.post("/api/company/people", (req, res) => {
     try {
+      requirePinIfSet(req);
       if (squareConfigured()) throw new Error("Square sets the rates");
       requireOwner(req);
       const name = typeof req.body?.name === "string" ? req.body.name : "";
@@ -182,14 +217,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       earnEngine.setConfig({ hourlyOutputCents: hourlyCents });
       res.json(companyView(ownerKeyFrom(req)));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not add that person";
-      const status = message === "Only the owner can change that" ? 403 : 400;
-      res.status(status).json({ message });
+      sendError(res, err, "Could not add that person");
     }
   });
 
   app.patch("/api/company/people/:id", (req, res) => {
     try {
+      requirePinIfSet(req);
       if (squareConfigured()) throw new Error("Square sets the rates");
       requireOwner(req);
       const hourlyCents = Number(req.body?.hourlyCents);
@@ -197,9 +231,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
       earnEngine.setConfig({ hourlyOutputCents: hourlyCents });
       res.json(companyView(ownerKeyFrom(req)));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not save that rate";
-      const status = message === "Only the owner can change that" ? 403 : 400;
-      res.status(status).json({ message });
+      sendError(res, err, "Could not save that rate");
+    }
+  });
+
+  app.post("/api/fight/pin", (req, res) => {
+    try {
+      const next = typeof req.body?.pin === "string" ? req.body.pin.trim() : "";
+      if (!pinShape(next)) return res.status(400).json({ message: "PIN is 4 to 8 digits" });
+      if (fightBook.pinSet()) requirePin(req);
+      else requireOwner(req);
+      fightBook.setPin(next);
+      res.json({ ok: true, pinSet: true });
+    } catch (err) {
+      sendError(res, err, "Couldn't set the PIN");
+    }
+  });
+
+  app.patch("/api/fight/settings", (req, res) => {
+    try {
+      requirePin(req);
+      const parsed = fightSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        const custom = parsed.error.issues.find((issue) => issue.code === "custom")?.message;
+        return res.status(400).json({ message: custom || "Check those numbers" });
+      }
+      fightBook.updateSettings(parsed.data);
+      res.json(earnEngine.getState(personIdFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't save that");
+    }
+  });
+
+  app.patch("/api/fight/levels", (req, res) => {
+    try {
+      requirePin(req);
+      const parsed = levelRulesSchema.safeParse(req.body);
+      if (!parsed.success) {
+        const custom = parsed.error.issues.find((issue) => issue.code === "custom")?.message;
+        return res.status(400).json({ message: custom || "Check the level table" });
+      }
+      fightBook.updateLevelRules(parsed.data);
+      res.json(earnEngine.getState(personIdFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't save levels");
     }
   });
 
@@ -221,6 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(403).json({ message: "Invalid Square signature" });
     }
 
+    fightBook.markWebhook(Date.now());
     const timecard = timecardFromWebhook(req.body);
     if (timecard) {
       earnEngine.syncRemoteTimecard(timecard);

@@ -1,7 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { WHO_ID, useIoState } from "@/hooks/useEarnState";
-import { ching, unlockChing } from "@/lib/ching";
+import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
+import { ching, clearedChime, unlockChing } from "@/lib/ching";
+import {
+  DEFAULT_FIGHT_SETTINGS,
+  demoModel,
+  hitTier,
+  isOpenKey,
+  saleTapeLabel,
+  type DemoScene,
+  type FightSettings,
+  type FightView,
+} from "@shared/fight";
+import { demoOps, demoReadiness, type OpsView, type ReadinessCheck } from "@shared/ops";
+import {
+  copyLine,
+  demoWeek,
+  streakMark,
+  menuLevel,
+  menuWorkLine,
+  shownWorkedDays,
+  weekFillPct,
+  type WeekPreset,
+  type WeekView,
+} from "@shared/week";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -15,6 +37,8 @@ function ownerHeaders(): Record<string, string> {
   const key = localStorage.getItem(OWNER_STORE);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (key) headers["x-owner-key"] = key;
+  const pin = sessionStorage.getItem(PIN_KEY);
+  if (pin) headers["x-shop-pin"] = pin;
   return headers;
 }
 
@@ -39,6 +63,343 @@ function threeColors(): string[] {
   return picked;
 }
 
+function dollars(cents: number): number {
+  return Math.round(cents / 100);
+}
+
+function weekLine(week: WeekView, variant: number): string {
+  return copyLine(week, variant);
+}
+
+function readDemo(): DemoScene | null {
+  const value = new URLSearchParams(window.location.search).get("demo");
+  if (value === "morning" || value === "crit" || value === "cleared" || value === "idle") return value;
+  return null;
+}
+
+function readPanel(): "menu" | "levels" | "checklist" | "settings" | null {
+  const value = new URLSearchParams(window.location.search).get("panel");
+  if (value === "menu" || value === "levels" || value === "checklist" || value === "settings") return value;
+  return null;
+}
+
+function readStill(): boolean {
+  return new URLSearchParams(window.location.search).get("still") === "1";
+}
+
+function readWeek(): WeekPreset | null {
+  const value = new URLSearchParams(window.location.search).get("week");
+  if (value === "low" || value === "mid" || value === "stretch" || value === "covered" || value === "cushion") return value;
+  return null;
+}
+
+function readWorked(): number | null {
+  const raw = new URLSearchParams(window.location.search).get("worked");
+  if (raw == null || !/^\d{1,4}$/.test(raw)) return null;
+  return Number(raw);
+}
+
+function useCopyVariant(): number {
+  const pinned = useMemo(() => {
+    const raw = new URLSearchParams(window.location.search).get("copy");
+    if (raw === "0" || raw === "1" || raw === "2") return Number(raw);
+    return null;
+  }, []);
+  const [variant, setVariant] = useState(pinned ?? 0);
+  useEffect(() => {
+    if (pinned != null) return;
+    const id = window.setInterval(() => setVariant((current) => (current + 1) % 3), 4_000);
+    return () => window.clearInterval(id);
+  }, [pinned]);
+  return variant;
+}
+
+function calmMotion(): boolean {
+  if (readStill()) return true;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function FlameIcon() {
+  return (
+    <svg className="flame" width="20" height="20" viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
+      />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8.5V12l2.5 1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="3" />
+      <path
+        d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function whole(cents: number): string {
+  return `$${dollars(cents).toLocaleString("en-US")}`;
+}
+
+function StatValue({ value, className = "stat-value" }: { value: string; className?: string }) {
+  const seen = useRef<string | null>(null);
+  const [fade, setFade] = useState(false);
+  useEffect(() => {
+    if (seen.current == null) {
+      seen.current = value;
+      return;
+    }
+    if (seen.current === value) return;
+    seen.current = value;
+    setFade(true);
+  }, [value]);
+  return (
+    <strong className={`${className}${fade ? " changed" : ""}`} onAnimationEnd={() => setFade(false)}>
+      {value}
+    </strong>
+  );
+}
+
+function StatRow({
+  label,
+  value,
+  note,
+  index,
+  calm,
+  bar,
+  onNote,
+}: {
+  label: string;
+  value: ReactNode;
+  note?: string;
+  index: number;
+  calm: boolean;
+  bar?: ReactNode;
+  onNote?: () => void;
+}) {
+  return (
+    <motion.div
+      className="stat"
+      initial={calm ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : index * 0.03 }}
+    >
+      <span className="stat-label">{label}</span>
+      {bar}
+      {typeof value === "string" ? <StatValue value={value} /> : value}
+      {note ? (
+        onNote ? (
+          <button type="button" className="stat-note" onClick={onNote}>
+            {note}
+          </button>
+        ) : (
+          <span className="stat-note">{note}</span>
+        )
+      ) : null}
+    </motion.div>
+  );
+}
+
+function splitWidths(collected: number, needed: number, covered: boolean): { green: number; red: number } {
+  const green = weekFillPct(collected, Math.max(0, collected) + Math.max(0, needed), covered);
+  const red = covered || green >= 100 ? 0 : 100 - green;
+  return { green, red };
+}
+
+function signedMoney(cents: number, sign: "+" | "−"): string {
+  const rounded = Math.abs(dollars(cents)).toLocaleString("en-US");
+  return `${sign}$${rounded}.00`;
+}
+
+function UpgradeBar({
+  level,
+  next,
+  progress,
+  calm,
+}: {
+  level: number;
+  next: number | null;
+  progress: number;
+  calm: boolean;
+}) {
+  return (
+    <motion.div
+      className={`upgrade${calm ? " calm" : " live"}`}
+      initial={calm ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.03 }}
+    >
+      <span className="gold-wrap">
+        <span className="gold-bar" aria-hidden>
+          <i style={{ width: `${progress}%`, transition: calm ? "none" : undefined }} />
+        </span>
+      </span>
+      <span className="level-row">
+        <span className="level-now">Level {level}</span>
+        {next != null && <span className="level-next">Level {next}</span>}
+      </span>
+    </motion.div>
+  );
+}
+
+function StreakRow({ days }: { days: number }) {
+  const mark = streakMark(days);
+  return (
+    <span className={`streak-row${mark.count === 0 ? " cold" : ""}`}>
+      <FlameIcon />
+      <strong className="streak-count">{mark.count}</strong>
+      <span className="streak-label">{mark.label}</span>
+    </span>
+  );
+}
+
+function GameMenu({
+  fight,
+  calm,
+  live,
+  pending,
+  ready,
+  youName,
+  streakDays,
+  onClock,
+  onSettings,
+}: {
+  fight: FightView | null;
+  calm: boolean;
+  live: boolean;
+  pending: boolean;
+  ready: boolean;
+  youName: string | null;
+  streakDays: number;
+  onClock: () => void;
+  onSettings: () => void;
+}) {
+  const week = fight?.week ?? null;
+  if (!week) return null;
+  const filled = week.ownCents + week.cushionUsedCents;
+  const step = menuLevel({
+    weeksCovered: week.weeksCovered,
+    filledCents: filled,
+    targetCents: week.targetCents,
+    covered: week.covered,
+  });
+  const clockTitle = live ? "Clock out" : youName || "Clock in";
+  return (
+    <div className="col">
+      <div className="level-stack">
+        <UpgradeBar level={step.level} next={step.next} progress={step.pct} calm={calm} />
+        <StreakRow days={streakDays} />
+      </div>
+      <div className="tool-row">
+        <button
+          type="button"
+          className={`mark ctrl${live ? "" : " out"}`}
+          onClick={onClock}
+          disabled={pending || !ready}
+          title={clockTitle}
+          aria-label={clockTitle}
+        >
+          <ClockIcon />
+          <span className="tip">{clockTitle}</span>
+        </button>
+        <button type="button" className="gear dock" aria-label="Settings" onClick={onSettings}>
+          <GearIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MenuTop({
+  week,
+  live,
+  won,
+  chips,
+  pending,
+  ready,
+  youName,
+  onToggle,
+  onClose,
+  onCollapse,
+}: {
+  week: WeekView;
+  live: boolean;
+  won: boolean;
+  chips: string[];
+  pending: boolean;
+  ready: boolean;
+  youName: string | null;
+  onToggle: () => void;
+  onClose: () => void;
+  onCollapse: () => void;
+}) {
+  const filled = week.ownCents + week.cushionUsedCents;
+  const widths = splitWidths(filled, week.remainingCents, week.covered);
+  const work = menuWorkLine(week.covered, filled, week.targetCents);
+  return (
+    <div className={`strip menu-card ${live ? "live" : "idle"}${won ? " won" : ""}`} data-clock={live ? "in" : "out"}>
+      <span className="chips" aria-hidden>
+        {chips.map((color, index) => (
+          <i key={index} style={live && !won ? { background: color } : undefined} />
+        ))}
+      </span>
+      <div className="ctrl-row">
+        <button
+          type="button"
+          className="mark ctrl"
+          onClick={onToggle}
+          disabled={pending || !ready}
+          title={live ? "Clock out" : youName || "Clock in"}
+        >
+          I/O
+          <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
+        </button>
+        <span className={`fight-cta${won ? " won" : ""}`}>{work}</span>
+        <span className="actions">
+          <button type="button" className="plus ctrl" onClick={onClose} aria-label="More">
+            +
+          </button>
+          <button type="button" className="fold ctrl" onClick={onCollapse} aria-label="Collapse">
+            ‹
+          </button>
+        </span>
+      </div>
+      <span className={`balance-bar${won ? " won" : ""}`} aria-hidden>
+        {widths.green > 0 && <i className="in" style={{ width: `${widths.green}%` }} />}
+        {widths.red > 0 && <i className="out" style={{ width: `${widths.red}%` }} />}
+      </span>
+      <span className="nums">
+        <span className="num up">{signedMoney(week.ownCents, "+")}</span>
+        <span className="num down">{signedMoney(week.remainingCents, "−")}</span>
+      </span>
+    </div>
+  );
+}
+
+const OPEN_DAYS: Array<[number, string, string]> = [
+  [1, "M", "Monday"],
+  [2, "T", "Tuesday"],
+  [3, "W", "Wednesday"],
+  [4, "T", "Thursday"],
+  [5, "F", "Friday"],
+  [6, "S", "Saturday"],
+  [0, "S", "Sunday"],
+];
+
 function rateText(cents: number): string {
   const dollars = cents / 100;
   if (Number.isInteger(dollars)) return String(dollars);
@@ -47,8 +408,11 @@ function rateText(cents: number): string {
 
 export default function Hud() {
   const { state, error, pending, freshEvents, dismissTick, refresh, clockIn, clockOut } = useIoState();
-  const [menu, setMenu] = useState(false);
-  const [settings, setSettings] = useState(false);
+  const [menu, setMenu] = useState(() => readPanel() === "menu");
+  const [settings, setSettings] = useState(() => readPanel() === "settings");
+  const calm = useMemo(calmMotion, []);
+  const [levelsOpen, setLevelsOpen] = useState(() => readPanel() === "levels");
+  const [checklistOpen, setChecklistOpen] = useState(() => readPanel() === "checklist");
   const [change, setChange] = useState(false);
   const [whoOpen, setWhoOpen] = useState(false);
   const [whoMode, setWhoMode] = useState<"clock" | "link">("clock");
@@ -59,7 +423,14 @@ export default function Hud() {
   const [chips, setChips] = useState(threeColors);
   const [company, setCompany] = useState<CompanyView | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [demoScene] = useState<DemoScene | null>(readDemo);
+  const [weekPreset] = useState<WeekPreset | null>(readWeek);
+  const copyVariant = useCopyVariant();
+  const [pinOpen, setPinOpen] = useState(false);
+  const [afterPin, setAfterPin] = useState<"clock" | "settings" | "change" | null>(null);
   const heard = useRef(new Set<string>());
+  const wasCleared = useRef<boolean | null>(null);
+  const demo = demoScene ? demoModel(demoScene, weekPreset) : null;
 
   useEffect(() => {
     const unlock = () => unlockChing();
@@ -68,34 +439,73 @@ export default function Hud() {
   }, []);
 
   useEffect(() => {
+    if (demo) return;
     for (const event of freshEvents) {
       if (heard.current.has(event.id)) continue;
       heard.current.add(event.id);
-      if (event.kind === "sale" && event.outputCents > 0) ching();
+      if (event.kind === "sale" && event.outputCents > 0) {
+        ching(hitTier(event.outputCents));
+      }
     }
-  }, [freshEvents]);
+  }, [freshEvents, demo]);
 
-  const live = state?.session.clockedIn ?? false;
-  const moneyOut = (state?.session.outputCents ?? 0) + (state?.accruedOutputCents ?? 0);
-  const moneyIn = state?.session.collectedCents ?? 0;
-  const points = state?.session.inputUnits ?? 0;
-  const combined = moneyIn + moneyOut;
-  const barFloor = 16;
-  let greenShare = 0;
-  let redShare = 0;
-  if (combined > 0) {
-    if (moneyIn === 0) {
-      greenShare = barFloor;
-      redShare = 100 - barFloor;
-    } else if (moneyOut === 0) {
-      redShare = barFloor;
-      greenShare = 100 - barFloor;
-    } else {
-      greenShare = Math.min(100 - barFloor, Math.max(barFloor, (moneyIn / combined) * 100));
-      redShare = 100 - greenShare;
+  useEffect(() => {
+    if (demo?.scene !== "crit") return;
+    ching("crit");
+  }, [demo?.scene]);
+
+  const rawFight = demo?.view ?? state?.fight ?? null;
+  const fight = rawFight && weekPreset && !demo ? { ...rawFight, week: demoWeek(weekPreset, rawFight.date) } : rawFight;
+  const ops = demo ? demoOps(demo.scene) : (state?.ops ?? null);
+  const pinSet = state?.fight.pinSet ?? false;
+
+  useEffect(() => {
+    if (demo) return;
+    if (!fight?.week.covered) {
+      wasCleared.current = fight ? false : wasCleared.current;
+      return;
     }
-  }
-  const wide = (menu || settings || change || whoOpen) && !collapsed;
+    if (wasCleared.current !== false) {
+      wasCleared.current = true;
+      return;
+    }
+    wasCleared.current = true;
+    const key = `io.cleared.${fight.week.weekStart}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    clearedChime();
+  }, [demo, fight]);
+
+  useEffect(() => {
+    if (error === "Wrong PIN" || error === "Too many tries") {
+      clearShopPin();
+      setPinOpen(true);
+    }
+  }, [error]);
+
+  const live = demo ? demo.clockedIn : (state?.session.clockedIn ?? false);
+  const week = fight?.week ?? null;
+  const workedOverride = demo ? readWorked() : null;
+  const streakDays =
+    workedOverride ??
+    (fight
+      ? shownWorkedDays(fight.workedDays, fight.todayWorked, live, isOpenKey(fight.date, fight.settings.openWeekdays))
+      : 0);
+  const won = Boolean(week?.covered && live);
+  const barPct = week ? Math.min(100, week.barPct * 100) : 0;
+  const headline = week ? weekLine(week, copyVariant) : "";
+  const wide = (menu || settings || levelsOpen || checklistOpen || change || whoOpen || pinOpen) && !collapsed;
+  const demoHit = useMemo<PrintEvent | null>(() => {
+    if (!demo?.hitCents) return null;
+    return {
+      id: `demo-${demo.scene}`,
+      kind: "sale",
+      outputCents: demo.hitCents,
+      inputUnits: 0,
+      label: saleTapeLabel(demo.hitCents),
+      createdAt: 0,
+    };
+  }, [demo]);
 
   useEffect(() => {
     if (!live) return;
@@ -154,6 +564,24 @@ export default function Hud() {
     takeCompany(next);
   };
 
+  const saveFight = async (path: string, body: unknown) => {
+    setSettingsError(null);
+    const res = await fetch(path, {
+      method: path.endsWith("/pin") || path.includes("/approve") ? "POST" : "PATCH",
+      headers: ownerHeaders(),
+      body: JSON.stringify(body),
+    });
+    const next = (await res.json()) as { message?: string };
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 429) clearShopPin();
+      throw new Error(next.message || "Couldn't save that");
+    }
+    if (path.endsWith("/pin") && body && typeof body === "object" && "pin" in body) {
+      setShopPin(String((body as { pin: string }).pin));
+    }
+    await refresh();
+  };
+
   const openWho = async (mode: "clock" | "link") => {
     setMenu(false);
     setSettings(false);
@@ -175,16 +603,61 @@ export default function Hud() {
     localStorage.setItem(WHO_NAME, person.name);
     setYouName(person.name);
     setWhoOpen(false);
-    if (whoMode === "clock") clockIn();
-    else void refresh();
+    if (whoMode === "clock") {
+      if (demo) return;
+      if (!guard("clock")) return;
+      clockIn();
+    } else void refresh();
+  };
+
+  const closePanels = () => {
+    setMenu(false);
+    setSettings(false);
+    setLevelsOpen(false);
+    setChecklistOpen(false);
+    setChange(false);
+  };
+
+  const guard = (next: "clock" | "settings" | "change") => {
+    if (demo && next === "clock") return false;
+    if (!pinSet) {
+      if (next === "clock") {
+        setSettings(true);
+        setSettingsError("Set a shop PIN first");
+        return false;
+      }
+      return true;
+    }
+    if (!shopPin()) {
+      setAfterPin(next);
+      setPinOpen(true);
+      setMenu(false);
+      return false;
+    }
+    return true;
+  };
+
+  const finishPin = (pin: string) => {
+    setShopPin(pin);
+    setPinOpen(false);
+    const next = afterPin;
+    setAfterPin(null);
+    if (next === "settings") setSettings(true);
+    else if (next === "change") setChange(true);
+    else if (next === "clock") {
+      if (live) clockOut();
+      else clockIn();
+    }
   };
 
   const toggle = () => {
+    if (demo) return;
     if (pending || !state) return;
     if (!localStorage.getItem(WHO_ID)) {
       void openWho("clock");
       return;
     }
+    if (!guard("clock")) return;
     if (live) clockOut();
     else clockIn();
   };
@@ -192,130 +665,180 @@ export default function Hud() {
   return (
     <div className="stage">
       <div className="strip-anchor">
-        <PrintTape events={freshEvents} onDone={dismissTick} />
+        <PrintTape
+          events={demo ? (demoHit ? [demoHit] : []) : freshEvents}
+          onDone={dismissTick}
+          hold={Boolean(demo)}
+        />
 
+        {menu && !settings && week ? (
+          <MenuTop
+            week={week}
+            live={live}
+            won={won}
+            chips={chips}
+            pending={pending}
+            ready={Boolean(state) || Boolean(demo)}
+            youName={youName}
+            onToggle={toggle}
+            onClose={() => setMenu(false)}
+            onCollapse={() => {
+              setCollapsed(true);
+              setMenu(false);
+              setSettings(false);
+              setChange(false);
+              setWhoOpen(false);
+              setPinOpen(false);
+            }}
+          />
+        ) : (
         <div
-          className={`strip ${live ? "live" : "idle"}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
+          className={`strip ${live ? "live" : "idle"}${won ? " won" : ""}${collapsed ? " collapsed" : ""}${wide ? " with-panel" : ""}`}
+          data-clock={live ? "in" : "out"}
+          data-fight={won ? "cleared" : "behind"}
+          data-week={week?.state ?? "bank"}
         >
           <span className="chips" aria-hidden>
             {chips.map((color, index) => (
-              <i key={index} style={live ? { background: color } : undefined} />
+              <i key={index} style={live && !won ? { background: color } : undefined} />
             ))}
           </span>
-          <button
-            type="button"
-            className="mark"
-            onClick={toggle}
-            disabled={pending || !state}
-            title={live ? "Clock out" : youName || "Clock in"}
-          >
-            I/O
-            <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
-          </button>
-          {!collapsed && (
-            <span className="nums">
-              <span className="num up">+${money(moneyIn)}</span>
-              <span className="num down">−${money(moneyOut)}</span>
-            </span>
-          )}
-          <span className="actions">
-            {!collapsed && (
-              <button type="button" className="plus" onClick={() => setMenu((open) => !open)} aria-label="More">
-                +
-              </button>
-            )}
+          <div className="ctrl-row">
             <button
               type="button"
-              className="fold"
-              onClick={() => {
-                setCollapsed((open) => !open);
-                setMenu(false);
-                setSettings(false);
-                setChange(false);
-                setWhoOpen(false);
-              }}
-              aria-label={collapsed ? "Expand" : "Collapse"}
+              className="mark ctrl"
+              onClick={toggle}
+              disabled={pending || !state}
+              title={live ? "Clock out" : youName || "Clock in"}
             >
-              {collapsed ? "›" : "‹"}
+              I/O
+              <span className="tip">{live ? "Clock out" : youName || "Clock in"}</span>
             </button>
-          </span>
-          {!collapsed && (
-            <span className="balance-bar" aria-hidden>
-              {combined > 0 && (
-                <>
-                  <i className="in" style={{ width: `${greenShare}%` }} />
-                  <i className="out" style={{ width: `${redShare}%` }} />
-                </>
+            {!collapsed && (
+              <span className={`fight-cta${won ? " won" : ""}`} data-cta={headline}>
+                {headline}
+              </span>
+            )}
+            <span className="actions">
+              {!collapsed && (
+                <button type="button" className="plus ctrl" onClick={() => setMenu((open) => !open)} aria-label="More">
+                  +
+                </button>
               )}
+              <button
+                type="button"
+                className="fold ctrl"
+                onClick={() => {
+                  setCollapsed((open) => !open);
+                  setMenu(false);
+                  setSettings(false);
+                  setChange(false);
+                  setWhoOpen(false);
+                  setPinOpen(false);
+                }}
+                aria-label={collapsed ? "Expand" : "Collapse"}
+              >
+                {collapsed ? "›" : "‹"}
+              </button>
+            </span>
+          </div>
+          {!collapsed && (
+            <span className={`balance-bar${won ? " won" : ""}`} aria-hidden>
+              {barPct > 0 && <i className="in" style={{ width: `${barPct}%` }} />}
+            </span>
+          )}
+          {!collapsed && week && (
+            <span className="nums">
+              <span className="num up">This week ${dollars(week.ownCents).toLocaleString("en-US")}</span>
+              <span className={`num ${week.overCents > 0 ? "up" : "down"}`}>
+                {week.overCents > 0
+                  ? `+$${dollars(week.overCents).toLocaleString("en-US")} over`
+                  : `Left $${dollars(week.remainingCents).toLocaleString("en-US")}`}
+              </span>
             </span>
           )}
         </div>
+        )}
 
         <AnimatePresence>
-          {menu && (
+          {(menu || settings) && (
             <motion.div
-              className="menu"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.12 }}
+              className="menu game"
+              initial={calm ? false : { opacity: 0, scaleY: 0.92 }}
+              animate={{ opacity: 1, scaleY: 1 }}
+              exit={{ opacity: 0, scaleY: 0.92 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              style={{ transformOrigin: "top right" }}
             >
-              <div className="menu-row">
-                <span>Points</span>
-                <span>{points}</span>
-              </div>
-              <div className="menu-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSettings(true);
-                    setChange(false);
-                    setMenu(false);
+              {settings ? (
+                <GearScreen
+                  fight={fight}
+                  ops={ops}
+                  calm={calm}
+                  demo={Boolean(demo)}
+                  error={settingsError}
+                  onBack={() => {
+                    setSettings(false);
+                    setMenu(true);
                   }}
-                >
-                  Settings
-                </button>
-                {company?.owner && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChange(true);
-                      setSettings(false);
-                      setMenu(false);
-                    }}
-                  >
-                    Change
-                  </button>
-                )}
-              </div>
-              {error && <div className="err">{error}</div>}
+                  onFight={async (path, body) => {
+                    if (demo) return;
+                    try {
+                      await saveFight(path, body);
+                    } catch (err) {
+                      setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
+                      throw err;
+                    }
+                  }}
+                />
+              ) : (
+                <GameMenu
+                  fight={fight}
+                  calm={calm}
+                  live={live}
+                  pending={pending}
+                  ready={Boolean(state) || Boolean(demo)}
+                  youName={youName}
+                  streakDays={streakDays}
+                  onClock={toggle}
+                  onSettings={() => {
+                    if (!demo && !guard("settings")) return;
+                    setSettings(true);
+                  }}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
 
         <AnimatePresence>
-          {settings && (
-            <SettingsPanel
-              company={company}
-              youName={youName}
-              live={live}
-              error={settingsError}
-              onLink={() => void openWho("link")}
-              onClose={() => setSettings(false)}
-              onSave={async (path, body) => {
-                try {
-                  await saveCompany(path, body);
-                } catch (err) {
-                  setSettingsError(err instanceof Error ? err.message : "Couldn't save that");
-                  throw err;
-                }
-              }}
+          {levelsOpen && ops && (
+            <LevelsPanel
+              ops={ops}
+              demo={Boolean(demo)}
+              onClose={() => setLevelsOpen(false)}
+              onSave={(body) => saveFight("/api/fight/levels", body)}
             />
           )}
         </AnimatePresence>
 
         <AnimatePresence>
+          {checklistOpen && (
+            <ChecklistPanel demo={Boolean(demo)} onClose={() => setChecklistOpen(false)} />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
           {change && <ChangePanel onClose={() => setChange(false)} onCompany={takeCompany} />}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {pinOpen && (
+            <PinPanel
+              onClose={() => setPinOpen(false)}
+              onSubmit={finishPin}
+            />
+          )}
         </AnimatePresence>
 
         <AnimatePresence>
@@ -373,47 +896,8 @@ function WhoPanel({
   );
 }
 
-function SettingsPanel({
-  company,
-  youName,
-  live,
-  error,
-  onLink,
-  onClose,
-  onSave,
-}: {
-  company: CompanyState | null;
-  youName: string | null;
-  live: boolean;
-  error: string | null;
-  onLink: () => void;
-  onClose: () => void;
-  onSave: (path: string, body: unknown) => Promise<void>;
-}) {
-  const [mode, setMode] = useState<"join" | "create" | null>(null);
-  const [draft, setDraft] = useState("");
-  const invite = company?.code ? `${window.location.origin}/?join=${company.code}` : "";
-
-  const submit = (next: "join" | "create", value: string) => {
-    const save =
-      next === "create"
-        ? onSave("/api/company", { name: value })
-        : onSave("/api/company/join", { code: value });
-    void save.then(() => {
-      setDraft("");
-      setMode(null);
-    });
-  };
-
-  const pick = (next: "join" | "create") => {
-    if (mode === next && draft.trim()) {
-      submit(next, draft);
-      return;
-    }
-    setMode((current) => (current === next ? null : next));
-    setDraft("");
-  };
-
+function PinPanel({ onClose, onSubmit }: { onClose: () => void; onSubmit: (pin: string) => void }) {
+  const [pin, setPin] = useState("");
   return (
     <motion.div
       className="menu settings"
@@ -423,56 +907,234 @@ function SettingsPanel({
       transition={{ duration: 0.12 }}
     >
       <div className="settings-head">
-        <span>Settings</span>
+        <span>Shop PIN</span>
         <button type="button" onClick={onClose}>
           Close
         </button>
       </div>
-
-      <div className="settings-line">
-        <button type="button" className="settings-name" onClick={() => { if (!live) onLink(); }}>
-          {youName || "Link"}
-        </button>
-      </div>
-
-      <div className="settings-line">
-        <span className="company-id">
-          {company?.name ? <span className="settings-name">{company.name}</span> : <span>Company</span>}
-        </span>
-        {company?.code ? (
-          <a className="company-code" href={invite}>
-            {company.code}
-          </a>
-        ) : (
-          <span className="settings-actions">
-            <button type="button" aria-pressed={mode === "join"} onClick={() => pick("join")}>
-              Join
-            </button>
-            <button type="button" aria-pressed={mode === "create"} onClick={() => pick("create")}>
-              Create
-            </button>
-          </span>
-        )}
-      </div>
-      {mode && !company?.name && (
-        <form
-          className="ask"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(mode, draft);
-          }}
-        >
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={mode === "create" ? "Name" : "Code"}
-            aria-label={mode === "create" ? "Company name" : "Company code"}
-            autoFocus
-          />
-        </form>
-      )}
-      {error && <div className="err">{error}</div>}
+      <form
+        className="ask"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!/^\d{4,8}$/.test(pin)) return;
+          onSubmit(pin);
+        }}
+      >
+        <input
+          value={pin}
+          onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+          placeholder="PIN"
+          aria-label="Shop PIN"
+          inputMode="numeric"
+          autoComplete="off"
+          type="password"
+          autoFocus
+        />
+      </form>
     </motion.div>
+  );
+}
+
+function BackIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M14.5 6.5 9 12l5.5 5.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function MoneyEdit({
+  cents,
+  label,
+  onCommit,
+}: {
+  cents: number;
+  label: string;
+  onCommit: (cents: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(cents / 100));
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="stat-value"
+        onClick={() => {
+          setDraft(String(cents / 100));
+          setEditing(true);
+        }}
+      >
+        {whole(cents)}
+      </button>
+    );
+  }
+  return (
+    <input
+      className="stat-value"
+      value={draft}
+      autoFocus
+      inputMode="decimal"
+      aria-label={label}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        setEditing(false);
+        const next = Math.round(Number(draft) * 100);
+        if (Number.isFinite(next) && next >= 0) onCommit(next);
+      }}
+    />
+  );
+}
+
+function GearScreen({
+  fight,
+  ops,
+  calm,
+  demo,
+  error,
+  onBack,
+  onFight,
+}: {
+  fight: FightView | null;
+  ops: OpsView | null;
+  calm: boolean;
+  demo: boolean;
+  error: string | null;
+  onBack: () => void;
+  onFight: (path: string, body: unknown) => Promise<void>;
+}) {
+  const settings = fight?.settings ?? DEFAULT_FIGHT_SETTINGS;
+  const rewards = ops?.rules.table ?? [];
+  const [editingLevels, setEditingLevels] = useState(false);
+  const [rows, setRows] = useState(rewards.map((row) => ({ level: String(row.level), reward: row.reward })));
+  const [pin, setPin] = useState("");
+  const first = rewards[0]?.reward ?? "None";
+  const rest = rewards
+    .slice(1)
+    .map((row) => row.reward)
+    .join(" · ");
+
+  const saveSettings = (patch: Partial<FightSettings>) => {
+    if (demo) return;
+    void onFight("/api/fight/settings", {
+      ...settings,
+      openWeekdays: [...settings.openWeekdays],
+      ...patch,
+    });
+  };
+
+  const saveLevels = (next = rows) => {
+    if (demo) return;
+    const table = next
+      .map((row) => ({ level: Math.round(Number(row.level)), reward: row.reward.trim() }))
+      .filter((row) => row.reward.length > 0 && Number.isFinite(row.level));
+    if (table.length === 0) return;
+    void onFight("/api/fight/levels", {
+      clearsInARow: ops?.rules.clearsInARow ?? 5,
+      table,
+    });
+  };
+
+  return (
+    <>
+      <button type="button" className="gear" aria-label="Back" onClick={onBack}>
+        <BackIcon />
+      </button>
+      <div className="col">
+        <StatRow
+          label="Settings"
+          index={0}
+          calm={calm}
+          note="Week target"
+          value={
+            <MoneyEdit
+              cents={settings.weeklyTargetCents}
+              label="Weekly target"
+              onCommit={(weeklyTargetCents) => saveSettings({ weeklyTargetCents })}
+            />
+          }
+        />
+        <StatRow
+          label="PIN"
+          index={1}
+          calm={calm}
+          note="Shop lock"
+          value={
+            fight?.pinSet ? (
+              "On"
+            ) : (
+              <input
+                className="stat-value"
+                value={pin}
+                placeholder="Set"
+                aria-label="Shop PIN"
+                inputMode="numeric"
+                autoComplete="off"
+                type="password"
+                onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                onBlur={() => {
+                  if (!/^\d{4,8}$/.test(pin) || demo) return;
+                  void onFight("/api/fight/pin", { pin });
+                }}
+              />
+            )
+          }
+        />
+        {editingLevels ? (
+          rows.map((row, index) => (
+            <StatRow
+              key={`${row.level}-${index}`}
+              label={`Lv ${row.level}`}
+              index={2 + index}
+              calm={calm}
+              value={
+                <input
+                  className="stat-value"
+                  value={row.reward}
+                  aria-label={`Level ${row.level} reward`}
+                  onChange={(event) =>
+                    setRows((current) =>
+                      current.map((item, i) => (i === index ? { ...item, reward: event.target.value } : item)),
+                    )
+                  }
+                  onBlur={() => saveLevels()}
+                />
+              }
+            />
+          ))
+        ) : (
+          <StatRow
+            label="Levels"
+            index={2}
+            calm={calm}
+            note={rest || undefined}
+            value={
+              <button type="button" className="stat-value" onClick={() => setEditingLevels(true)}>
+                {first}
+              </button>
+            }
+          />
+        )}
+        <StatRow
+          label="Rent"
+          index={editingLevels ? 2 + rows.length : 3}
+          calm={calm}
+          note={settings.rentEntered ? "Included" : "Not included"}
+          onNote={
+            demo
+              ? undefined
+              : () => saveSettings({ rentEntered: !settings.rentEntered })
+          }
+          value={
+            <MoneyEdit
+              cents={settings.rentMonthlyCents}
+              label="Rent per month"
+              onCommit={(rentMonthlyCents) => saveSettings({ rentMonthlyCents })}
+            />
+          }
+        />
+        {error ? <span className="stat-note">{error}</span> : null}
+      </div>
+    </>
   );
 }
 
@@ -624,35 +1286,223 @@ function ChangePanel({
   );
 }
 
+function LevelsPanel({
+  ops,
+  demo,
+  onClose,
+  onSave,
+}: {
+  ops: OpsView;
+  demo: boolean;
+  onClose: () => void;
+  onSave: (body: unknown) => Promise<void>;
+}) {
+  const [days, setDays] = useState(String(ops.rules.clearsInARow));
+  const [rows, setRows] = useState(
+    ops.rules.table.map((row) => ({
+      level: String(row.level),
+      reward: row.reward,
+    })),
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    const table = rows
+      .map((row) => ({
+        level: Math.round(Number(row.level)),
+        reward: row.reward.trim(),
+      }))
+      .filter((row) => row.reward.length > 0);
+    if (demo) return;
+    try {
+      setError(null);
+      await onSave({ clearsInARow: Math.round(Number(days)), table });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save levels");
+    }
+  };
+
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Levels</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <p className="menu-note">Clear open days in a row. Unlocks are team rewards, not money.</p>
+      <div className="menu-row">
+        <span>Weeks in a row</span>
+        <span>{ops.weekStreak}</span>
+      </div>
+      <label className="settings-line">
+        <span>Days</span>
+        <input value={days} onChange={(event) => setDays(event.target.value)} inputMode="numeric" aria-label="Open days in a row" />
+      </label>
+      {rows.map((row, index) => (
+        <div className="level-grid" key={index}>
+          <input
+            value={row.level}
+            aria-label={`Unlock ${index + 1} level`}
+            inputMode="numeric"
+            onChange={(event) =>
+              setRows((current) => current.map((item, i) => (i === index ? { ...item, level: event.target.value } : item)))
+            }
+          />
+          <input
+            value={row.reward}
+            aria-label={`Level ${row.level} reward`}
+            onChange={(event) =>
+              setRows((current) => current.map((item, i) => (i === index ? { ...item, reward: event.target.value } : item)))
+            }
+          />
+        </div>
+      ))}
+      <div className="menu-actions">
+        <button
+          type="button"
+          onClick={() =>
+            setRows((current) => {
+              const last = Number(current[current.length - 1]?.level);
+              const level = Number.isFinite(last) ? String(last + 1) : String(current.length + 1);
+              return [...current, { level, reward: "" }];
+            })
+          }
+        >
+          Add
+        </button>
+      </div>
+      {ops.history.map((step) => (
+        <div className="menu-row" key={`${step.date}-${step.toLevel}`}>
+          <span>{step.date}</span>
+          <span>
+            {step.fromLevel} → {step.toLevel}
+          </span>
+        </div>
+      ))}
+      <div className="menu-actions">
+        <button type="button" onClick={() => void save()}>
+          Save
+        </button>
+      </div>
+      {error && <div className="err">{error}</div>}
+    </motion.div>
+  );
+}
+
+function ChecklistPanel({ demo, onClose }: { demo: boolean; onClose: () => void }) {
+  const [checks, setChecks] = useState<ReadinessCheck[]>(() => (demo ? demoReadiness().checks : []));
+  const [scope, setScope] = useState<string>(demo ? "local" : "");
+  const [ready, setReady] = useState(demo ? demoReadiness().ready : false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (demo) return;
+    let cancel = false;
+    void fetch("/api/health")
+      .then(async (res) => {
+        const body = (await res.json()) as {
+          ready?: boolean;
+          scope?: { locationId?: string };
+          checks?: ReadinessCheck[];
+          message?: string;
+        };
+        if (!res.ok) throw new Error(body.message || "Couldn't load the checklist");
+        if (cancel) return;
+        setChecks(body.checks ?? []);
+        setReady(Boolean(body.ready));
+        setScope(body.scope?.locationId ?? "");
+      })
+      .catch((err) => {
+        if (!cancel) setError(err instanceof Error ? err.message : "Couldn't load the checklist");
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [demo]);
+
+  return (
+    <motion.div
+      className="menu settings"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 4 }}
+      transition={{ duration: 0.12 }}
+    >
+      <div className="settings-head">
+        <span>Ready</span>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="menu-row">
+        <span>Go live</span>
+        <span>{ready ? "Yes" : "No"}</span>
+      </div>
+      {scope && (
+        <div className="menu-row">
+          <span>Location</span>
+          <span>{scope}</span>
+        </div>
+      )}
+      {checks.map((check) => (
+        <div className={`menu-row${check.ok ? "" : " soft"}`} key={check.id}>
+          <span>{check.label}</span>
+          <span>{check.ok ? "Yes" : check.detail}</span>
+        </div>
+      ))}
+      {error && <div className="err">{error}</div>}
+    </motion.div>
+  );
+}
+
 function PrintTape({
   events,
   onDone,
+  hold = false,
 }: {
   events: PrintEvent[];
   onDone: (id: string) => void;
+  hold?: boolean;
 }) {
   return (
     <div className="tape">
       <AnimatePresence>
         {events.map((event) => (
-          <TapePrint key={event.id} event={event} onDone={onDone} />
+          <TapePrint key={event.id} event={event} onDone={onDone} hold={hold} />
         ))}
       </AnimatePresence>
     </div>
   );
 }
 
-function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) => void }) {
+function TapePrint({
+  event,
+  onDone,
+  hold = false,
+}: {
+  event: PrintEvent;
+  onDone: (id: string) => void;
+  hold?: boolean;
+}) {
   const point = event.kind === "input";
-  const sale = event.kind === "sale";
-  const moneyHit = event.kind === "hour_print" || (sale && event.outputCents > 0);
-  const big = moneyHit && event.outputCents >= 2000;
+  const sale = event.kind === "sale" && event.outputCents > 0;
+  const tier = sale ? hitTier(event.outputCents) : null;
+  const big = !tier && event.kind === "hour_print" && event.outputCents >= 2000;
+  const life = tier === "crit" ? 1900 : tier === "big" ? 1500 : tier === "solid" ? 1200 : tier === "small" ? 900 : big ? 1600 : point ? 1400 : 1200;
+  const peak = tier === "crit" ? 1.65 : tier === "big" ? 1.42 : tier === "solid" ? 1.28 : 1.12;
 
   useEffect(() => {
-    const life = big ? 2600 : point ? 1800 : 1400;
+    if (hold) return;
     const t = setTimeout(() => onDone(event.id), life);
     return () => clearTimeout(t);
-  }, [event.id, big, point, onDone]);
+  }, [event.id, onDone, hold, life]);
 
   const tone = event.kind === "hour_print" ? "down" : sale ? "up" : point
       ? event.inputType === "email"
@@ -662,6 +1512,27 @@ function TapePrint({ event, onDone }: { event: PrintEvent; onDone: (id: string) 
           : "message"
       : "money";
   const text = point ? `+${event.inputUnits || 1}` : event.label;
+
+  if (tier) {
+    return (
+      <motion.div
+        className={`print up tier-${tier}`}
+        initial={{ opacity: 0, y: 14, scale: 0.35 }}
+        animate={
+          hold
+            ? { opacity: 1, y: -12, scale: peak }
+            : { opacity: [0, 1, 1, 0], y: [14, -8, -18, -40], scale: [0.35, peak, peak * 0.94, 0.8] }
+        }
+        transition={
+          hold
+            ? { duration: 0.72, ease: [0.16, 1, 0.3, 1] }
+            : { duration: life / 1000, times: [0, 0.16, 0.4, 1], ease: [0.16, 1, 0.3, 1] }
+        }
+      >
+        {text}
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div

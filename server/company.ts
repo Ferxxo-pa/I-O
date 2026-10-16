@@ -6,6 +6,8 @@ let company: CompanyState = {
   name: null,
   code: null,
   people: [],
+  id: null,
+  locationId: null,
 };
 
 let ownerKey: string | null = null;
@@ -38,8 +40,33 @@ export function hydrateCompany(next: CompanyState, key: string | null = null) {
     name: next.name,
     code: next.code,
     people: next.people.map((person) => ({ ...person })),
+    id: next.id ?? null,
+    locationId: next.locationId ?? null,
   };
   ownerKey = key;
+}
+
+/** One company id and one location id for every record this process writes. */
+export function ensureScope(
+  locationFromEnv: string | null,
+  hint: { companyId: string; locationId: string } | null,
+): { companyId: string; locationId: string } {
+  const companyId = company.id || hint?.companyId || randomUUID();
+  const fromEnv = locationFromEnv?.trim() || "";
+  const locationId = company.locationId || fromEnv || hint?.locationId || "local";
+  const changed = company.id !== companyId || company.locationId !== locationId;
+  if (changed) {
+    company = { ...company, id: companyId, locationId };
+    touch();
+  }
+  return { companyId, locationId };
+}
+
+export function currentScope(): { companyId: string; locationId: string } {
+  return {
+    companyId: company.id || "shop",
+    locationId: company.locationId || process.env.SQUARE_LOCATION_ID?.trim() || "local",
+  };
 }
 
 /** Public company, plus whether this browser is the owner. The key is returned only when it is first created. */
@@ -54,6 +81,8 @@ export function companyView(presented: string | null): CompanyView {
   return {
     name: company.name,
     code: company.code,
+    id: company.id,
+    locationId: company.locationId,
     people: company.people.map((person) => ({ ...person })),
     owner,
     square: squareConfigured(),
@@ -67,7 +96,12 @@ export function createCompany(name: string, presented: string | null = null): Co
   if (ownerKey && presented !== ownerKey) throw new Error("Only the owner can change that");
   const minted = !ownerKey;
   if (!ownerKey) ownerKey = makeOwnerKey();
-  company = { ...company, name: trimmed, code: company.code ?? makeCode() };
+  company = {
+    ...company,
+    name: trimmed,
+    code: company.code ?? makeCode(),
+    id: company.id ?? randomUUID(),
+  };
   touch();
   const view = companyView(ownerKey);
   return minted ? { ...view, ownerKey } : view;
