@@ -8,6 +8,7 @@ import {
   cushionTotal,
   consecutiveWorkedDays,
   formatWorkStreak,
+  streakMark,
   halfTargetCents,
   menuLevel,
   menuWorkLine,
@@ -252,6 +253,12 @@ assert.equal(formatWorkStreak(8), "1 week, 1 day");
 assert.equal(formatWorkStreak(10), "1 week, 3 days");
 assert.equal(formatWorkStreak(14), "2 weeks");
 assert.equal(formatWorkStreak(15), "2 weeks, 1 day");
+assert.deepEqual(streakMark(0), { count: 0, label: "day streak" });
+assert.deepEqual(streakMark(1), { count: 1, label: "day streak" });
+assert.deepEqual(streakMark(6), { count: 6, label: "day streak" });
+assert.deepEqual(streakMark(7), { count: 7, label: "1 week" });
+assert.deepEqual(streakMark(10), { count: 10, label: "1 week, 3 days" });
+assert.deepEqual(streakMark(14), { count: 14, label: "2 weeks" });
 const open = [1, 2, 3, 4, 5];
 const run = ["2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12", "2026-10-13"];
 assert.equal(

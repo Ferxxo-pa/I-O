@@ -332,6 +332,13 @@ export function formatWorkStreak(days: number): string {
   return weekPart || dayPart;
 }
 
+/** Flame row: the day count in front, `day streak` until a full week, then the week phrase. */
+export function streakMark(days: number): { count: number; label: string } {
+  const count = Math.max(0, Math.floor(days));
+  if (count < 7) return { count, label: "day streak" };
+  return { count, label: formatWorkStreak(count) };
+}
+
 /** Today counts as soon as this person is clocked in, before the hour has printed. */
 export function shownWorkedDays(count: number, todayWorked: boolean, clockedIn: boolean, todayOpen: boolean): number {
   if (clockedIn && todayOpen && !todayWorked) return Math.max(0, count) + 1;

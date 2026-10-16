@@ -609,12 +609,46 @@ button {
   color: #c7c7cc;
 }
 
-.menu.game .streak-line {
-  color: #ff5c1a;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
+.menu.game .streak-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 214px;
+  min-height: 22px;
+  color: #ff7a00;
+  white-space: nowrap;
+}
+
+.menu.game .streak-row .flame {
+  display: block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: #ff7a00;
+}
+
+.menu.game .streak-count {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #ff6a00;
+  font-variant-numeric: tabular-nums;
+}
+
+.menu.game .streak-label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  color: #ff8a2a;
+}
+
+.menu.game .streak-row.cold,
+.menu.game .streak-row.cold .flame,
+.menu.game .streak-row.cold .streak-count,
+.menu.game .streak-row.cold .streak-label {
+  color: #c7c7cc;
 }
 
 .menu.game .upgrade {
