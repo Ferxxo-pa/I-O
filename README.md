@@ -25,6 +25,10 @@ npm start
 
 A paid hour is a real hour. Wages, collected money, the rate, and the company are written to `data/io-state.json` (or `DATA_DIR`) and survive a restart. Copy `.env.example` for Square and the port. `GET /api/health` is the process check.
 
+## Shop clock
+
+Open `/punch` at the shop, 403 E Ben White Blvd. The employee enters the shop PIN, picks their name, and taps clock in or out. The browser sends a location fix. The server records the punch only when that fix is inside the geofence, fresh, and accurate enough. The owner opens **Log** on that page to see who punched, when, how far they were, and whether it was accepted. Punches append to `data/punches.jsonl`. Square timecards stay off unless `SQUARE_LABOR_PUNCHES=1`, and that path never writes a wage. How this later feeds the strip and the work streak is in `docs/geo-clock.md`.
+
 ## Push to your empty GitHub repo
 
 ```bash

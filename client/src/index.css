@@ -607,3 +607,240 @@ a.company-code {
     bottom: 12px;
   }
 }
+
+body:has(.punch-stage),
+#root:has(.punch-stage) {
+  height: auto;
+  overflow: auto;
+}
+
+.punch-stage {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 28px 16px 48px;
+}
+
+.punch-home {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  color: var(--mute);
+  font-size: 13px;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+
+.punch-card,
+.punch-log {
+  width: min(360px, 100%);
+  position: relative;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+}
+
+.punch-card {
+  padding: 22px 22px 20px;
+}
+
+.punch-card[data-state="clocked-in"] {
+  box-shadow: 0 10px 32px rgba(18, 196, 90, 0.16);
+}
+
+.punch-card[data-state="rejected"] {
+  box-shadow: 0 10px 32px rgba(255, 59, 48, 0.12);
+}
+
+.punch-kicker {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.punch-kicker button,
+.punch-tools button {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.punch-shop {
+  margin: 10px 0 0;
+  font-size: 22px;
+  font-weight: 560;
+  letter-spacing: -0.04em;
+}
+
+.punch-address {
+  margin: 6px 0 0;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.punch-who {
+  margin: 22px 0 0;
+  font-size: 15px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+
+.punch-status {
+  margin: 22px 0 0;
+  min-height: 28px;
+  font-size: 26px;
+  font-weight: 560;
+  letter-spacing: -0.04em;
+}
+
+.punch-card[data-state="inside"] .punch-status,
+.punch-card[data-state="clocked-in"] .punch-status {
+  color: #12c45a;
+}
+
+.punch-card[data-state="outside"] .punch-status,
+.punch-card[data-state="rejected"] .punch-status {
+  color: #ff3b30;
+}
+
+.punch-detail {
+  margin: 8px 0 0;
+  color: var(--mute);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.punch-card[data-state="rejected"] .punch-detail {
+  color: #ff3b30;
+}
+
+.punch-go {
+  width: 100%;
+  height: 48px;
+  margin-top: 22px;
+  border-radius: 12px;
+  background: var(--ink);
+  color: white;
+  font-size: 16px;
+  letter-spacing: -0.03em;
+}
+
+.punch-card[data-state="clocked-in"] .punch-go {
+  background: #12c45a;
+  color: white;
+}
+
+.punch-go:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+.punch-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.punch-form input,
+.punch-key input {
+  width: 100%;
+  font: inherit;
+  font-size: 18px;
+  letter-spacing: 0.18em;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+
+.punch-key input {
+  letter-spacing: 0;
+  font-size: 13px;
+}
+
+.punch-people {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 18px;
+}
+
+.punch-people button {
+  width: 100%;
+  text-align: left;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 16px;
+  letter-spacing: -0.03em;
+}
+
+.punch-tools {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.punch-log {
+  width: min(640px, 100%);
+  padding: 16px 18px 8px;
+}
+
+.punch-log h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.punch-log-head,
+.punch-log li {
+  display: grid;
+  grid-template-columns: 1.2fr 0.5fr 0.9fr 0.7fr 1.4fr;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.punch-log-head {
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+
+.punch-log ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.punch-log li {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.punch-log .ok {
+  color: #12c45a;
+}
+
+.punch-log .no {
+  color: #ff3b30;
+}
+
+.punch-empty,
+.punch-mode {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.punch-mode {
+  margin: -6px 0 12px;
+}

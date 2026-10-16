@@ -7,6 +7,7 @@ import { startPersistence } from "./persist";
 import { squareConfigured } from "./square/client";
 import { timecardFromWebhook } from "./square/labor";
 import { signaturesMatch, squareSignature } from "./square/signature";
+import { mountPunchRoutes } from "./punch/routes";
 import { applySquareWebhook, squarePayRoster, startSquareSync } from "./square/sync";
 
 function ownerKeyFrom(req: Request): string | null {
@@ -202,6 +203,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(status).json({ message });
     }
   });
+
+  mountPunchRoutes(app);
 
   app.post("/api/square/webhook", (req, res) => {
     const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
