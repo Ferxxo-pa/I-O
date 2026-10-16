@@ -471,6 +471,11 @@ function SettingsPanel({
           />
         </form>
       )}
+      <div className="settings-line">
+        <a className="company-code" href="/punch">
+          Shop clock
+        </a>
+      </div>
       {error && <div className="err">{error}</div>}
     </motion.div>
   );
