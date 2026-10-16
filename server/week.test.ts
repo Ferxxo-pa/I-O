@@ -245,20 +245,16 @@ const top = menuLevel({ weeksCovered: 26, filledCents: 1, targetCents: 4, covere
 assert.equal(top.level, 6);
 assert.equal(top.next, null);
 assert.equal(top.pct, 25);
-assert.equal(formatWorkStreak(0), "0 days");
-assert.equal(formatWorkStreak(1), "1 day");
-assert.equal(formatWorkStreak(6), "6 days");
-assert.equal(formatWorkStreak(7), "1 week");
-assert.equal(formatWorkStreak(8), "1 week, 1 day");
-assert.equal(formatWorkStreak(10), "1 week, 3 days");
-assert.equal(formatWorkStreak(14), "2 weeks");
-assert.equal(formatWorkStreak(15), "2 weeks, 1 day");
+assert.equal(formatWorkStreak(0), "0 day streak");
+assert.equal(formatWorkStreak(1), "1 day streak");
+assert.equal(formatWorkStreak(6), "6 day streak");
+assert.equal(formatWorkStreak(10), "10 day streak");
+assert.equal(formatWorkStreak(15), "15 day streak");
 assert.deepEqual(streakMark(0), { count: 0, label: "day streak" });
 assert.deepEqual(streakMark(1), { count: 1, label: "day streak" });
 assert.deepEqual(streakMark(6), { count: 6, label: "day streak" });
-assert.deepEqual(streakMark(7), { count: 7, label: "1 week" });
-assert.deepEqual(streakMark(10), { count: 10, label: "1 week, 3 days" });
-assert.deepEqual(streakMark(14), { count: 14, label: "2 weeks" });
+assert.deepEqual(streakMark(10), { count: 10, label: "day streak" });
+assert.deepEqual(streakMark(15), { count: 15, label: "day streak" });
 const open = [1, 2, 3, 4, 5];
 const run = ["2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-12", "2026-10-13"];
 assert.equal(
@@ -408,7 +404,7 @@ const quietToday = streakBook.sync({
 });
 assert.equal(quietToday.todayWorked, false);
 assert.equal(quietToday.workedDays, 9);
-assert.equal(formatWorkStreak(shownWorkedDays(quietToday.workedDays, quietToday.todayWorked, true, true)), "1 week, 3 days");
+assert.equal(formatWorkStreak(shownWorkedDays(quietToday.workedDays, quietToday.todayWorked, true, true)), "10 day streak");
 const clockedToday = streakBook.sync({
   now: atChicago("2026-10-14", 11),
   lifetimeCollected: 0,
@@ -418,4 +414,4 @@ const clockedToday = streakBook.sync({
 });
 assert.equal(clockedToday.todayWorked, true);
 assert.equal(clockedToday.workedDays, 10);
-assert.equal(formatWorkStreak(clockedToday.workedDays), "1 week, 3 days");
+assert.equal(formatWorkStreak(clockedToday.workedDays), "10 day streak");

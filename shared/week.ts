@@ -321,22 +321,16 @@ export function consecutiveWorkedDays(input: {
   return count;
 }
 
-/** Group consecutive worked days by seven: `6 days`, `1 week`, `1 week, 3 days`, `2 weeks`. */
+/** Streak line, always in days: `0 day streak`, `10 day streak`, `15 day streak`. */
 export function formatWorkStreak(days: number): string {
   const count = Math.max(0, Math.floor(days));
-  const weeks = Math.floor(count / 7);
-  const rest = count % 7;
-  const weekPart = weeks === 0 ? "" : `${weeks} ${weeks === 1 ? "week" : "weeks"}`;
-  const dayPart = rest === 0 && weeks > 0 ? "" : `${rest} ${rest === 1 ? "day" : "days"}`;
-  if (weekPart && dayPart) return `${weekPart}, ${dayPart}`;
-  return weekPart || dayPart;
+  return `${count} day streak`;
 }
 
-/** Flame row: the day count in front, `day streak` until a full week, then the week phrase. */
+/** Flame row: the day count beside the label `day streak`. */
 export function streakMark(days: number): { count: number; label: string } {
   const count = Math.max(0, Math.floor(days));
-  if (count < 7) return { count, label: "day streak" };
-  return { count, label: formatWorkStreak(count) };
+  return { count, label: "day streak" };
 }
 
 /** Today counts as soon as this person is clocked in, before the hour has printed. */
