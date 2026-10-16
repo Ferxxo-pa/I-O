@@ -300,13 +300,11 @@ function GameMenu({
   const clockTitle = live ? "Clock out" : youName || "Clock in";
   return (
     <div className="col">
-      <UpgradeBar level={step.level} next={step.next} progress={step.pct} calm={calm} />
-      <motion.div
-        className="clock-stack"
-        initial={calm ? false : { opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.06 }}
-      >
+      <div className="level-stack">
+        <UpgradeBar level={step.level} next={step.next} progress={step.pct} calm={calm} />
+        <StreakRow days={streakDays} />
+      </div>
+      <div className="tool-row">
         <button
           type="button"
           className={`mark ctrl${live ? "" : " out"}`}
@@ -318,19 +316,10 @@ function GameMenu({
           <ClockIcon />
           <span className="tip">{clockTitle}</span>
         </button>
-        <StreakRow days={streakDays} />
-      </motion.div>
-      <motion.button
-        type="button"
-        className="gear dock"
-        aria-label="Settings"
-        onClick={onSettings}
-        initial={calm ? false : { opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: "easeOut", delay: calm ? 0 : 0.09 }}
-      >
-        <GearIcon />
-      </motion.button>
+        <button type="button" className="gear dock" aria-label="Settings" onClick={onSettings}>
+          <GearIcon />
+        </button>
+      </div>
     </div>
   );
 }

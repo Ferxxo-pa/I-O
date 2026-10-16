@@ -286,6 +286,28 @@ button {
   height: var(--ctrl);
 }
 
+.strip.menu-card .ctrl-row {
+  position: relative;
+}
+
+.strip.menu-card .mark.ctrl {
+  justify-content: flex-start;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.strip.menu-card .fight-cta {
+  position: absolute;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  left: 0;
+  right: 0;
+  width: auto;
+  max-width: none;
+  text-align: center;
+}
+
 .strip.menu-card .actions {
   gap: 1px;
 }
@@ -596,16 +618,22 @@ button {
   z-index: auto;
 }
 
-.menu.game .clock-stack {
-  --ctrl: 28px;
+.menu.game .level-stack {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 6px;
   width: 214px;
 }
 
-.menu.game .clock-stack .mark.out {
+.menu.game .tool-row {
+  --ctrl: 28px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.menu.game .tool-row .mark.out {
   color: #c7c7cc;
 }
 
