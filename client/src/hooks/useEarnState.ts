@@ -76,7 +76,19 @@ export function useIoState() {
   useEffect(() => {
     refresh();
     const id = setInterval(refresh, 200);
-    return () => clearInterval(id);
+    let stream: EventSource | null = null;
+    try {
+      stream = new EventSource("/api/presence/stream");
+      stream.onmessage = () => {
+        void refresh();
+      };
+    } catch {
+      stream = null;
+    }
+    return () => {
+      clearInterval(id);
+      stream?.close();
+    };
   }, [refresh]);
 
   const run = useCallback(

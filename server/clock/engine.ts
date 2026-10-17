@@ -16,6 +16,7 @@ import { closeTimecard, openTimecard, type RemoteTimecard } from "../square/labo
 import { getCompany } from "../company";
 import { fightBook } from "../fight/book";
 import { saleTapeLabel, type FightView } from "@shared/fight";
+import { emptyPresence, type PresenceView } from "@shared/presence";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
 import { randomUUID } from "crypto";
 
@@ -70,9 +71,14 @@ export class EarnEngine {
   private rateSource: RateSource = "default";
   private onChange: (() => void) | null = null;
   private silent = false;
+  private presenceProvider: (viewerId: string | null) => PresenceView = () => emptyPresence();
 
   setBookListener(fn: () => void) {
     this.onChange = fn;
+  }
+
+  setPresenceProvider(fn: (viewerId: string | null) => PresenceView) {
+    this.presenceProvider = fn;
   }
 
   start() {
@@ -171,7 +177,94 @@ export class EarnEngine {
       },
       fight,
       ops: { ...fightBook.opsView(), crew: this.crewNow() },
+      presence: this.presenceOf(viewerId),
     };
+  }
+
+  shiftOpen(personId: string): boolean {
+    return Boolean(this.shifts.find((shift) => shift.personId === personId)?.clockedIn);
+  }
+
+  /** A Square wage timecard is left to the older clock. Presence drives local shifts. */
+  presenceMayDrive(personId: string): boolean {
+    const shift = this.shifts.find((entry) => entry.personId === personId);
+    if (!shift?.clockedIn) return true;
+    return shift.timecardId == null;
+  }
+
+  /** Start the shop-computer counter. Does not call Square. */
+  beginWork(person: ClockPerson, at = now()): void {
+    if (!person.id || !person.name || !Number.isInteger(person.hourlyCents) || person.hourlyCents <= 0) return;
+    const existing = this.shifts.find((shift) => shift.personId === person.id);
+    if (existing?.clockedIn) {
+      if (existing.holdAt != null) this.upsertShift({ ...existing, holdAt: null });
+      return;
+    }
+    this.upsertShift({
+      personId: person.id,
+      name: person.name,
+      hourlyCents: person.hourlyCents,
+      clockedIn: true,
+      clockedInAt: at,
+      hourSegmentStartedAt: at,
+      outputCents: existing?.outputCents ?? 0,
+      timecardId: null,
+      holdAt: null,
+    });
+    this.pushEvent(
+      makeEvent({
+        kind: "clock_in",
+        outputCents: 0,
+        inputUnits: 0,
+        label: "IN",
+        createdAt: at,
+      }),
+    );
+  }
+
+  /** Freeze accrual at `at` until the trip is either ignored or becomes a break. */
+  holdWork(personId: string, at: number): void {
+    const existing = this.shifts.find((shift) => shift.personId === personId);
+    if (!existing?.clockedIn || existing.holdAt === at) return;
+    this.upsertShift({ ...existing, holdAt: at });
+  }
+
+  releaseHold(personId: string): void {
+    const existing = this.shifts.find((shift) => shift.personId === personId);
+    if (!existing?.clockedIn || existing.holdAt == null) return;
+    this.upsertShift({ ...existing, holdAt: null });
+  }
+
+  /** Stop the counter at `at`. Time after that is not worked. Does not call Square. */
+  endWorkAt(personId: string, at: number): void {
+    const existing = this.shifts.find((shift) => shift.personId === personId);
+    if (!existing?.clockedIn) return;
+    const settled = this.settleShift(existing, at);
+    this.upsertShift({
+      ...settled,
+      clockedIn: false,
+      clockedInAt: null,
+      hourSegmentStartedAt: null,
+      timecardId: null,
+      holdAt: null,
+    });
+    this.pushEvent(
+      makeEvent({
+        kind: "clock_out",
+        outputCents: 0,
+        inputUnits: 0,
+        label: "OUT",
+        createdAt: at,
+      }),
+    );
+  }
+
+  private presenceOf(viewerId: string | null): PresenceView {
+    try {
+      return this.presenceProvider(viewerId);
+    } catch {
+      return emptyPresence();
+    }
   }
 
   linkedPersonIds(): string[] {
@@ -210,6 +303,7 @@ export class EarnEngine {
         name: person.name,
         hourlyCents: person.hourlyCents,
         timecardId: timecardId ?? existing.timecardId,
+        holdAt: existing.holdAt ?? null,
       });
       return this.getState(person.id);
     }
@@ -224,6 +318,7 @@ export class EarnEngine {
       hourSegmentStartedAt: t,
       outputCents: existing?.outputCents ?? 0,
       timecardId,
+      holdAt: null,
     });
     this.pushEvent(
       makeEvent({
@@ -252,6 +347,7 @@ export class EarnEngine {
       clockedInAt: null,
       hourSegmentStartedAt: null,
       timecardId: null,
+      holdAt: null,
     });
     this.pushEvent(
       makeEvent({
@@ -304,6 +400,7 @@ export class EarnEngine {
         hourSegmentStartedAt: existing?.clockedIn ? existing.hourSegmentStartedAt : started,
         outputCents: existing?.outputCents ?? 0,
         timecardId: card.timecardId,
+        holdAt: existing?.holdAt ?? null,
       });
       if (!existing?.clockedIn) {
         this.pushEvent(
@@ -327,6 +424,7 @@ export class EarnEngine {
       clockedInAt: null,
       hourSegmentStartedAt: null,
       timecardId: null,
+      holdAt: null,
     });
     this.pushEvent(
       makeEvent({
@@ -520,7 +618,7 @@ export class EarnEngine {
 
     for (const shift of [...this.shifts]) {
       if (!shift.clockedIn || !shift.hourSegmentStartedAt) continue;
-      const elapsed = t - shift.hourSegmentStartedAt;
+      const elapsed = paidThrough(shift, t) - shift.hourSegmentStartedAt;
       if (elapsed < this.config.hourDurationMs) continue;
       const hours = Math.floor(elapsed / this.config.hourDurationMs);
       let next = shift;
@@ -570,7 +668,7 @@ export class EarnEngine {
 
   private shiftAccrual(shift: PersonShift, t: number): number {
     if (!shift.clockedIn || !shift.hourSegmentStartedAt) return 0;
-    const elapsed = Math.max(0, t - shift.hourSegmentStartedAt);
+    const elapsed = Math.max(0, paidThrough(shift, t) - shift.hourSegmentStartedAt);
     const ratio = Math.min(1, elapsed / this.config.hourDurationMs);
     return Math.floor(shift.hourlyCents * ratio);
   }
@@ -647,7 +745,7 @@ export class EarnEngine {
     }
     for (const shift of this.shifts) {
       if (!shift.clockedIn || !shift.hourSegmentStartedAt) continue;
-      total += this.partialWage(shift.hourlyCents, shift.hourSegmentStartedAt, since, at);
+      total += this.partialWage(shift.hourlyCents, shift.hourSegmentStartedAt, since, paidThrough(shift, at));
     }
     return total;
   }
@@ -664,7 +762,7 @@ export class EarnEngine {
     for (const shift of this.shifts) {
       if (!shift.clockedIn || !shift.hourSegmentStartedAt) continue;
       const start = Math.max(shift.hourSegmentStartedAt, since);
-      const ms = Math.min(Math.max(0, at - start), this.config.hourDurationMs);
+      const ms = Math.min(Math.max(0, paidThrough(shift, at) - start), this.config.hourDurationMs);
       if (ms > 0) rows.push({ personId: shift.personId, name: shift.name, ms });
     }
     return rows;
@@ -714,6 +812,11 @@ export class EarnEngine {
   private touch() {
     if (!this.silent) this.onChange?.();
   }
+}
+
+function paidThrough(shift: PersonShift, t: number): number {
+  if (shift.holdAt == null) return t;
+  return Math.min(t, shift.holdAt);
 }
 
 function signedLabel(cents: number): string {
