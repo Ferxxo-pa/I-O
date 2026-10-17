@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fightViewSchema } from "./fight";
 import { opsViewSchema } from "./ops";
+import { presenceViewSchema } from "./presence";
 
 /**
  * I/O — Input vs Output.
@@ -87,6 +88,8 @@ export const personShiftSchema = z.object({
   hourSegmentStartedAt: z.number().nullable(),
   outputCents: z.number().int().default(0),
   timecardId: z.string().nullable().default(null),
+  /** Accrual stops at this time while a short trip is still undecided. */
+  holdAt: z.number().nullable().default(null),
 });
 export type PersonShift = z.infer<typeof personShiftSchema>;
 
@@ -114,6 +117,8 @@ export const appStateSchema = z.object({
   fight: fightViewSchema,
   /** Levels and who is clocked in. The weekly bar lives on fight.week. */
   ops: opsViewSchema,
+  /** Dots, day streak, and presence week. All three read the punch log. */
+  presence: presenceViewSchema,
 });
 export type AppState = z.infer<typeof appStateSchema>;
 

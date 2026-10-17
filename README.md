@@ -49,6 +49,10 @@ Subscribe Square webhooks to `POST /api/square/webhook` for `invoice.published`,
 
 Square does not publish a customer-messages API. Points follow invoices you send, which is the outbound message Square records.
 
+## Presence
+
+Phones punch arrive and leave at the shop. The day, the green and gray dots, the day streak, and the week under the flame all read that same punch log. Square can mirror accepted punches and stays the source of truth for hours. See `docs/presence-clock.md`.
+
 ## Go live
 
 `GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level and closed day is stored on that pair. This build is still one shop on one computer. There is no second login.

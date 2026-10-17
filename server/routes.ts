@@ -12,6 +12,7 @@ import { healthReport } from "./ready";
 import { squareConfigured } from "./square/client";
 import { timecardFromWebhook } from "./square/labor";
 import { signaturesMatch, squareSignature } from "./square/signature";
+import { mountPresenceRoutes } from "./presence/routes";
 import { applySquareWebhook, squarePayRoster, startSquareSync } from "./square/sync";
 
 function ownerKeyFrom(req: Request): string | null {
@@ -306,6 +307,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const result = applySquareWebhook(req.body);
     res.status(200).json({ ok: true, ...result });
   });
+
+  mountPresenceRoutes(app);
 
   app.use("/api", (_req, res) => {
     res.status(404).json({ message: "Not found" });

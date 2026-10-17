@@ -24,6 +24,7 @@ import {
   type WeekPreset,
   type WeekView,
 } from "@shared/week";
+import type { PresenceView } from "@shared/presence";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
@@ -256,6 +257,21 @@ function UpgradeBar({
   );
 }
 
+function PresenceWeek({ presence }: { presence: PresenceView }) {
+  return (
+    <span className="presence-menu-week" aria-label="Week from the punch record">
+      <i style={{ width: `${Math.round(presence.week.filledPct * 100)}%` }} />
+      <span className="presence-menu-days">
+        {presence.week.days.map((day) => (
+          <em key={day.date} className={day.worked ? "worked" : ""}>
+            {day.label}
+          </em>
+        ))}
+      </span>
+    </span>
+  );
+}
+
 function StreakRow({ days }: { days: number }) {
   const mark = streakMark(days);
   return (
@@ -275,6 +291,7 @@ function GameMenu({
   ready,
   youName,
   streakDays,
+  presence,
   onClock,
   onSettings,
 }: {
@@ -285,6 +302,7 @@ function GameMenu({
   ready: boolean;
   youName: string | null;
   streakDays: number;
+  presence: PresenceView | null;
   onClock: () => void;
   onSettings: () => void;
 }) {
@@ -303,6 +321,7 @@ function GameMenu({
       <div className="level-stack">
         <UpgradeBar level={step.level} next={step.next} progress={step.pct} calm={calm} />
         <StreakRow days={streakDays} />
+        {presence && <PresenceWeek presence={presence} />}
       </div>
       <div className="tool-row">
         <button
@@ -486,11 +505,13 @@ export default function Hud() {
   const live = demo ? demo.clockedIn : (state?.session.clockedIn ?? false);
   const week = fight?.week ?? null;
   const workedOverride = demo ? readWorked() : null;
-  const streakDays =
-    workedOverride ??
-    (fight
-      ? shownWorkedDays(fight.workedDays, fight.todayWorked, live, isOpenKey(fight.date, fight.settings.openWeekdays))
-      : 0);
+  const presence = demo ? null : (state?.presence ?? null);
+  const streakDays = demo
+    ? (workedOverride ??
+      (fight
+        ? shownWorkedDays(fight.workedDays, fight.todayWorked, live, isOpenKey(fight.date, fight.settings.openWeekdays))
+        : 0))
+    : (presence?.streakDays ?? 0);
   const won = Boolean(week?.covered && live);
   const barPct = week ? Math.min(100, week.barPct * 100) : 0;
   const headline = week ? weekLine(week, copyVariant) : "";
@@ -670,6 +691,13 @@ export default function Hud() {
           onDone={dismissTick}
           hold={Boolean(demo)}
         />
+        {presence && presence.dots.length > 0 && (
+          <div className="presence-pips" aria-label="Who is in">
+            {presence.dots.map((dot) => (
+              <i key={dot.personId} className={dot.present ? "on" : "off"} title={`${dot.name} · ${dot.label}`} />
+            ))}
+          </div>
+        )}
 
         {menu && !settings && week ? (
           <MenuTop
@@ -800,6 +828,7 @@ export default function Hud() {
                   ready={Boolean(state) || Boolean(demo)}
                   youName={youName}
                   streakDays={streakDays}
+                  presence={presence}
                   onClock={toggle}
                   onSettings={() => {
                     if (!demo && !guard("settings")) return;
