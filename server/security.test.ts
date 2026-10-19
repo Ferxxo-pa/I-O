@@ -5,15 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express, { type Request } from "express";
 import { shopDateStart } from "@shared/presence.ts";
-import {
-  deviceKey,
-  deviceSealMaterial,
-  generateSealKey,
-  mailboxId,
-  openRelayBox,
-  sealRelayBox,
-  type RelayPayload,
-} from "@shared/relayBox.ts";
+import { deviceKey, mailboxId, parseRelayPayload, type RelayPayload } from "@shared/relayBox.ts";
 import { isShopSource, listenHost } from "./lan/bind.ts";
 import { handleRelay, resetRelayLimits, type RelayDb, type RelayEnv } from "../relay/src/index.ts";
 import { lockSecrets, mustRefuseRoot } from "./secrets.ts";
@@ -55,18 +47,22 @@ assert.equal(statSync(envFile).mode & 0o777, 0o600);
 assert.equal(statSync(secretDir).mode & 0o777, 0o700);
 assert.equal(statSync(join(secretDir, "io-state.json")).mode & 0o777, 0o600);
 
-const sealKey = generateSealKey();
 const sampleToken = "io_security_phone_token";
 const sampleKey = await deviceKey(sampleToken);
-const sampleMaterial = await deviceSealMaterial(sealKey, sampleKey);
 const samplePayload: RelayPayload = { event: "arrive", trigger: "wifi", ts: 1_700_000_000_000, eventId: "security-1" };
-const sampleBox = await sealRelayBox(sampleMaterial, sampleKey, samplePayload);
-assert.equal(await openRelayBox(sealKey, sampleKey, sampleBox.envelope), null);
-const otherMaterial = await deviceSealMaterial(sealKey, "a".repeat(64));
-assert.equal(await openRelayBox(otherMaterial, sampleKey, sampleBox.envelope), null);
-assert.deepEqual(await openRelayBox(sampleMaterial, sampleKey, sampleBox.envelope), samplePayload);
+assert.deepEqual(parseRelayPayload(samplePayload), samplePayload);
+assert.equal(parseRelayPayload({ event: "leave", trigger: "geo", ts: 1, eventId: "short" }), null);
 
-type BoxRow = { id: string; device_key: string; envelope: string; received_at: number; expires_at: number };
+type BoxRow = {
+  id: string;
+  device_key: string;
+  event: string;
+  trigger: string;
+  ts: number;
+  event_id: string;
+  received_at: number;
+  expires_at: number;
+};
 function memoryDb(): RelayDb & { rows: BoxRow[] } {
   const rows: BoxRow[] = [];
   return {
@@ -77,14 +73,25 @@ function memoryDb(): RelayDb & { rows: BoxRow[] } {
         bind(...args: unknown[]) {
           return {
             async run() {
-              if (text.startsWith("INSERT")) {
-                const [id, device_key, envelope, received_at, expires_at] = args as [string, string, string, number, number];
-                if (!rows.some((row) => row.id === id)) rows.push({ id, device_key, envelope, received_at, expires_at });
+              if (text.startsWith("INSERT") && text.includes("boxes")) {
+                const [id, device_key, event, trigger, ts, event_id, received_at, expires_at] = args as [
+                  string,
+                  string,
+                  string,
+                  string,
+                  number,
+                  string,
+                  number,
+                  number,
+                ];
+                if (!rows.some((row) => row.id === id)) {
+                  rows.push({ id, device_key, event, trigger, ts, event_id, received_at, expires_at });
+                }
               }
               return { success: true };
             },
             async all<T>() {
-              return { results: rows as T[] };
+              return { results: [] as T[] };
             },
           };
         },
@@ -96,6 +103,17 @@ function memoryDb(): RelayDb & { rows: BoxRow[] } {
 const workerDb = memoryDb();
 const workerEnv: RelayEnv = { DB: workerDb, RELAY_SHOP_SECRET: "shop-secret-test" };
 resetRelayLimits();
+const named = await handleRelay(
+  new Request("https://relay.example/drop", {
+    method: "POST",
+    headers: { authorization: `Bearer ${sampleToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ ...samplePayload, given_name: "Ada" }),
+  }),
+  workerEnv,
+  1_000,
+);
+assert.equal(named.status, 400);
+assert.equal(workerDb.rows.length, 0);
 const plainDrop = await handleRelay(
   new Request("https://relay.example/drop", {
     method: "POST",
@@ -105,23 +123,12 @@ const plainDrop = await handleRelay(
   workerEnv,
   1_000,
 );
-assert.equal(plainDrop.status, 400);
-assert.equal(workerDb.rows.length, 0);
-const sealedDrop = await handleRelay(
-  new Request("https://relay.example/drop", {
-    method: "POST",
-    headers: { authorization: `Bearer ${sampleToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ box: sampleBox.box, sig: sampleBox.sig }),
-  }),
-  workerEnv,
-  1_000,
-);
-assert.equal(sealedDrop.status, 200);
+assert.equal(plainDrop.status, 200);
 assert.equal(workerDb.rows.length, 1);
 assert.equal(JSON.stringify(workerDb.rows).includes(sampleToken), false);
-assert.equal(JSON.stringify(workerDb.rows).includes(sealKey), false);
-assert.equal(JSON.stringify(workerDb.rows).includes('"event"'), false);
-assert.equal(workerDb.rows[0].id, await mailboxId(sampleKey, sampleBox.box));
+assert.equal(JSON.stringify(workerDb.rows).includes("Ada"), false);
+assert.equal(workerDb.rows[0].event, "arrive");
+assert.equal(workerDb.rows[0].id, await mailboxId(sampleKey, samplePayload.eventId));
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "io-security-"));
 delete process.env.SQUARE_ACCESS_TOKEN;
@@ -141,9 +148,17 @@ process.env.PRESENCE_PHONE_MAX_AGE_MS = "600000";
 process.env.LAN_BASE_URL = "http://io.local:5000";
 process.env.RELAY_POLL_MS = "3600000";
 process.env.RELAY_SHOP_SECRET = "shop-secret-test";
-process.env.RELAY_SEAL_KEY = sealKey;
 
-type MailBox = { id: string; deviceKey: string; envelope: string; receivedAt: number; expiresAt: number };
+type MailBox = {
+  id: string;
+  deviceKey: string;
+  event: string;
+  trigger: string;
+  ts: number;
+  eventId: string;
+  receivedAt: number;
+  expiresAt: number;
+};
 const boxes: MailBox[] = [];
 const shopSecret = process.env.RELAY_SHOP_SECRET;
 const mailbox = createServer(async (req, res) => {
@@ -163,9 +178,13 @@ const mailbox = createServer(async (req, res) => {
       messages: live.map((box) => ({
         id: box.id,
         deviceKey: box.deviceKey,
-        envelope: box.envelope,
+        event: box.event,
+        trigger: box.trigger,
+        ts: box.ts,
+        eventId: box.eventId,
         receivedAt: box.receivedAt,
       })),
+      hooks: [],
     }));
     return;
   }
@@ -214,16 +233,18 @@ async function call(path: string, init?: RequestInit) {
   return { status: res.status, body, text };
 }
 
-async function queue(token: string, payload: RelayPayload, envelope = "") {
+async function queue(token: string, payload: RelayPayload) {
+  const parsed = parseRelayPayload(payload);
+  if (!parsed) throw new Error("bad payload");
   const key = await deviceKey(token);
-  const material = await deviceSealMaterial(sealKey, key);
-  const made = envelope ? null : await sealRelayBox(material, key, payload);
-  const stored = envelope || made!.envelope;
   const receivedAt = Date.now();
   boxes.push({
-    id: await mailboxId(key, made?.box ?? stored),
+    id: await mailboxId(key, parsed.eventId),
     deviceKey: key,
-    envelope: stored,
+    event: parsed.event,
+    trigger: parsed.trigger,
+    ts: parsed.ts,
+    eventId: parsed.eventId,
     receivedAt,
     expiresAt: receivedAt + 72 * 60 * 60 * 1000,
   });
@@ -347,20 +368,25 @@ try {
     assert.equal(openedInvite.status, 200);
     const page = await fetch(`${base}${new URL(setup.body.inviteUrl as string).pathname}`);
     const html = await page.text();
-    assert.equal(html.includes(openedInvite.body.deviceSeal as string), false);
+    assert.equal(html.includes("cannot seal"), false);
     assert.equal(html.includes(openedInvite.body.token as string), false);
     return {
       token: openedInvite.body.token as string,
       deviceId: setup.body.deviceId as string,
-      deviceSeal: openedInvite.body.deviceSeal as string,
     };
   }
 
-  async function postPhone(token: string, event: "arrive" | "leave", ts: number, eventId: string) {
+  async function postPhone(
+    token: string,
+    event: "arrive" | "leave" | "tap",
+    ts: number,
+    eventId: string,
+    trigger: "geo" | "wifi" | "nfc" = "wifi",
+  ) {
     return call("/api/presence/phone", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ event, trigger: "wifi", ts, eventId }),
+      body: JSON.stringify({ event, trigger, ts, eventId }),
     });
   }
 
@@ -387,19 +413,26 @@ try {
   setPreviewNow(arriveTs);
   const benArrive = await postPhone(ben.token, "arrive", arriveTs, "ben-arrive-sec");
   assert.equal(benArrive.body.applied, "arrive");
-  const benMaterial = await deviceSealMaterial(sealKey, await deviceKey(ben.token));
-  const forged = await sealRelayBox(benMaterial, await deviceKey(ben.token), {
-    event: "leave",
+  boxes.push({
+    id: "b".repeat(64),
+    deviceKey: await deviceKey(ben.token),
+    event: "nope",
     trigger: "geo",
     ts: leaveTs,
     eventId: "ben-forged-leave",
+    receivedAt: Date.now(),
+    expiresAt: Date.now() + 72 * 60 * 60 * 1000,
   });
-  const flipped = `${forged.envelope.slice(0, -2)}${forged.envelope.endsWith("A") ? "B" : "A"}`;
-  await queue(ben.token, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "ben-forged-leave" }, flipped);
   setPreviewNow(at(11));
   const rejected = await pollRelayOnce();
   assert.equal(rejected.rejected, 1);
   assert.equal(rejected.applied, 0);
+  assert.equal(earnEngine.shiftInfo(ids.Ben)?.clockedIn, true);
+  setPreviewNow(at(9, 20));
+  const benGeo = await postPhone(ben.token, "arrive", at(9, 20), "ben-geo-newer", "geo");
+  assert.equal(benGeo.body.applied, "seen");
+  const contradicted = await postPhone(ben.token, "leave", at(9, 10), "ben-wifi-old", "wifi");
+  assert.equal(contradicted.body.reason, "contradicted");
   assert.equal(earnEngine.shiftInfo(ids.Ben)?.clockedIn, true);
 
   const chi = await enroll(ids.Chi);
@@ -413,6 +446,20 @@ try {
   assert.equal(ignored.rejected, 1);
   assert.equal(ignored.applied, 0);
   assert.equal(earnEngine.shiftInfo(ids.Chi)?.clockedIn ?? false, false);
+
+  setPreviewNow(at(12));
+  const nfcIn = await postPhone(adaPhone.token, "tap", at(12), "ada-nfc-in", "nfc");
+  assert.equal(nfcIn.body.applied, "arrive");
+  assert.equal(earnEngine.shiftInfo(ada)?.source, "phone-nfc");
+  setPreviewNow(at(12, 10));
+  const nfcOut = await postPhone(adaPhone.token, "tap", at(12, 10), "ada-nfc-out", "nfc");
+  assert.equal(nfcOut.body.applied, "exit");
+  const notes = await call("/api/changelog", { headers: pin });
+  assert.equal(notes.status, 200);
+  assert.equal(notes.body.version, "0.2.0");
+  assert.equal(String(notes.body.notice).includes("cellular leave"), true);
+  const lockedNotes = await call("/api/changelog");
+  assert.equal(lockedNotes.status, 401);
 
   console.log("security ok");
 } finally {

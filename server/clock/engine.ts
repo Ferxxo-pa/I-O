@@ -78,11 +78,23 @@ export class EarnEngine {
   private squareBootstrapped = false;
   private rateSource: RateSource = "default";
   private onChange: (() => void) | null = null;
+  private viewers = new Set<() => void>();
   private silent = false;
   private presenceProvider: (viewerId: string | null) => PresenceView = () => emptyPresence();
 
   setBookListener(fn: () => void) {
     this.onChange = fn;
+  }
+
+  addChangeListener(fn: () => void): () => void {
+    this.viewers.add(fn);
+    return () => {
+      this.viewers.delete(fn);
+    };
+  }
+
+  notifyViewers() {
+    for (const fn of Array.from(this.viewers)) fn();
   }
 
   setPresenceProvider(fn: (viewerId: string | null) => PresenceView) {
@@ -336,7 +348,7 @@ export class EarnEngine {
   async clockInPerson(
     person: ClockPerson,
     at = now(),
-    source: "manual" | "phone-geo" | "phone-wifi" = "manual",
+    source: "manual" | "phone-geo" | "phone-wifi" | "phone-nfc" = "manual",
   ): Promise<AppState> {
     return withPersonLock(person.id, () => this.clockInNow(person, at, source));
   }
@@ -344,7 +356,7 @@ export class EarnEngine {
   private async clockInNow(
     person: ClockPerson,
     at = now(),
-    source: "manual" | "phone-geo" | "phone-wifi" = "manual",
+    source: "manual" | "phone-geo" | "phone-wifi" | "phone-nfc" = "manual",
   ): Promise<AppState> {
     if (!person.id || !person.name || !Number.isInteger(person.hourlyCents) || person.hourlyCents <= 0) {
       throw new Error("That person is not on this business");
@@ -899,7 +911,9 @@ export class EarnEngine {
   }
 
   private touch() {
-    if (!this.silent) this.onChange?.();
+    if (this.silent) return;
+    this.onChange?.();
+    this.notifyViewers();
   }
 }
 

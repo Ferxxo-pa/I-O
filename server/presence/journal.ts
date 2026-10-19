@@ -7,7 +7,7 @@ export type PhoneEvent = {
   teamId: string;
   deviceId: string;
   event: "arrive" | "leave";
-  trigger: "geo" | "wifi";
+  trigger: "geo" | "wifi" | "nfc";
   at: number;
   receivedAt: number;
 };
@@ -15,6 +15,7 @@ export type PhoneEvent = {
 type DeviceFold = {
   geo: boolean;
   wifi: boolean;
+  nfc: boolean;
   streakStart: number | null;
   lastAt: number;
 };
@@ -34,7 +35,7 @@ export function readPhoneEvents(file: string): PhoneEvent[] {
       const row = JSON.parse(line) as PhoneEvent;
       if (!row || typeof row.personId !== "string" || typeof row.deviceId !== "string") continue;
       if (row.event !== "arrive" && row.event !== "leave") continue;
-      if (row.trigger !== "geo" && row.trigger !== "wifi") continue;
+      if (row.trigger !== "geo" && row.trigger !== "wifi" && row.trigger !== "nfc") continue;
       if (!Number.isFinite(row.at)) continue;
       rows.push({
         personId: row.personId,
@@ -68,18 +69,19 @@ export function foldPhoneEvents(events: readonly PhoneEvent[]): PhoneFold {
   const arrives: number[] = [];
   let personOpen = false;
   for (const event of sorted) {
-    const device = devices.get(event.deviceId) ?? { geo: false, wifi: false, streakStart: null, lastAt: event.at };
+    const device = devices.get(event.deviceId) ?? { geo: false, wifi: false, nfc: false, streakStart: null, lastAt: event.at };
     if (event.event === "arrive") device[event.trigger] = true;
-    else if (event.trigger === "geo") {
+    else if (event.trigger === "geo" || event.trigger === "nfc") {
       device.geo = false;
       device.wifi = false;
+      device.nfc = false;
     } else device.wifi = false;
-    const on = device.geo || device.wifi;
+    const on = device.geo || device.wifi || device.nfc;
     if (on && device.streakStart == null) device.streakStart = event.at;
     if (!on) device.streakStart = null;
     device.lastAt = event.at;
     devices.set(event.deviceId, device);
-    const any = Array.from(devices.values()).some((row) => row.geo || row.wifi);
+    const any = Array.from(devices.values()).some((row) => row.geo || row.wifi || row.nfc);
     if (any && !personOpen) {
       arrives.push(event.at);
       personOpen = true;
@@ -90,8 +92,8 @@ export function foldPhoneEvents(events: readonly PhoneEvent[]): PhoneFold {
   let watch: WatchPerson | null = null;
   const summary = new Map<string, { held: boolean; streakStart: number | null; lastAt: number }>();
   for (const [deviceId, device] of Array.from(devices)) {
-    summary.set(deviceId, { held: device.geo || device.wifi, streakStart: device.streakStart, lastAt: device.lastAt });
-    for (const trigger of ["geo", "wifi"] as const) {
+    summary.set(deviceId, { held: device.geo || device.wifi || device.nfc, streakStart: device.streakStart, lastAt: device.lastAt });
+    for (const trigger of ["geo", "wifi", "nfc"] as const) {
       watch = noteSight(watch, {
         source: "phone",
         sourceId: `${deviceId}:${trigger}`,

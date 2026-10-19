@@ -93,7 +93,7 @@ export const personShiftSchema = z.object({
   /** Presence owns this shift and rebuilds it from the punch log. */
   managedBy: z.enum(["presence"]).nullable().default(null),
   /** What opened this shift. Null on shifts saved before the tag existed. */
-  source: z.enum(["manual", "phone-geo", "phone-wifi"]).nullable().default(null),
+  source: z.enum(["manual", "phone-geo", "phone-wifi", "phone-nfc"]).nullable().default(null),
   /** Set when the phone clock closes itself and Ezven should look. */
   review: z.enum(["auto_closed", "stationary"]).nullable().default(null),
 });

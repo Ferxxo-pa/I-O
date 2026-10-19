@@ -1,7 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { deviceKey, deviceSealMaterial } from "@shared/relayBox";
 import { getCompany } from "../company";
 import { ioMode, lanPhoneUrl, relayDropUrl } from "../mode";
 import { fenceFromEnv } from "./geo";
@@ -32,7 +31,6 @@ export type InviteOpen = {
   radius: number;
   iphone: string;
   macro: { aiGenerated: number; macros: Macro[] };
-  deviceSeal?: string;
 };
 
 type Macro = {
@@ -133,27 +131,30 @@ export function iphoneAutomationText(input: {
   lng: number;
   radius: number;
   relayUrl?: string;
-  deviceSeal?: string;
 }): string {
   const header = `Authorization: Bearer ${input.token}`;
   const tagged = Boolean(input.relayUrl);
-  const body = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
+  const body = (event: "arrive" | "leave" | "tap", trigger: "geo" | "wifi" | "nfc") =>
     tagged
       ? `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`
       : `{"event":"${event}","trigger":"${trigger}"}`;
-  const call = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
-    [`POST ${input.url}`, header, body(event, trigger)].join("\n");
+  const one = (url: string, event: "arrive" | "leave" | "tap", trigger: "geo" | "wifi" | "nfc") =>
+    [`POST ${url}`, header, body(event, trigger)].join("\n");
+  const call = (event: "arrive" | "leave" | "tap", trigger: "geo" | "wifi" | "nfc") => {
+    if (!input.relayUrl) return one(input.url, event, trigger);
+    if (event === "leave") return one(input.relayUrl, event, trigger);
+    return [one(input.url, event, trigger), one(input.relayUrl, event, trigger)].join("\n");
+  };
   const lead = tagged
     ? [
         "Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.",
-        "These posts go to the shop computer on Premiere.",
-        "Shortcuts and MacroDroid cannot seal a cellular leave. Do not POST the event JSON to the mailbox.",
-        input.deviceSeal ? `This phone's seal key, shown once: ${input.deviceSeal}` : "The shop seal key is not configured yet.",
-        input.relayUrl ? `Mailbox POST ${input.relayUrl}` : "",
-        'A client that can seal sends only {"box":"...","sig":"..."} with this phone\'s seal key. The mailbox never sees that key.',
+        "An arrive posts to the shop computer and to the mailbox.",
+        "A leave posts only to the mailbox, so a cellular leave still clocks you out.",
+        "NFC is a backup. Personal Automation, NFC, Get Contents of URL. Post the NFC body below.",
         "",
-      ].filter((line) => line !== "")
+      ]
     : [];
+  const nfc = tagged ? ["", "NFC tag", call("tap", "nfc")] : [];
   return [
     `Shop geofence — ${input.address}`,
     `Center ${input.lat}, ${input.lng}. Radius ${input.radius} m.`,
@@ -172,6 +173,7 @@ export function iphoneAutomationText(input: {
     "",
     `Left ${input.ssid}`,
     call("leave", "wifi"),
+    ...nfc,
   ].join("\n");
 }
 
@@ -192,8 +194,10 @@ function httpAction(url: string, token: string, event: "arrive" | "leave", trigg
   };
 }
 
-function actionUrls(url: string, _relayUrl: string | undefined, _event: "arrive" | "leave"): string[] {
-  return [url];
+function actionUrls(url: string, relayUrl: string | undefined, event: "arrive" | "leave"): string[] {
+  if (!relayUrl) return [url];
+  if (event === "leave") return [relayUrl];
+  return [url, relayUrl];
 }
 
 export function macroFile(input: {
@@ -287,7 +291,7 @@ export function inviteByCode(code: string): { name: string; opened: boolean } | 
   return { name: row.name, opened: row.openedAt != null };
 }
 
-export async function openInvite(code: string, now: number): Promise<InviteOpen | "used" | "missing"> {
+export function openInvite(code: string, now: number): InviteOpen | "used" | "missing" {
   const invites = readInvites();
   const row = invites.find((invite) => invite.code === code);
   if (!row) return "missing";
@@ -300,15 +304,6 @@ export async function openInvite(code: string, now: number): Promise<InviteOpen 
   const ssid = shopWifiSsid();
   const local = ioMode() === "local-relay";
   const relay = local ? relayDropUrl() : "";
-  const master = process.env.RELAY_SEAL_KEY?.trim() ?? "";
-  let deviceSeal = "";
-  if (local && relay && master) {
-    try {
-      deviceSeal = await deviceSealMaterial(master, await deviceKey(token));
-    } catch {
-      deviceSeal = "";
-    }
-  }
   const fields = {
     url: local ? lanPhoneUrl() : row.phoneUrl,
     token,
@@ -318,13 +313,11 @@ export async function openInvite(code: string, now: number): Promise<InviteOpen 
     lng: fence.lng,
     radius: fence.radius,
     relayUrl: relay || undefined,
-    deviceSeal: deviceSeal || undefined,
   };
   return {
     ...fields,
     name: row.name,
     iphone: iphoneAutomationText(fields),
     macro: macroFile(fields),
-    ...(deviceSeal ? { deviceSeal } : {}),
   };
 }

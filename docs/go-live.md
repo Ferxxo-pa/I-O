@@ -1,6 +1,6 @@
 # Go live
 
-One shop computer runs I/O on the shop Wi-Fi. The other computers open that address and show the strip. Phones on Premiere post arrive straight to that computer. Every arrive and every leave also goes to a free Cloudflare mailbox. A leave from cellular still lands, because the phone can reach the mailbox when it cannot reach the shop. The shop computer polls the mailbox outbound, about every 5 seconds. Nothing on the internet calls in.
+One shop computer runs I/O on the shop Wi-Fi. The other computers open that address and show the strip. Phones on Premiere post arrive to that computer and to a free Cloudflare mailbox. A leave posts to the mailbox, so a cellular leave still clocks that person out. The shop computer polls the mailbox outbound, about every 5 seconds, and checks the event against the person's other signals. Nothing on the internet calls in. The per-person checklist is `docs/tester-setup.md`. Updates are `docs/updates.md`.
 
 This mode is `IO_MODE=local-relay`. It is the default. Square stays outbound polling. Webhooks stay off. Do not open a port on the router. Do not turn on Tailscale Funnel or a Cloudflare Tunnel for this path. Do not host this on Vercel. The clock is a long-running Node process, and `DATA_DIR` has to be a real disk.
 
@@ -14,8 +14,7 @@ You create these once. The repo does not contain them.
 2. A worker named `io-relay`, from `relay/`, with `npx wrangler deploy`.
 3. A D1 database named `io-relay` (`npx wrangler d1 create io-relay`). Paste the printed `database_id` into `relay/wrangler.toml`.
 4. A long random `RELAY_SHOP_SECRET`. The same value goes on the worker and in the shop `.env`. Phones never see it.
-5. A shop seal key from `npm run relay:keys`. It is `RELAY_SEAL_KEY` in the shop `.env` only. The mailbox never receives it. Each phone gets its own derived key once, on `/join/:code`. The mailbox stores ciphertext and a token hash. It does not keep names, wages, or Square data.
-6. The shop `.env`: `IO_MODE=local-relay`, `LAN_BASE_URL`, `RELAY_PUBLIC_URL`, `RELAY_SHOP_SECRET`, `RELAY_SEAL_KEY`, `DATA_DIR`, `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `PRESENCE_DEVICE_HASH_PEPPER`. Leave `HOST` unset so the process binds the shop LAN address.
+5. The shop `.env`: `IO_MODE=local-relay`, `LAN_BASE_URL`, `RELAY_PUBLIC_URL`, `RELAY_SHOP_SECRET`, `DATA_DIR`, `BACKUP_DIR`, `BACKUP_ENCRYPTION_KEY`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `PRESENCE_DEVICE_HASH_PEPPER`. Leave `HOST` unset so the process binds the shop LAN address. The Square token stays in this file. The mailbox stores a token hash and in/out times. It does not keep names, wages, or the Square token.
 7. The shop computer set to start I/O on boot, sleep off.
 8. Each phone enrolled from `/join/:code` while that phone is on Premiere.
 
@@ -32,7 +31,7 @@ You create these once. The repo does not contain them.
    npm run relay:keys
    ```
 
-   `relay:keys` prints `RELAY_SEAL_KEY`. Put that in `.env`. Do not commit `.env`. Do not put that key on Cloudflare, and do not log the command output. Generate `BACKUP_ENCRYPTION_KEY` the same way (`node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`). That key stays in `.env`. It does not go on the USB drive.
+   `relay:keys` prints `RELAY_SHOP_SECRET`. Put that in `.env` and in the worker secret. Do not commit `.env`. Do not log the command output. Generate `BACKUP_ENCRYPTION_KEY` with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"`. That key stays in `.env`. It does not go on the USB drive.
 3. Deploy the mailbox from this repo, on any computer, after `npx wrangler login` with the free Cloudflare account:
 
    ```sh
@@ -56,7 +55,6 @@ You create these once. The repo does not contain them.
    - `LAN_BASE_URL=http://io.local:5000` or `http://192.168.x.x:5000` if you reserve a fixed address on the router
    - `RELAY_PUBLIC_URL` the worker origin, no path
    - `RELAY_SHOP_SECRET` the same string you gave the worker
-   - `RELAY_SEAL_KEY` from `relay:keys`
    - `DATA_DIR` on this computer's disk (`/var/lib/io` or `C:\io-data`)
    - `BACKUP_DIR` a different disk or a USB drive that stays plugged in
    - `BACKUP_ENCRYPTION_KEY` 32 random bytes, base64. Not on the USB drive.
@@ -76,7 +74,7 @@ You create these once. The repo does not contain them.
 
    Then schedule it nightly. The script encrypts every file in `DATA_DIR` into `BACKUP_DIR/io-YYYY-MM-DD/*.enc`, and into `BACKUP_CLOUD_DIR` when that is set. It keeps 14 days. It does not copy `.env`. Ready stays green for 36 hours (`BACKUP_MAX_AGE_MS`).
 9. On each employee computer, open `http://io.local:5000` (or the fixed LAN IP). They do not install Node and they do not get `.env`. In Chrome or Edge, install I/O from the address bar. The window is the strip. They pick their own name once. Clock in still asks for the shop PIN. A bookmark works if the browser will not install. A native app is not required. `VITE_IO_SERVER_URL` is only for a strip built on another host. Leave it unset when the shop computer serves the strip.
-10. Enroll each phone while it is joined to Premiere. From the owner key, record consent, then `POST /api/presence/phone/setup`. Send that person the `inviteUrl`. They open it on the phone. The page is three steps. Test it does not clock them in. On Premiere, arrive and leave post to the shop computer. The one-time note includes that phone's seal key. Shortcuts and MacroDroid cannot seal a cellular leave, so a leave off the Wi-Fi waits for a tap or the 7 PM close. Premiere and the shop geofence (403 E Ben White Blvd) are already filled in. The Shortcuts and MacroDroid note is in `docs/presence-phone-automations.md`. The threat model is in `docs/security.md`.
+10. Enroll each phone while it is joined to Premiere. From the owner key, record consent, then `POST /api/presence/phone/setup`. Send that person the `inviteUrl`. They open it on the phone. The page is three steps. Test it does not clock them in. An arrive posts to the shop computer and to the mailbox. A leave posts to the mailbox, including from cellular. An NFC tag tap is the backup. The per-person list is `docs/tester-setup.md`. The Shortcuts and MacroDroid note is in `docs/presence-phone-automations.md`. The threat model is in `docs/security.md`.
 
 ## Start on boot
 
@@ -86,10 +84,11 @@ You create these once. The repo does not contain them.
 sudo useradd --system --create-home --home-dir /var/lib/io io
 sudo mkdir -p /var/lib/io
 sudo chown io:io /var/lib/io
-sudo cp deploy/io.service deploy/io-backup.service deploy/io-backup.timer /etc/systemd/system/
+sudo cp deploy/io.service deploy/io-backup.service deploy/io-backup.timer deploy/io-update.service deploy/io-update.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now io
 sudo systemctl enable --now io-backup.timer
+sudo systemctl enable --now io-update.timer
 ```
 
 `deploy/io.service` runs as the `io` user, not root. Leave `HOST` unset. The process binds the shop LAN address. The timer runs the backup at 02:15 and, if the computer was off then, runs it on the next boot. After you write `.env`, `sudo chown io:io /opt/io/.env && sudo chmod 0600 /opt/io/.env`. The service cannot change `/opt` itself.
@@ -144,11 +143,11 @@ If you would rather have a Windows service, install [nssm](https://nssm.cc/) and
 
 The strip keeps the last state it loaded. A refresh that cannot reach the shop computer does not clear those numbers.
 
-On Premiere, arrive and leave post to the shop computer. The same `eventId` is accepted once inside 72 hours, so a sealed mailbox copy of that firing does not clock twice. Capture the current time in milliseconds once per firing and use it as `ts` and `eventId`.
+On Premiere, an arrive posts to the shop computer and to the mailbox. A leave posts to the mailbox. The same `eventId` is accepted once inside 72 hours, so the two copies do not clock twice. Capture the current time in milliseconds once per firing and use it as `ts` and `eventId`.
 
-Shortcuts and MacroDroid cannot seal a body. A cellular leave from those apps is not sent to the mailbox. The person taps the strip, or the day closes at 7 PM Chicago. A client that can seal may POST `{"box","sig"}` to the mailbox. The shop computer polls that mailbox.
+Shortcuts and MacroDroid post that JSON with the bearer token. A cellular leave reaches the mailbox and the shop clocks that person out after it checks the other signals. An NFC tag tap is the backup. The person can also tap the strip. The day still closes at 7 PM Chicago when a leave never arrives.
 
-The mailbox keeps a sealed message for 72 hours. If the mailbox is down, the phone's direct post still hits the shop computer when the phone is on Premiere. If the shop computer is off, a sealed message waits in the mailbox. When it is back, a late leave clocks out at the original `ts`, not at the time the computer woke up.
+The mailbox keeps a message for 72 hours, then deletes it when the shop acks. If the mailbox is down, the phone's direct arrive still hits the shop computer when the phone is on Premiere. If the shop computer is off, the mailbox holds the leave. When it is back, a late leave clocks out at the original `ts`, not at the time the computer woke up.
 
 A direct post to the shop computer, with no mailbox copy, is still only accepted for 10 minutes (`PRESENCE_PHONE_MAX_AGE_MS`). The mailbox path is the one that covers a computer that was off, up to 72 hours. After that, the person taps the strip. That tap is the normal clock-in.
 
@@ -162,11 +161,11 @@ The full threat model, what the code enforces, and the owner checklist are in `d
 
 - No inbound ports. Do not forward 5000, 80, or 443. The process binds the shop LAN address. A connection whose source is not loopback or a private address is refused. A router port-forward is still something you must not turn on.
 - The mailbox is outbound only. The shop computer calls it. It does not call the shop.
-- Phones seal mailbox messages with a per-phone key derived from `RELAY_SEAL_KEY`. The worker stores `v2` ciphertext and a token hash. It rejects a plain event body. The shop key never goes to Cloudflare.
+- Phones post `{ event, trigger, ts, eventId }` with the bearer token. The worker stores the token hash and those fields. It does not store the raw token, names, wages, or the Square access token.
 - Phone posts on the LAN use `Authorization: Bearer`. A token is one person, stored only as a hash. Revoke that token from the owner key when a phone is lost. The shop secret is a different value and is what `/pull` and `/ack` require.
 - local-relay and public mode both require the shop PIN or the owner key for the clock, the company, health, and the presence board. `GET /api/health?probe=1` returns only `{ "ok": true }`. The owner key gates company changes and phone enrollment. Phone routes use the bearer token.
 - The same `eventId` is accepted once for 72 hours. A direct post that is too old does not use up that id, so the mailbox copy can still apply.
-- `.env` is mode `0600` on Linux and macOS (`deploy/windows/lock-secrets.cmd` on Windows). It is not committed. The Square token and the seal key are only in that file, on this computer. Production refuses to start as root. The systemd unit runs as `io`.
+- `.env` is mode `0600` on Linux and macOS (`deploy/windows/lock-secrets.cmd` on Windows). It is not committed. The Square token is only in that file, on this computer. Production refuses to start as root. The systemd unit runs as `io`.
 - The nightly copy is encrypted. The key stays in `.env`. Stealing the USB does not decrypt it. Stealing the whole computer does, because the key is on that disk. Turn on disk encryption.
 
 Open **+ → Ready** after setup. Backup shows the age. Shop LAN shows the host when the mailbox secrets are set. The other rows are the Square token, the webhook row (polled, off), the PIN, pay rates, rent, and each person having clocked in once.
@@ -193,9 +192,9 @@ Fly or Railway is the paid always-on path, about $5 a month, after the shop comp
 | | Shop LAN + mailbox | Spare computer + Tunnel or Funnel | Railway or Fly |
 | --- | --- | --- | --- |
 | Cost | $0. A free Cloudflare account for the mailbox. | $0. Funnel needs no domain. A tunnel uses a domain you already have. | About $5 a month. |
-| Who can connect | Shop Wi-Fi for the strip and for phone posts. A sealed cellular leave can use the mailbox. Shortcuts cannot seal one. | Anyone with the https address. | Anyone with the https address. |
+| Who can connect | Shop Wi-Fi for the strip and for phone posts. A cellular leave posts to the mailbox. | Anyone with the https address. | Anyone with the https address. |
 | Inbound ports | None. | None. The tunnel dials out. | The host's ports. |
-| Shop computer off | A sealed mailbox message waits 72 hours and applies at the original time. A Shortcuts post does not reach the mailbox. | The server is down until that computer is back. | The host keeps running. |
+| Shop computer off | A mailbox message waits 72 hours and applies at the original time. | The server is down until that computer is back. | The host keeps running. |
 
 ## MVP pilot
 

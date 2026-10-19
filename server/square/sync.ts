@@ -83,6 +83,14 @@ export function applySquareWebhook(body: unknown): { sale: boolean; points: bool
   return earnEngine.ingestSquareInvoice(snapshot);
 }
 
+export function kickSquareSync() {
+  if (!squareConfigured()) return;
+  void pollSquare().catch((err) => {
+    const message = err instanceof Error ? err.message : "sync failed";
+    log(message, "square");
+  });
+}
+
 async function pollSquare() {
   await syncWage();
   await syncInvoices();

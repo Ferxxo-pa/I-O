@@ -482,7 +482,7 @@ export async function replayPersonPhone(personId: string) {
   if (!latched || info?.clockedIn) return;
   const lastArrive = [...events].reverse().find((event) => event.event === "arrive");
   if (!lastArrive) return;
-  const source = lastArrive.trigger === "wifi" ? "phone-wifi" : "phone-geo";
+  const source = lastArrive.trigger === "wifi" ? "phone-wifi" : lastArrive.trigger === "nfc" ? "phone-nfc" : "phone-geo";
   await earnEngine.clockInPerson(
     { id: person.id, name: person.name, hourlyCents: person.hourlyCents },
     lastArrive.at,
@@ -909,6 +909,7 @@ export function subscribe(res: Response) {
 export function publish(event: { kind: string; personId: string; ts: number }) {
   const line = `data: ${JSON.stringify(event)}\n\n`;
   for (const res of Array.from(listeners)) res.write(line);
+  earnEngine.notifyViewers();
 }
 
 export function personById(id: string): RosterPerson | null {

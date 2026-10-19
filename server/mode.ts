@@ -1,4 +1,4 @@
-import { RELAY_TTL_MS, sealKeyBytes } from "@shared/relayBox";
+import { RELAY_TTL_MS } from "@shared/relayBox";
 
 export { RELAY_TTL_MS };
 
@@ -29,10 +29,9 @@ export function relayConfigured(): boolean {
   return relaySecrets() != null;
 }
 
-export function relaySecrets(): { url: string; secret: string; sealKey: string } | null {
+export function relaySecrets(): { url: string; secret: string } | null {
   const url = relayOrigin();
   const secret = process.env.RELAY_SHOP_SECRET?.trim() ?? "";
-  const sealKey = process.env.RELAY_SEAL_KEY?.trim() ?? "";
-  if (!url || !secret || !sealKeyBytes(sealKey)) return null;
-  return { url, secret, sealKey };
+  if (!url || !secret) return null;
+  return { url, secret };
 }

@@ -6,6 +6,7 @@ import { lanIPv4 } from "./lan/mdns";
 import { ioMode } from "./mode";
 import { flushState } from "./persist";
 import { lockSecrets, mustRefuseRoot } from "./secrets";
+import { startUpdateScheduler } from "./update/schedule";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
@@ -75,4 +76,5 @@ app.use((req, res, next) => {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+  startUpdateScheduler();
 })();

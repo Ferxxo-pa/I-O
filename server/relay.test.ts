@@ -6,15 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express, { type Request } from "express";
 import { shopDateStart } from "@shared/presence.ts";
-import {
-  deviceKey,
-  deviceSealMaterial,
-  generateSealKey,
-  mailboxId,
-  openRelayBox,
-  sealRelayBox,
-  type RelayPayload,
-} from "@shared/relayBox.ts";
+import { deviceKey, hookId, mailboxId, parseRelayPayload, thinSquareHook, type RelayPayload } from "@shared/relayBox.ts";
 import { hashDeviceToken } from "./presence/devices.ts";
 import { mdnsAnswer } from "./lan/mdns.ts";
 import { handleRelay, resetRelayLimits, type RelayDb, type RelayEnv } from "../relay/src/index.ts";
@@ -38,11 +30,18 @@ process.env.LAN_BASE_URL = "http://io.local:5000";
 process.env.RELAY_POLL_MS = "3600000";
 process.env.RELAY_SHOP_SECRET = "shop-secret-test";
 
-const sealKey = generateSealKey();
-process.env.RELAY_SEAL_KEY = sealKey;
 const shopSecret = process.env.RELAY_SHOP_SECRET;
 
-type Box = { id: string; deviceKey: string; envelope: string; receivedAt: number; expiresAt: number };
+type Box = {
+  id: string;
+  deviceKey: string;
+  event: string;
+  trigger: string;
+  ts: number;
+  eventId: string;
+  receivedAt: number;
+  expiresAt: number;
+};
 const boxes: Box[] = [];
 let pullDown = false;
 
@@ -69,9 +68,13 @@ const mailbox = createServer(async (req, res) => {
       messages: live.map((box) => ({
         id: box.id,
         deviceKey: box.deviceKey,
-        envelope: box.envelope,
+        event: box.event,
+        trigger: box.trigger,
+        ts: box.ts,
+        eventId: box.eventId,
         receivedAt: box.receivedAt,
       })),
+      hooks: [],
     }));
     return;
   }
@@ -120,12 +123,35 @@ async function call(path: string, init?: RequestInit) {
 const start = shopDateStart("2026-10-14");
 const at = (hours: number, minutes = 0) => start + (hours * 60 + minutes) * 60_000;
 
-function memoryDb(): RelayDb & { rows: Array<Record<string, unknown>> } {
-  const rows: Array<{ id: string; device_key: string; envelope: string; received_at: number; expires_at: number }> = [];
+type StoredBox = {
+  id: string;
+  device_key: string;
+  event: string;
+  trigger: string;
+  ts: number;
+  event_id: string;
+  received_at: number;
+  expires_at: number;
+};
+type StoredHook = {
+  id: string;
+  kind: string;
+  entity_id: string;
+  team_member_id: string;
+  ts: number;
+  received_at: number;
+  expires_at: number;
+};
+
+function memoryDb(): RelayDb & { rows: StoredBox[]; hooks: StoredHook[] } {
+  const rows: StoredBox[] = [];
+  const hooks: StoredHook[] = [];
   return {
     rows,
+    hooks,
     prepare(sql: string) {
       const text = sql.replace(/\s+/g, " ").trim();
+      const hookTable = text.includes("hooks");
       return {
         bind(...args: unknown[]) {
           return {
@@ -133,22 +159,53 @@ function memoryDb(): RelayDb & { rows: Array<Record<string, unknown>> } {
               if (text.startsWith("DELETE FROM boxes WHERE expires_at")) {
                 const cut = Number(args[0]);
                 for (let i = rows.length - 1; i >= 0; i--) if (rows[i].expires_at <= cut) rows.splice(i, 1);
+              } else if (text.startsWith("DELETE FROM hooks WHERE expires_at")) {
+                const cut = Number(args[0]);
+                for (let i = hooks.length - 1; i >= 0; i--) if (hooks[i].expires_at <= cut) hooks.splice(i, 1);
+              } else if (text.startsWith("INSERT") && hookTable) {
+                const [id, kind, entity_id, team_member_id, ts, received_at, expires_at] = args as [
+                  string,
+                  string,
+                  string,
+                  string,
+                  number,
+                  number,
+                  number,
+                ];
+                if (!hooks.some((row) => row.id === id)) {
+                  hooks.push({ id, kind, entity_id, team_member_id, ts, received_at, expires_at });
+                }
               } else if (text.startsWith("INSERT")) {
-                const [id, device_key, envelope, received_at, expires_at] = args as [string, string, string, number, number];
-                if (!rows.some((row) => row.id === id)) rows.push({ id, device_key, envelope, received_at, expires_at });
+                const [id, device_key, event, trigger, ts, event_id, received_at, expires_at] = args as [
+                  string,
+                  string,
+                  string,
+                  string,
+                  number,
+                  string,
+                  number,
+                  number,
+                ];
+                if (!rows.some((row) => row.id === id)) {
+                  rows.push({ id, device_key, event, trigger, ts, event_id, received_at, expires_at });
+                }
               } else if (text.startsWith("DELETE FROM boxes WHERE id")) {
                 const index = rows.findIndex((row) => row.id === String(args[0]));
                 if (index >= 0) rows.splice(index, 1);
+              } else if (text.startsWith("DELETE FROM hooks WHERE id")) {
+                const index = hooks.findIndex((row) => row.id === String(args[0]));
+                if (index >= 0) hooks.splice(index, 1);
               }
               return { success: true };
             },
             async all<T>() {
               if (!text.startsWith("SELECT")) return { results: [] as T[] };
               const now = Number(args[0]);
-              const results = rows
-                .filter((row) => row.expires_at > now)
-                .sort((a, b) => a.received_at - b.received_at)
-                .slice(0, 50);
+              if (hookTable) {
+                const results = hooks.filter((row) => row.expires_at > now).sort((a, b) => a.received_at - b.received_at).slice(0, 50);
+                return { results: results as T[] };
+              }
+              const results = rows.filter((row) => row.expires_at > now).sort((a, b) => a.received_at - b.received_at).slice(0, 50);
               return { results: results as T[] };
             },
           };
@@ -158,22 +215,35 @@ function memoryDb(): RelayDb & { rows: Array<Record<string, unknown>> } {
   };
 }
 
-async function queue(token: string, payload: RelayPayload, envelope = "") {
+async function queue(token: string, payload: RelayPayload) {
+  const parsed = parseRelayPayload(payload);
+  if (!parsed) throw new Error("bad payload");
   const key = await deviceKey(token);
-  const material = await deviceSealMaterial(sealKey, key);
-  const made = envelope ? null : await sealRelayBox(material, key, payload);
-  const stored = envelope || made!.envelope;
-  const box = made?.box ?? stored;
-  const id = await mailboxId(key, box);
   const receivedAt = Date.now();
   boxes.push({
-    id,
+    id: await mailboxId(key, parsed.eventId),
     deviceKey: key,
-    envelope: stored,
+    event: parsed.event,
+    trigger: parsed.trigger,
+    ts: parsed.ts,
+    eventId: parsed.eventId,
     receivedAt,
     expiresAt: receivedAt + 72 * 60 * 60 * 1000,
   });
-  return id;
+}
+
+function queueBad(tokenKey: string, eventId: string) {
+  const receivedAt = Date.now();
+  boxes.push({
+    id: eventId.padEnd(64, "a").slice(0, 64),
+    deviceKey: tokenKey,
+    event: "nope",
+    trigger: "geo",
+    ts: 1,
+    eventId,
+    receivedAt,
+    expiresAt: receivedAt + 72 * 60 * 60 * 1000,
+  });
 }
 
 try {
@@ -181,13 +251,15 @@ try {
   assert.equal(await deviceKey(token), hashDeviceToken(token).slice("sha256$".length));
   assert.equal(createHash("sha256").update(token).digest("hex"), await deviceKey(token));
   const sample: RelayPayload = { event: "leave", trigger: "geo", ts: 1_700_000_000_000, eventId: "1700000000000" };
-  const material = await deviceSealMaterial(sealKey, await deviceKey(token));
-  const sealed = await sealRelayBox(material, await deviceKey(token), sample);
-  assert.equal(sealed.envelope.startsWith("v2."), true);
-  assert.equal(sealed.envelope.includes("leave"), false);
-  assert.deepEqual(await openRelayBox(material, await deviceKey(token), sealed.envelope), sample);
-  const flipped = `${sealed.envelope.slice(0, -2)}${sealed.envelope.endsWith("A") ? "B" : "A"}`;
-  assert.equal(await openRelayBox(material, await deviceKey(token), flipped), null);
+  assert.deepEqual(parseRelayPayload(sample), sample);
+  assert.equal(parseRelayPayload({ ...sample, hourlyCents: 2400 }), null);
+  assert.equal(parseRelayPayload({ event: "tap", trigger: "geo", ts: sample.ts, eventId: sample.eventId }), null);
+  assert.deepEqual(parseRelayPayload({ event: "tap", trigger: "nfc", ts: sample.ts, eventId: "nfc-tap-01" }), {
+    event: "tap",
+    trigger: "nfc",
+    ts: sample.ts,
+    eventId: "nfc-tap-01",
+  });
   const packet = mdnsAnswer("io", "192.168.1.20");
   assert.equal(packet.includes(Buffer.from([192, 168, 1, 20])), true);
   assert.equal(packet.includes(Buffer.from("io")), true);
@@ -208,49 +280,84 @@ try {
       now,
     );
   resetRelayLimits();
-  const missing = await drop({ box: sealed.box, sig: sealed.sig }, "", 1_000);
+  const missing = await drop(sample, "", 1_000);
   assert.equal(missing.status, 401);
-  const wage = await drop({ box: sealed.box, sig: sealed.sig, hourlyCents: 2400 }, `Bearer ${token}`, 1_000);
+  const wage = await drop({ ...sample, hourlyCents: 2400 }, `Bearer ${token}`, 1_000);
   assert.equal(wage.status, 400);
-  const plain = await drop(sample, `Bearer ${token}`, 1_000);
-  assert.equal(plain.status, 400);
+  const sealedShape = await drop({ box: "abc", sig: "def" }, `Bearer ${token}`, 1_000);
+  assert.equal(sealedShape.status, 400);
   assert.equal(db.rows.length, 0);
   const t0 = 1_700_000_100_000;
-  const posted = await drop({ box: sealed.box, sig: sealed.sig }, `Bearer ${token}`, t0);
+  const posted = await drop(sample, `Bearer ${token}`, t0);
   assert.equal(posted.status, 200);
   assert.deepEqual(await posted.json(), { ok: true });
-  const again = await drop({ box: sealed.box, sig: sealed.sig }, `Bearer ${token}`, t0 + 1);
+  const again = await drop(sample, `Bearer ${token}`, t0 + 1);
   assert.equal(again.status, 200);
   assert.equal(db.rows.length, 1);
   const stored = JSON.stringify(db.rows);
   assert.equal(stored.includes(token), false);
   assert.equal(stored.includes("Ada"), false);
   assert.equal(stored.includes("wage"), false);
-  assert.equal(stored.includes("square"), false);
-  assert.equal(stored.includes('"event"'), false);
+  assert.equal(stored.includes("hourly"), false);
+  assert.equal(stored.includes("access_token"), false);
   assert.equal(db.rows[0].device_key, await deviceKey(token));
-  assert.equal(String(db.rows[0].envelope).startsWith("v2."), true);
-  assert.deepEqual(await openRelayBox(material, await deviceKey(token), String(db.rows[0].envelope)), sample);
+  assert.equal(db.rows[0].event, "leave");
+  assert.equal(db.rows[0].id, await mailboxId(await deviceKey(token), sample.eventId));
   const stranger = await handleRelay(new Request("https://relay.example/pull", { headers: { authorization: "Bearer phone-token" } }), env, t0);
   assert.equal(stranger.status, 401);
   const pulled = await handleRelay(new Request("https://relay.example/pull", { headers: { authorization: `Bearer ${shopSecret}` } }), env, t0);
-  const pulledBody = (await pulled.json()) as { messages: Array<{ envelope: string }> };
+  const pulledBody = (await pulled.json()) as { messages: Array<{ event: string; eventId: string }>; hooks: unknown[] };
   assert.equal(pulledBody.messages.length, 1);
+  assert.equal(pulledBody.messages[0].event, "leave");
+  assert.equal(pulledBody.hooks.length, 0);
   const expired = await handleRelay(
     new Request("https://relay.example/pull", { headers: { authorization: `Bearer ${shopSecret}` } }),
     env,
     t0 + 72 * 60 * 60 * 1000 + 1,
   );
-  assert.deepEqual(await expired.json(), { messages: [] });
+  assert.deepEqual(await expired.json(), { messages: [], hooks: [] });
   assert.equal(db.rows.length, 0);
+  const squareOff = await handleRelay(new Request("https://relay.example/square", { method: "POST", body: "{}" }), env, t0);
+  assert.equal(squareOff.status, 404);
+  const hookBody = JSON.stringify({
+    type: "labor.timecard.created",
+    created_at: "2026-10-14T14:00:00Z",
+    data: {
+      id: "tc-ada",
+      object: { timecard: { id: "tc-ada", team_member_id: "TMADA", given_name: "Ada", hourly_rate: { amount: 2400 } } },
+    },
+  });
+  const thin = thinSquareHook(JSON.parse(hookBody), t0);
+  assert.equal(thin?.entityId, "tc-ada");
+  assert.equal(thin?.teamMemberId, "TMADA");
+  assert.equal(JSON.stringify(thin).includes("Ada"), false);
+  assert.equal(JSON.stringify(thin).includes("2400"), false);
+  env.RELAY_SQUARE_WEBHOOK_KEY = "square-sign-key";
+  env.RELAY_SQUARE_NOTIFICATION_URL = "https://relay.example/square";
+  const { createHmac } = await import("node:crypto");
+  const sig = createHmac("sha256", "square-sign-key").update(`https://relay.example/square${hookBody}`).digest("base64");
+  const hooked = await handleRelay(
+    new Request("https://relay.example/square", {
+      method: "POST",
+      headers: { "x-square-hmacsha256-signature": sig },
+      body: hookBody,
+    }),
+    env,
+    t0,
+  );
+  assert.equal(hooked.status, 200);
+  assert.equal(db.hooks.length, 1);
+  const hookStored = JSON.stringify(db.hooks);
+  assert.equal(hookStored.includes("Ada"), false);
+  assert.equal(hookStored.includes("2400"), false);
+  assert.equal(hookStored.includes("hourly"), false);
+  assert.equal(db.hooks[0].id, await hookId("labor.timecard.created", "tc-ada", Date.parse("2026-10-14T14:00:00Z")));
   resetRelayLimits();
   for (let i = 0; i < 30; i++) {
-    const next = await sealRelayBox(material, await deviceKey(token), { ...sample, eventId: `rate-id-${i}-ok` });
-    const ok = await drop({ box: next.box, sig: next.sig }, `Bearer ${token}`, 5_000);
+    const ok = await drop({ ...sample, eventId: `rate-id-${i}-ok` }, `Bearer ${token}`, 5_000);
     assert.equal(ok.status, 200);
   }
-  const limitedBox = await sealRelayBox(material, await deviceKey(token), { ...sample, eventId: "rate-limited" });
-  const limited = await drop({ box: limitedBox.box, sig: limitedBox.sig }, `Bearer ${token}`, 5_000);
+  const limited = await drop({ ...sample, eventId: "rate-limited" }, `Bearer ${token}`, 5_000);
   assert.equal(limited.status, 429);
 
   setPreviewNow(at(9));
@@ -296,15 +403,14 @@ try {
     const page = await fetch(`${base}${new URL(setup.body.inviteUrl as string).pathname}`);
     const html = await page.text();
     assert.match(html, new RegExp(`Setting up for ${name}`));
-    assert.match(html, /cannot seal/);
-    assert.equal(html.includes(sealKey), false);
+    assert.match(html, /cellular leave/);
+    assert.equal(html.includes("cannot seal"), false);
     const opened = await call(`${new URL(setup.body.inviteUrl as string).pathname}/open`, { method: "POST" });
     assert.equal(opened.status, 200);
     return opened.body as {
       token: string;
       url: string;
       iphone: string;
-      deviceSeal?: string;
       macro: { macros: Array<{ m_actionList: Array<{ m_url: string; m_body: string }> }> };
     };
   }
@@ -313,26 +419,26 @@ try {
   assert.equal(ada.url, "http://io.local:5000/api/presence/phone");
   assert.equal(ada.iphone.includes("POST http://io.local:5000/api/presence/phone"), true);
   const dropPosts = ada.iphone.split("\n").filter((line) => line.startsWith("POST ") && line.includes("/drop"));
-  assert.equal(dropPosts.length, 0);
-  assert.equal(ada.iphone.includes(`Mailbox POST http://127.0.0.1:${mailPort}/drop`), true);
-  assert.equal(ada.iphone.includes("cannot seal"), true);
-  assert.equal(typeof ada.deviceSeal, "string");
-  assert.equal(ada.deviceSeal.length > 20, true);
-  assert.equal(ada.iphone.includes(ada.deviceSeal), true);
-  assert.equal(ada.iphone.includes(sealKey), false);
+  assert.equal(dropPosts.length > 0, true);
+  assert.equal(ada.iphone.includes("cannot seal"), false);
+  assert.equal(ada.iphone.includes("seal"), false);
   const leaveNote = ada.iphone.split("\nLeave\n")[1]?.split("\nShop Wi-Fi")[0] ?? "";
-  assert.equal(leaveNote.includes("/api/presence/phone"), true);
+  assert.equal(leaveNote.includes("/api/presence/phone"), false);
+  assert.equal(leaveNote.includes(`/drop`), true);
   assert.equal(leaveNote.includes("EVENT_ID"), true);
+  assert.equal(ada.iphone.includes("NFC tag"), true);
+  assert.equal(ada.iphone.includes('"trigger":"nfc"'), true);
   assert.equal(ada.iphone.includes("Premiere"), true);
   const arriveMacro = ada.macro.macros[0];
   const leaveMacro = ada.macro.macros[1];
-  assert.equal(arriveMacro.m_actionList.length, 1);
+  assert.equal(arriveMacro.m_actionList.length, 2);
   assert.equal(arriveMacro.m_actionList[0].m_url, "http://io.local:5000/api/presence/phone");
+  assert.equal(arriveMacro.m_actionList[1].m_url, `http://127.0.0.1:${mailPort}/drop`);
   assert.equal(leaveMacro.m_actionList.length, 1);
-  assert.equal(leaveMacro.m_actionList[0].m_url, "http://io.local:5000/api/presence/phone");
+  assert.equal(leaveMacro.m_actionList[0].m_url, `http://127.0.0.1:${mailPort}/drop`);
   assert.equal(leaveMacro.m_actionList[0].m_body.includes('"event":"leave"'), true);
   assert.equal(leaveMacro.m_actionList[0].m_body.includes("EVENT_ID"), true);
-  assert.equal(JSON.stringify(ada.macro).includes(sealKey), false);
+  assert.equal(JSON.stringify(ada.macro).includes("box"), false);
 
   async function postPhone(phone: string, event: "arrive" | "leave", trigger: "geo" | "wifi", ts: number, eventId: string) {
     return call("/api/presence/phone", {
@@ -428,16 +534,8 @@ try {
   const eve = await enroll("Eve");
   setPreviewNow(arriveTs);
   await postPhone(eve.token, "arrive", "wifi", arriveTs, "eve-arrive");
-  const eveMaterial = await deviceSealMaterial(sealKey, await deviceKey(eve.token));
-  const tamper = await sealRelayBox(eveMaterial, await deviceKey(eve.token), {
-    event: "leave",
-    trigger: "geo",
-    ts: leaveTs,
-    eventId: "eve-tamper",
-  });
-  const flippedEve = `${tamper.envelope.slice(0, -2)}${tamper.envelope.endsWith("A") ? "B" : "A"}`;
-  await queue(eve.token, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "eve-tamper" }, flippedEve);
-  await queue(eve.token, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "eve-plain" }, "v2.not-a-box.not-a-sig");
+  queueBad(await deviceKey(eve.token), "eve-bad-event");
+  queueBad(await deviceKey(eve.token), "eve-bad-other");
   setPreviewNow(late);
   const rejected = await pollRelayOnce();
   assert.equal(rejected.rejected, 2);

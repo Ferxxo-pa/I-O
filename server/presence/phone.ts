@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RELAY_TTL_MS } from "@shared/relayBox";
 import { earnEngine } from "../clock/engine";
 import { dayConfigFromEnv, signalConfigFromEnv } from "./config";
+import { signalFits } from "./reconcile";
 import { withinCollection } from "./session";
 import {
   enrolledDevice,
@@ -24,12 +25,13 @@ import { deviceLatched, dropPhoneLatches, noteSight, type WatchPerson } from "./
 
 const phoneSchema = z
   .object({
-    event: z.enum(["arrive", "leave"]),
-    trigger: z.enum(["geo", "wifi"]),
+    event: z.enum(["arrive", "leave", "tap"]),
+    trigger: z.enum(["geo", "wifi", "nfc"]),
     ts: z.number().optional(),
     eventId: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/).optional(),
   })
-  .strict();
+  .strict()
+  .refine((row) => row.event !== "tap" || row.trigger === "nfc", { message: "Check the signal" });
 
 type PhoneSignal = z.infer<typeof phoneSchema>;
 
@@ -37,8 +39,8 @@ export type PhoneResponse = {
   ok: boolean;
   duplicate: boolean;
   personId: string | null;
-  event: "arrive" | "leave" | null;
-  trigger: "geo" | "wifi" | null;
+  event: "arrive" | "leave" | "tap" | null;
+  trigger: "geo" | "wifi" | "nfc" | null;
   applied: "arrive" | "seen" | "exit" | "ignored" | "rejected";
   reason: string | null;
 };
@@ -92,33 +94,38 @@ export function phoneSetupSnippet(input: { url: string; token: string; name: str
       "Method is POST. Send the header on every request. The token is shown once.",
     ].join("\n");
   }
-  const body = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
+  const relayUrl = input.relayUrl ?? "";
+  const body = (event: "arrive" | "leave" | "tap", trigger: "geo" | "wifi" | "nfc") =>
     `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`;
-  const posts = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
-    [`POST ${input.url}`, header, body(event, trigger)].join("\n");
+  const post = (url: string, event: "arrive" | "leave" | "tap", trigger: "geo" | "wifi" | "nfc") =>
+    [`POST ${url}`, header, body(event, trigger)].join("\n");
+  const both = (event: "arrive" | "leave" | "tap", trigger: "geo" | "wifi" | "nfc") =>
+    [post(input.url, event, trigger), post(relayUrl, event, trigger)].join("\n");
   return [
     `Shop presence for ${input.name}`,
     "",
     "Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.",
-    "These posts go to the shop computer on Premiere.",
-    "Shortcuts and MacroDroid cannot seal a cellular leave. Do not POST the event JSON to the mailbox.",
-    `Mailbox POST ${input.relayUrl}`,
-    'A client that can seal sends only {"box":"...","sig":"..."} . The mailbox never sees the shop key.',
+    "An arrive posts to the shop computer and to the mailbox.",
+    "A leave posts only to the mailbox, so a cellular leave still clocks you out.",
+    "An NFC tag tap posts the same way. The shop computer decides in or out.",
     "",
     "Header",
     header,
     "",
     "Arrive at the shop (location)",
-    posts("arrive", "geo"),
+    both("arrive", "geo"),
     "",
     "Leave the shop (location)",
-    posts("leave", "geo"),
+    post(relayUrl, "leave", "geo"),
     "",
     "Joined the shop Wi-Fi",
-    posts("arrive", "wifi"),
+    both("arrive", "wifi"),
     "",
     "Left the shop Wi-Fi",
-    posts("leave", "wifi"),
+    post(relayUrl, "leave", "wifi"),
+    "",
+    "NFC tag",
+    both("tap", "nfc"),
     "",
     "Method is POST. Send the header on every request. The token is shown once.",
   ].join("\n");
@@ -145,6 +152,12 @@ function clockTarget(
   const squareId = person.squareTeamMemberId ?? "";
   if (device.squareTeamMemberId !== squareId) return null;
   return { id: squareId || person.id, name: person.name, hourlyCents: person.hourlyCents };
+}
+
+function phoneClockSource(trigger: "geo" | "wifi" | "nfc"): "phone-geo" | "phone-wifi" | "phone-nfc" {
+  if (trigger === "wifi") return "phone-wifi";
+  if (trigger === "nfc") return "phone-nfc";
+  return "phone-geo";
 }
 
 function mentionsWage(raw: string): boolean {
@@ -250,13 +263,33 @@ export async function applyPhoneSignal(input: {
 
   const sourceId = `${device.id}:${signal.trigger}`;
   const watch = watchFor(person.id);
+  const clockPersonEarly = clockTarget(person, device);
+  const openInfo = clockPersonEarly ? earnEngine.shiftInfo(clockPersonEarly.id) : null;
+  const action: "arrive" | "leave" =
+    signal.event === "tap" ? (openInfo?.clockedIn && openInfo.holdAt == null ? "leave" : "arrive") : signal.event;
+  if (
+    action === "leave" &&
+    !signalFits({ event: "leave", trigger: signal.trigger, at, deviceId: device.id, watch })
+  ) {
+    return finish(
+      200,
+      empty({
+        ok: true,
+        personId: person.id,
+        event: signal.event,
+        trigger: signal.trigger,
+        applied: "ignored",
+        reason: "contradicted",
+      }),
+    );
+  }
   const latest = latestPhoneAt(watch, device.id);
   if (at < latest) {
     recordPhoneEvent({
       personId: person.id,
       teamId: shopTeamId(),
       deviceId: device.id,
-      event: signal.event,
+      event: action,
       trigger: signal.trigger,
       at,
       receivedAt: now,
@@ -266,7 +299,7 @@ export async function applyPhoneSignal(input: {
       empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "out_of_order" }),
     );
   }
-  if (signal.event === "arrive") {
+  if (action === "arrive") {
     const still = deviceLatched(watch, device.id, now, config.quietMs);
     const sessionStart = still && device.sessionStart != null ? device.sessionStart : at;
     if (at - sessionStart >= config.stationaryMs) {
@@ -282,7 +315,7 @@ export async function applyPhoneSignal(input: {
     if (!clockPerson) {
       return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "rejected", reason: "square_mismatch" }));
     }
-    const source = signal.trigger === "wifi" ? "phone-wifi" : "phone-geo";
+    const source = phoneClockSource(signal.trigger);
     const info = earnEngine.shiftInfo(clockPerson.id);
     if (!(info?.clockedIn)) {
       try {
@@ -316,7 +349,7 @@ export async function applyPhoneSignal(input: {
   const marked = noteSight(watch, { source: "phone", sourceId, at, present: false, latch: true });
   // A location leave means they left the shop. It also clears a Wi-Fi latch, so an
   // iPhone that can join Wi-Fi but cannot send "left the network" still clocks out.
-  const next = signal.trigger === "geo" ? dropPhoneLatches(marked, device.id, at) : marked;
+  const next = signal.trigger === "geo" || signal.trigger === "nfc" ? dropPhoneLatches(marked, device.id, at) : marked;
   saveWatch(person.id, next);
   recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "leave", trigger: signal.trigger, at, receivedAt: now });
   if (!deviceLatched(watchFor(person.id), device.id, now, config.quietMs)) {

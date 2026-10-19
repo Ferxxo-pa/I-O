@@ -578,7 +578,7 @@ export function mountPresenceRoutes(app: Express) {
       inviteUrl: `${base}/join/${code}`,
       opened: invite.opened,
       relayNote: ioMode() === "local-relay"
-        ? "On Premiere, arrive and leave post to this computer. Shortcuts cannot seal a cellular leave, so a leave off the Wi-Fi waits for a tap or the 7 PM close."
+        ? "On Premiere, an arrive posts to this computer and to the mailbox. A cellular leave posts to the mailbox and still clocks you out. An NFC tag tap is the backup."
         : "",
     }));
   });

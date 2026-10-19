@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { fightSettingsSchema } from "@shared/fight";
+import { releaseNotes } from "@shared/notes";
 import { levelRulesSchema } from "@shared/ops";
 import { configSchema, inputTypeSchema } from "@shared/schema";
 import { HttpError, assertShopPin, pinShape } from "./auth/pin";
@@ -131,6 +132,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(earnEngine.getState(personIdFrom(req)));
     } catch (err) {
       sendError(res, err, "Couldn't load the clock");
+    }
+  });
+
+  app.get("/api/live", (req, res) => {
+    try {
+      assertPublicReader(req);
+    } catch (err) {
+      sendError(res, err, "Couldn't load the clock");
+      return;
+    }
+    const personId = personIdFrom(req);
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    const send = () => {
+      if (res.writableEnded) return;
+      res.write(`data: ${JSON.stringify(earnEngine.getState(personId))}\n\n`);
+    };
+    send();
+    const stop = earnEngine.addChangeListener(send);
+    const beat = setInterval(() => {
+      if (!res.writableEnded) res.write(`: beat\n\n`);
+    }, 25_000);
+    beat.unref();
+    req.on("close", () => {
+      clearInterval(beat);
+      stop();
+    });
+  });
+
+  app.get("/api/changelog", (req, res) => {
+    try {
+      assertPublicReader(req);
+      res.json(releaseNotes());
+    } catch (err) {
+      sendError(res, err, "Couldn't load the notes");
     }
   });
 
