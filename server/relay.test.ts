@@ -6,7 +6,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import express, { type Request } from "express";
 import { shopDateStart } from "@shared/presence.ts";
-import { deviceKey, generateSealPair, mailboxId, openBox, sealBox, type RelayPayload } from "@shared/relayBox.ts";
+import {
+  deviceKey,
+  deviceSealMaterial,
+  generateSealKey,
+  mailboxId,
+  openRelayBox,
+  sealRelayBox,
+  type RelayPayload,
+} from "@shared/relayBox.ts";
 import { hashDeviceToken } from "./presence/devices.ts";
 import { mdnsAnswer } from "./lan/mdns.ts";
 import { handleRelay, resetRelayLimits, type RelayDb, type RelayEnv } from "../relay/src/index.ts";
@@ -30,8 +38,8 @@ process.env.LAN_BASE_URL = "http://io.local:5000";
 process.env.RELAY_POLL_MS = "3600000";
 process.env.RELAY_SHOP_SECRET = "shop-secret-test";
 
-const pair = await generateSealPair();
-process.env.RELAY_SEAL_PRIVATE_JWK = JSON.stringify(pair.privateJwk);
+const sealKey = generateSealKey();
+process.env.RELAY_SEAL_KEY = sealKey;
 const shopSecret = process.env.RELAY_SHOP_SECRET;
 
 type Box = { id: string; deviceKey: string; envelope: string; receivedAt: number; expiresAt: number };
@@ -152,13 +160,16 @@ function memoryDb(): RelayDb & { rows: Array<Record<string, unknown>> } {
 
 async function queue(token: string, payload: RelayPayload, envelope = "") {
   const key = await deviceKey(token);
-  const sealed = envelope || (await sealBox(pair.publicJwk, payload));
-  const id = await mailboxId(key, payload.eventId);
+  const material = await deviceSealMaterial(sealKey, key);
+  const made = envelope ? null : await sealRelayBox(material, key, payload);
+  const stored = envelope || made!.envelope;
+  const box = made?.box ?? stored;
+  const id = await mailboxId(key, box);
   const receivedAt = Date.now();
   boxes.push({
     id,
     deviceKey: key,
-    envelope: sealed,
+    envelope: stored,
     receivedAt,
     expiresAt: receivedAt + 72 * 60 * 60 * 1000,
   });
@@ -170,11 +181,13 @@ try {
   assert.equal(await deviceKey(token), hashDeviceToken(token).slice("sha256$".length));
   assert.equal(createHash("sha256").update(token).digest("hex"), await deviceKey(token));
   const sample: RelayPayload = { event: "leave", trigger: "geo", ts: 1_700_000_000_000, eventId: "1700000000000" };
-  const sealed = await sealBox(pair.publicJwk, sample);
-  assert.equal(JSON.stringify(sample) === sealed, false);
-  assert.deepEqual(await openBox(pair.privateJwk, sealed), sample);
-  const flipped = `${sealed.slice(0, -2)}${sealed.endsWith("A") ? "B" : "A"}`;
-  assert.equal(await openBox(pair.privateJwk, flipped), null);
+  const material = await deviceSealMaterial(sealKey, await deviceKey(token));
+  const sealed = await sealRelayBox(material, await deviceKey(token), sample);
+  assert.equal(sealed.envelope.startsWith("v2."), true);
+  assert.equal(sealed.envelope.includes("leave"), false);
+  assert.deepEqual(await openRelayBox(material, await deviceKey(token), sealed.envelope), sample);
+  const flipped = `${sealed.envelope.slice(0, -2)}${sealed.envelope.endsWith("A") ? "B" : "A"}`;
+  assert.equal(await openRelayBox(material, await deviceKey(token), flipped), null);
   const packet = mdnsAnswer("io", "192.168.1.20");
   assert.equal(packet.includes(Buffer.from([192, 168, 1, 20])), true);
   assert.equal(packet.includes(Buffer.from("io")), true);
@@ -183,7 +196,6 @@ try {
   const env: RelayEnv = {
     DB: db,
     RELAY_SHOP_SECRET: shopSecret,
-    RELAY_SEAL_PUBLIC_JWK: JSON.stringify(pair.publicJwk),
   };
   const drop = (body: unknown, authorization: string, now: number) =>
     handleRelay(
@@ -196,15 +208,18 @@ try {
       now,
     );
   resetRelayLimits();
-  const missing = await drop(sample, "", 1_000);
+  const missing = await drop({ box: sealed.box, sig: sealed.sig }, "", 1_000);
   assert.equal(missing.status, 401);
-  const wage = await drop({ ...sample, hourlyCents: 2400 }, `Bearer ${token}`, 1_000);
+  const wage = await drop({ box: sealed.box, sig: sealed.sig, hourlyCents: 2400 }, `Bearer ${token}`, 1_000);
   assert.equal(wage.status, 400);
+  const plain = await drop(sample, `Bearer ${token}`, 1_000);
+  assert.equal(plain.status, 400);
+  assert.equal(db.rows.length, 0);
   const t0 = 1_700_000_100_000;
-  const posted = await drop(sample, `Bearer ${token}`, t0);
+  const posted = await drop({ box: sealed.box, sig: sealed.sig }, `Bearer ${token}`, t0);
   assert.equal(posted.status, 200);
   assert.deepEqual(await posted.json(), { ok: true });
-  const again = await drop(sample, `Bearer ${token}`, t0 + 1);
+  const again = await drop({ box: sealed.box, sig: sealed.sig }, `Bearer ${token}`, t0 + 1);
   assert.equal(again.status, 200);
   assert.equal(db.rows.length, 1);
   const stored = JSON.stringify(db.rows);
@@ -212,8 +227,10 @@ try {
   assert.equal(stored.includes("Ada"), false);
   assert.equal(stored.includes("wage"), false);
   assert.equal(stored.includes("square"), false);
+  assert.equal(stored.includes('"event"'), false);
   assert.equal(db.rows[0].device_key, await deviceKey(token));
-  assert.deepEqual(await openBox(pair.privateJwk, String(db.rows[0].envelope)), sample);
+  assert.equal(String(db.rows[0].envelope).startsWith("v2."), true);
+  assert.deepEqual(await openRelayBox(material, await deviceKey(token), String(db.rows[0].envelope)), sample);
   const stranger = await handleRelay(new Request("https://relay.example/pull", { headers: { authorization: "Bearer phone-token" } }), env, t0);
   assert.equal(stranger.status, 401);
   const pulled = await handleRelay(new Request("https://relay.example/pull", { headers: { authorization: `Bearer ${shopSecret}` } }), env, t0);
@@ -228,10 +245,12 @@ try {
   assert.equal(db.rows.length, 0);
   resetRelayLimits();
   for (let i = 0; i < 30; i++) {
-    const ok = await drop({ ...sample, eventId: `rate-id-${i}-ok` }, `Bearer ${token}`, 5_000);
+    const next = await sealRelayBox(material, await deviceKey(token), { ...sample, eventId: `rate-id-${i}-ok` });
+    const ok = await drop({ box: next.box, sig: next.sig }, `Bearer ${token}`, 5_000);
     assert.equal(ok.status, 200);
   }
-  const limited = await drop({ ...sample, eventId: "rate-limited" }, `Bearer ${token}`, 5_000);
+  const limitedBox = await sealRelayBox(material, await deviceKey(token), { ...sample, eventId: "rate-limited" });
+  const limited = await drop({ box: limitedBox.box, sig: limitedBox.sig }, `Bearer ${token}`, 5_000);
   assert.equal(limited.status, 429);
 
   setPreviewNow(at(9));
@@ -257,6 +276,13 @@ try {
     });
     assert.equal(consent.status, 200);
   }
+  const setPin = await call("/api/fight/pin", {
+    method: "POST",
+    headers: owner,
+    body: JSON.stringify({ pin: "2468" }),
+  });
+  assert.equal(setPin.status, 200);
+  const shopPin = { "x-shop-pin": "2468" };
 
   async function enroll(name: string) {
     setPreviewNow(at(9));
@@ -270,13 +296,15 @@ try {
     const page = await fetch(`${base}${new URL(setup.body.inviteUrl as string).pathname}`);
     const html = await page.text();
     assert.match(html, new RegExp(`Setting up for ${name}`));
-    assert.match(html, /cellular leave still clocks out/);
+    assert.match(html, /cannot seal/);
+    assert.equal(html.includes(sealKey), false);
     const opened = await call(`${new URL(setup.body.inviteUrl as string).pathname}/open`, { method: "POST" });
     assert.equal(opened.status, 200);
     return opened.body as {
       token: string;
       url: string;
       iphone: string;
+      deviceSeal?: string;
       macro: { macros: Array<{ m_actionList: Array<{ m_url: string; m_body: string }> }> };
     };
   }
@@ -284,21 +312,27 @@ try {
   const ada = await enroll("Ada");
   assert.equal(ada.url, "http://io.local:5000/api/presence/phone");
   assert.equal(ada.iphone.includes("POST http://io.local:5000/api/presence/phone"), true);
-  assert.equal(ada.iphone.includes(`POST http://127.0.0.1:${mailPort}/drop`), true);
+  const dropPosts = ada.iphone.split("\n").filter((line) => line.startsWith("POST ") && line.includes("/drop"));
+  assert.equal(dropPosts.length, 0);
+  assert.equal(ada.iphone.includes(`Mailbox POST http://127.0.0.1:${mailPort}/drop`), true);
+  assert.equal(ada.iphone.includes("cannot seal"), true);
+  assert.equal(typeof ada.deviceSeal, "string");
+  assert.equal(ada.deviceSeal.length > 20, true);
+  assert.equal(ada.iphone.includes(ada.deviceSeal), true);
+  assert.equal(ada.iphone.includes(sealKey), false);
   const leaveNote = ada.iphone.split("\nLeave\n")[1]?.split("\nShop Wi-Fi")[0] ?? "";
-  assert.equal(leaveNote.includes("/api/presence/phone"), false);
-  assert.equal(leaveNote.includes("/drop"), true);
-  assert.equal(ada.iphone.includes("EVENT_ID"), true);
+  assert.equal(leaveNote.includes("/api/presence/phone"), true);
+  assert.equal(leaveNote.includes("EVENT_ID"), true);
   assert.equal(ada.iphone.includes("Premiere"), true);
   const arriveMacro = ada.macro.macros[0];
   const leaveMacro = ada.macro.macros[1];
-  assert.equal(arriveMacro.m_actionList.length, 2);
+  assert.equal(arriveMacro.m_actionList.length, 1);
   assert.equal(arriveMacro.m_actionList[0].m_url, "http://io.local:5000/api/presence/phone");
-  assert.equal(arriveMacro.m_actionList[1].m_url, `http://127.0.0.1:${mailPort}/drop`);
   assert.equal(leaveMacro.m_actionList.length, 1);
-  assert.equal(leaveMacro.m_actionList[0].m_url, `http://127.0.0.1:${mailPort}/drop`);
+  assert.equal(leaveMacro.m_actionList[0].m_url, "http://io.local:5000/api/presence/phone");
   assert.equal(leaveMacro.m_actionList[0].m_body.includes('"event":"leave"'), true);
   assert.equal(leaveMacro.m_actionList[0].m_body.includes("EVENT_ID"), true);
+  assert.equal(JSON.stringify(ada.macro).includes(sealKey), false);
 
   async function postPhone(phone: string, event: "arrive" | "leave", trigger: "geo" | "wifi", ts: number, eventId: string) {
     return call("/api/presence/phone", {
@@ -309,7 +343,7 @@ try {
   }
 
   async function snapshot(personId: string) {
-    const state = await call("/api/state", { headers: { "x-person-id": personId } });
+    const state = await call("/api/state", { headers: { "x-person-id": personId, ...shopPin } });
     return state.body as {
       session: { clockedIn: boolean; outputCents: number };
       events: Array<{ kind: string; createdAt: number }>;
@@ -394,9 +428,16 @@ try {
   const eve = await enroll("Eve");
   setPreviewNow(arriveTs);
   await postPhone(eve.token, "arrive", "wifi", arriveTs, "eve-arrive");
-  const tamper = await sealBox(pair.publicJwk, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "eve-tamper" });
-  await queue(eve.token, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "eve-tamper" }, `${tamper.slice(0, -2)}AA`);
-  await queue(eve.token, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "eve-plain" }, btoa('{"event":"leave"}'));
+  const eveMaterial = await deviceSealMaterial(sealKey, await deviceKey(eve.token));
+  const tamper = await sealRelayBox(eveMaterial, await deviceKey(eve.token), {
+    event: "leave",
+    trigger: "geo",
+    ts: leaveTs,
+    eventId: "eve-tamper",
+  });
+  const flippedEve = `${tamper.envelope.slice(0, -2)}${tamper.envelope.endsWith("A") ? "B" : "A"}`;
+  await queue(eve.token, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "eve-tamper" }, flippedEve);
+  await queue(eve.token, { event: "leave", trigger: "geo", ts: leaveTs, eventId: "eve-plain" }, "v2.not-a-box.not-a-sig");
   setPreviewNow(late);
   const rejected = await pollRelayOnce();
   assert.equal(rejected.rejected, 2);

@@ -65,7 +65,7 @@ export async function healthReport(): Promise<HealthReport> {
     publicUrlDetail: local
       ? relayConfigured()
         ? lanBaseUrl()
-        : "Set RELAY_PUBLIC_URL, RELAY_SHOP_SECRET, and RELAY_SEAL_PRIVATE_JWK"
+        : "Set RELAY_PUBLIC_URL, RELAY_SHOP_SECRET, and RELAY_SEAL_KEY"
       : publicUrl?.detail,
     publicUrlNote: local ? (relayConfigured() ? lanNote : undefined) : publicUrl?.note,
   });

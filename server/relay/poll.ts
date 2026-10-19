@@ -1,4 +1,4 @@
-import { openBox, type RelayPayload } from "@shared/relayBox";
+import { deviceSealMaterial, openRelayBox, type RelayPayload } from "@shared/relayBox";
 import { RELAY_TTL_MS, ioMode, relaySecrets } from "../mode";
 import { applyPhoneSignal } from "../presence/phone";
 import { personForTokenHash } from "../presence/service";
@@ -46,7 +46,8 @@ export async function pollRelayOnce(): Promise<{ applied: number; rejected: numb
       const envelope = typeof msg?.envelope === "string" ? msg.envelope : "";
       const deviceKey = typeof msg?.deviceKey === "string" ? msg.deviceKey : "";
       if (!id) continue;
-      const payload = envelope ? await openBox(secrets.privateJwk, envelope) : null;
+      const material = envelope && deviceKey ? await deviceSealMaterial(secrets.sealKey, deviceKey) : "";
+      const payload = material ? await openRelayBox(material, deviceKey, envelope) : null;
       if (!payload) {
         ack.push(id);
         rejected += 1;

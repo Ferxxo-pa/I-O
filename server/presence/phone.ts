@@ -94,28 +94,30 @@ export function phoneSetupSnippet(input: { url: string; token: string; name: str
   }
   const body = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
     `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`;
-  const posts = (event: "arrive" | "leave", trigger: "geo" | "wifi") => {
-    const urls = event === "leave" ? [input.relayUrl!] : [input.url, input.relayUrl!];
-    return urls.map((url) => [`POST ${url}`, header, body(event, trigger)].join("\n")).join("\n\n");
-  };
+  const posts = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
+    [`POST ${input.url}`, header, body(event, trigger)].join("\n");
   return [
     `Shop presence for ${input.name}`,
     "",
     "Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.",
+    "These posts go to the shop computer on Premiere.",
+    "Shortcuts and MacroDroid cannot seal a cellular leave. Do not POST the event JSON to the mailbox.",
+    `Mailbox POST ${input.relayUrl}`,
+    'A client that can seal sends only {"box":"...","sig":"..."} . The mailbox never sees the shop key.',
     "",
     "Header",
     header,
     "",
-    "Arrive at the shop (location) — shop Wi-Fi and mailbox",
+    "Arrive at the shop (location)",
     posts("arrive", "geo"),
     "",
-    "Leave the shop (location) — mailbox only, so cellular still clocks out",
+    "Leave the shop (location)",
     posts("leave", "geo"),
     "",
-    "Joined the shop Wi-Fi — shop Wi-Fi and mailbox",
+    "Joined the shop Wi-Fi",
     posts("arrive", "wifi"),
     "",
-    "Left the shop Wi-Fi — mailbox only",
+    "Left the shop Wi-Fi",
     posts("leave", "wifi"),
     "",
     "Method is POST. Send the header on every request. The token is shown once.",
@@ -197,13 +199,21 @@ export async function applyPhoneSignal(input: {
   const bucket = Math.floor(at / config.phoneDedupeMs);
   const bucketKey = `phone:${deviceId}:${signal.trigger}:${signal.event}:${bucket}`;
   const eventKey = signal.eventId ? `phone:${deviceId}:evt:${signal.eventId}:${at}` : null;
+  const eidKey = signal.eventId ? `phone:${deviceId}:eid:${signal.eventId}` : null;
   const replayKey = eventKey ?? bucketKey;
+  if (eidKey) {
+    const seen = recallReplay(eidKey);
+    if (seen && seen.body && typeof seen.body === "object") {
+      return { status: seen.status, body: { ...(seen.body as PhoneResponse), duplicate: true } };
+    }
+  }
   const prior = recallReplay(replayKey);
   if (prior && prior.body && typeof prior.body === "object") {
     return { status: prior.status, body: { ...(prior.body as PhoneResponse), duplicate: true } };
   }
   const finish = (status: number, body: PhoneResponse) => {
     rememberReplay(replayKey, status, body, eventKey ? RELAY_TTL_MS : undefined);
+    if (eidKey && timing === "ok") rememberReplay(eidKey, status, body, RELAY_TTL_MS);
     return { status, body };
   };
 

@@ -1,4 +1,4 @@
-import { RELAY_TTL_MS, deviceKey, mailboxId, mentionsRelayWage, parseRelayPayload, sealBox } from "../../shared/relayBox.ts";
+import { RELAY_TTL_MS, deviceKey, mailboxId, mentionsRelayWage } from "../../shared/relayBox.ts";
 
 const DROP_PER_MIN = 30;
 const SHOP_PER_MIN = 120;
@@ -15,7 +15,6 @@ export type RelayDb = {
 export type RelayEnv = {
   DB: RelayDb;
   RELAY_SHOP_SECRET?: string;
-  RELAY_SEAL_PUBLIC_JWK?: string;
 };
 
 type BoxRow = {
@@ -70,31 +69,34 @@ function clientIp(request: Request): string {
   return forwarded || "unknown";
 }
 
+function sealedDrop(value: unknown): { box: string; sig: string } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  for (const key of Object.keys(row)) {
+    if (key !== "box" && key !== "sig") return null;
+  }
+  if (typeof row.box !== "string" || typeof row.sig !== "string") return null;
+  if (!row.box || !row.sig || row.box.length > 2048 || row.sig.length > 128) return null;
+  return { box: row.box, sig: row.sig };
+}
+
 async function drop(request: Request, env: RelayEnv, now: number): Promise<Response> {
   if (limited(`drop:${clientIp(request)}`, DROP_PER_MIN, now)) return json(429, { ok: false });
   const token = bearer(request);
   if (!token) return json(401, { ok: false });
   const raw = await request.text();
-  if (raw.length > 1024 || mentionsRelayWage(raw)) return json(400, { ok: false });
+  if (raw.length > 4096 || mentionsRelayWage(raw)) return json(400, { ok: false });
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch {
     return json(400, { ok: false });
   }
-  const payload = parseRelayPayload(parsed);
-  if (!payload) return json(400, { ok: false });
-  const rawKey = env.RELAY_SEAL_PUBLIC_JWK?.trim() ?? "";
-  if (!rawKey) return json(503, { ok: false });
-  let publicJwk: JsonWebKey;
-  try {
-    publicJwk = JSON.parse(rawKey) as JsonWebKey;
-  } catch {
-    return json(503, { ok: false });
-  }
+  const sealed = sealedDrop(parsed);
+  if (!sealed) return json(400, { ok: false });
   const key = await deviceKey(token);
-  const envelope = await sealBox(publicJwk, payload);
-  const id = await mailboxId(key, payload.eventId);
+  const envelope = `v2.${sealed.box}.${sealed.sig}`;
+  const id = await mailboxId(key, sealed.box);
   await env.DB.prepare(
     "INSERT OR IGNORE INTO boxes (id, device_key, envelope, received_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)",
   )

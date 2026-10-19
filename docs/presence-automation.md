@@ -127,11 +127,10 @@ The server still judges that fix against the 120 meter fence, 75 meter accuracy,
 
 ```text
 IO_MODE=local-relay
-HOST=0.0.0.0
 LAN_BASE_URL=http://io.local:5000
 RELAY_PUBLIC_URL=https://io-relay.your-subdomain.workers.dev
 RELAY_SHOP_SECRET=
-RELAY_SEAL_PRIVATE_JWK=
+RELAY_SEAL_KEY=
 PUBLIC_BASE_URL=
 PRESENCE_SIGNAL_QUIET_MS=900000
 PRESENCE_AUTO_CLOSE=19:00

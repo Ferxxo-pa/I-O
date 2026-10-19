@@ -9,6 +9,6 @@ binding = "DB"
 database_name = "io-relay"
 database_id = "replace-after-wrangler-d1-create"
 
-# Secrets are not vars. Set them with wrangler so they stay off disk in git:
+# Secrets are not vars. The worker learns only the shop pull secret.
+# It never receives RELAY_SEAL_KEY. Phones seal before they POST.
 #   npx wrangler secret put RELAY_SHOP_SECRET
-#   npx wrangler secret put RELAY_SEAL_PUBLIC_JWK

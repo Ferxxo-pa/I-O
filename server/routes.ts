@@ -4,7 +4,9 @@ import { fightSettingsSchema } from "@shared/fight";
 import { levelRulesSchema } from "@shared/ops";
 import { configSchema, inputTypeSchema } from "@shared/schema";
 import { HttpError, assertShopPin, pinShape } from "./auth/pin";
-import { assertPublicReader } from "./auth/reader";
+import { assertPublicReader, shopLocked } from "./auth/reader";
+import { isShopSource } from "./lan/bind";
+import { ioMode } from "./mode";
 import { webhookNotificationUrl } from "./publicBase";
 import { addPerson, companyView, createCompany, joinCompany, setPersonRate, setShopConfig } from "./company";
 import { earnEngine } from "./clock/engine";
@@ -76,6 +78,19 @@ function requirePinIfSet(req: Request) {
   if (fightBook.pinSet()) requirePin(req);
 }
 
+/** Anonymous callers cannot change the shop. Owner key until a PIN exists, then the PIN. */
+function requireShopActor(req: Request) {
+  if (!shopLocked()) {
+    requirePinIfSet(req);
+    return;
+  }
+  if (fightBook.pinSet()) {
+    requirePin(req);
+    return;
+  }
+  if (!companyView(ownerKeyFrom(req)).owner) throw new HttpError(403, "Only the owner can change that");
+}
+
 function sendError(res: Response, err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : fallback;
   const status =
@@ -88,14 +103,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   earnEngine.start();
   startSquareSync();
 
+  if (ioMode() === "local-relay") {
+    app.use((req, res, next) => {
+      const addr = req.socket?.remoteAddress || "";
+      if (isShopSource(addr)) return next();
+      res.status(403).json({ message: "Shop network only" });
+    });
+  }
+
   app.get("/api/health", async (req, res) => {
     if (String(req.query.probe ?? "") === "1") {
       res.json({ ok: true });
       return;
     }
     try {
+      assertPublicReader(req);
       res.json(await healthReport());
-    } catch {
+    } catch (err) {
+      if (err instanceof HttpError) return sendError(res, err, "Health check failed");
       res.status(500).json({ ok: false, message: "Health check failed" });
     }
   });
@@ -167,7 +192,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/config", (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
     } catch (err) {
       return sendError(res, err, "Couldn't save that");
     }
@@ -186,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: "Not found" });
     }
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
     } catch (err) {
       return sendError(res, err, "Couldn't reset");
     }
@@ -194,12 +219,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/company", (req, res) => {
-    res.json(companyView(ownerKeyFrom(req)));
+    try {
+      assertPublicReader(req);
+      res.json(companyView(ownerKeyFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't load the company");
+    }
   });
 
   app.post("/api/company", (req, res) => {
     try {
-      requirePinIfSet(req);
+      if (shopLocked() && fightBook.pinSet()) requirePin(req);
+      else requirePinIfSet(req);
       const name = typeof req.body?.name === "string" ? req.body.name : "";
       res.json(createCompany(name, ownerKeyFrom(req)));
     } catch (err) {
@@ -210,7 +241,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/company/join", (req, res) => {
     try {
       const code = typeof req.body?.code === "string" ? req.body.code : "";
-      res.json(joinCompany(code, ownerKeyFrom(req)));
+      const view = joinCompany(code, ownerKeyFrom(req));
+      if (view.owner) {
+        res.json(view);
+        return;
+      }
+      res.json({
+        ...view,
+        people: view.people.map((person) => ({ ...person, hourlyCents: 0 })),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not join that company";
       res.status(400).json({ message });
@@ -232,7 +271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/company/roster", async (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
       requireOwner(req);
       const squarePeople = await squarePayRoster();
       if (squarePeople) return res.json({ source: "square", people: squarePeople });
@@ -244,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/company/people", (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
       if (squareConfigured()) throw new Error("Square sets the rates");
       requireOwner(req);
       const name = typeof req.body?.name === "string" ? req.body.name : "";
@@ -259,7 +298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/company/people/:id", (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
       if (squareConfigured()) throw new Error("Square sets the rates");
       requireOwner(req);
       const hourlyCents = Number(req.body?.hourlyCents);
@@ -273,7 +312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/company/shop", (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
       requireOwner(req);
       const body = req.body ?? {};
       const num = (key: string): number | null | undefined => {

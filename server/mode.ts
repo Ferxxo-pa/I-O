@@ -1,4 +1,4 @@
-import { RELAY_TTL_MS } from "@shared/relayBox";
+import { RELAY_TTL_MS, sealKeyBytes } from "@shared/relayBox";
 
 export { RELAY_TTL_MS };
 
@@ -29,16 +29,10 @@ export function relayConfigured(): boolean {
   return relaySecrets() != null;
 }
 
-export function relaySecrets(): { url: string; secret: string; privateJwk: JsonWebKey } | null {
+export function relaySecrets(): { url: string; secret: string; sealKey: string } | null {
   const url = relayOrigin();
   const secret = process.env.RELAY_SHOP_SECRET?.trim() ?? "";
-  const raw = process.env.RELAY_SEAL_PRIVATE_JWK?.trim() ?? "";
-  if (!url || !secret || !raw) return null;
-  try {
-    const privateJwk = JSON.parse(raw) as JsonWebKey;
-    if (privateJwk?.kty !== "RSA" || typeof privateJwk.d !== "string") return null;
-    return { url, secret, privateJwk };
-  } catch {
-    return null;
-  }
+  const sealKey = process.env.RELAY_SEAL_KEY?.trim() ?? "";
+  if (!url || !secret || !sealKeyBytes(sealKey)) return null;
+  return { url, secret, sealKey };
 }

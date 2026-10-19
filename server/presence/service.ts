@@ -517,7 +517,7 @@ function noteSilence() {
     const last = watch?.lastSignalAt ?? 0;
     if (last >= openAt) continue;
     silenceSeen.add(key);
-    console.log(`presence: ${person.name} has no phone signal during shop hours`);
+    console.log(`presence: ${person.id} has no phone signal during shop hours`);
   }
 }
 

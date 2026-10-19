@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { deviceKey, deviceSealMaterial } from "@shared/relayBox";
 import { getCompany } from "../company";
 import { ioMode, lanPhoneUrl, relayDropUrl } from "../mode";
 import { fenceFromEnv } from "./geo";
@@ -31,6 +32,7 @@ export type InviteOpen = {
   radius: number;
   iphone: string;
   macro: { aiGenerated: number; macros: Macro[] };
+  deviceSeal?: string;
 };
 
 type Macro = {
@@ -131,6 +133,7 @@ export function iphoneAutomationText(input: {
   lng: number;
   radius: number;
   relayUrl?: string;
+  deviceSeal?: string;
 }): string {
   const header = `Authorization: Bearer ${input.token}`;
   const tagged = Boolean(input.relayUrl);
@@ -138,12 +141,18 @@ export function iphoneAutomationText(input: {
     tagged
       ? `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`
       : `{"event":"${event}","trigger":"${trigger}"}`;
-  const call = (event: "arrive" | "leave", trigger: "geo" | "wifi") => {
-    const urls = !input.relayUrl ? [input.url] : event === "leave" ? [input.relayUrl] : [input.url, input.relayUrl];
-    return urls.map((url) => [`POST ${url}`, header, body(event, trigger)].join("\n")).join("\n\n");
-  };
+  const call = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
+    [`POST ${input.url}`, header, body(event, trigger)].join("\n");
   const lead = tagged
-    ? ["Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.", ""]
+    ? [
+        "Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.",
+        "These posts go to the shop computer on Premiere.",
+        "Shortcuts and MacroDroid cannot seal a cellular leave. Do not POST the event JSON to the mailbox.",
+        input.deviceSeal ? `This phone's seal key, shown once: ${input.deviceSeal}` : "The shop seal key is not configured yet.",
+        input.relayUrl ? `Mailbox POST ${input.relayUrl}` : "",
+        'A client that can seal sends only {"box":"...","sig":"..."} with this phone\'s seal key. The mailbox never sees that key.',
+        "",
+      ].filter((line) => line !== "")
     : [];
   return [
     `Shop geofence — ${input.address}`,
@@ -183,10 +192,8 @@ function httpAction(url: string, token: string, event: "arrive" | "leave", trigg
   };
 }
 
-function actionUrls(url: string, relayUrl: string | undefined, event: "arrive" | "leave"): string[] {
-  if (!relayUrl) return [url];
-  if (event === "leave") return [relayUrl];
-  return [url, relayUrl];
+function actionUrls(url: string, _relayUrl: string | undefined, _event: "arrive" | "leave"): string[] {
+  return [url];
 }
 
 export function macroFile(input: {
@@ -280,7 +287,7 @@ export function inviteByCode(code: string): { name: string; opened: boolean } | 
   return { name: row.name, opened: row.openedAt != null };
 }
 
-export function openInvite(code: string, now: number): InviteOpen | "used" | "missing" {
+export async function openInvite(code: string, now: number): Promise<InviteOpen | "used" | "missing"> {
   const invites = readInvites();
   const row = invites.find((invite) => invite.code === code);
   if (!row) return "missing";
@@ -293,6 +300,15 @@ export function openInvite(code: string, now: number): InviteOpen | "used" | "mi
   const ssid = shopWifiSsid();
   const local = ioMode() === "local-relay";
   const relay = local ? relayDropUrl() : "";
+  const master = process.env.RELAY_SEAL_KEY?.trim() ?? "";
+  let deviceSeal = "";
+  if (local && relay && master) {
+    try {
+      deviceSeal = await deviceSealMaterial(master, await deviceKey(token));
+    } catch {
+      deviceSeal = "";
+    }
+  }
   const fields = {
     url: local ? lanPhoneUrl() : row.phoneUrl,
     token,
@@ -302,11 +318,13 @@ export function openInvite(code: string, now: number): InviteOpen | "used" | "mi
     lng: fence.lng,
     radius: fence.radius,
     relayUrl: relay || undefined,
+    deviceSeal: deviceSeal || undefined,
   };
   return {
     ...fields,
     name: row.name,
     iphone: iphoneAutomationText(fields),
     macro: macroFile(fields),
+    ...(deviceSeal ? { deviceSeal } : {}),
   };
 }

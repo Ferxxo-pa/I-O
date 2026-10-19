@@ -8,9 +8,9 @@ Ezven sends you one link, `/join/:code`, from the I/O server. Open it on your ph
 
 On the shop LAN (`IO_MODE=local-relay`, the normal setup) the copied note is already filled in:
 
-- Arrive posts twice, with the same `ts` and `eventId`: once to `http://io.local:5000/api/presence/phone` (or the fixed LAN address Ezven gives you) and once to the mailbox `https://<relay>/drop`.
-- Leave posts only to the mailbox, so it still clocks you out after the phone has gone to cellular.
-- Capture the current time in milliseconds once when the automation fires. Use that same number as `ts` and as `eventId` on every copy of that firing. The note writes this as `EVENT_ID`.
+- Arrive and leave post to `http://io.local:5000/api/presence/phone` (or the fixed LAN address Ezven gives you) while the phone is on Premiere.
+- Capture the current time in milliseconds once when the automation fires. Use that same number as `ts` and as `eventId`. The note writes this as `EVENT_ID`. The shop accepts that id once.
+- The note also shows this phone's seal key, once. A mailbox post is only `{"box":"...","sig":"..."}`. Shortcuts and MacroDroid cannot compute that seal. Do not POST the event JSON to the mailbox. A leave after the phone has gone to cellular does not clock out until someone taps the strip or the day closes at 7 PM.
 - Premiere and the geofence (403 E Ben White Blvd, 120 m) are already in the note.
 
 The block below is the public-mode shape, one URL for every event. Use it only if Ezven says the shop is on a public https address. The address must start with `https://` in that mode.
@@ -143,7 +143,7 @@ Give the location blocks the shop address, 403 E Ben White Blvd, Austin. Give th
 
 ## If the phone is offline
 
-A direct post to the shop computer is accepted for 10 minutes back and 15 seconds ahead (`PRESENCE_PHONE_MAX_AGE_MS` and `PRESENCE_SIGNAL_MAX_FUTURE_MS`). The mailbox keeps the same event for 72 hours. If the shop computer is off, the leave waits there and clocks out at the original `ts` when the computer is back. A direct post older than 10 minutes, with no mailbox copy, is ignored. Nothing is subtracted, and the clock does not jump.
+A direct post to the shop computer is accepted for 10 minutes back and 15 seconds ahead (`PRESENCE_PHONE_MAX_AGE_MS` and `PRESENCE_SIGNAL_MAX_FUTURE_MS`). A sealed mailbox copy of the same `eventId` is kept for 72 hours and does not clock a second time. Shortcuts cannot make that sealed copy. If the shop computer is off while you are on Premiere, the direct post is missed unless the trigger fires again within 10 minutes. A direct post older than 10 minutes is ignored. Nothing is subtracted, and the clock does not jump. Tap the strip if the phone missed.
 
 A retried signal should carry the time the trigger actually fired, so the shop clocks that moment instead of the later retry. Add one more JSON field, `ts`, the Unix time in milliseconds. Store that time when the automation starts, and send the same number on every retry.
 
@@ -153,12 +153,12 @@ MacroDroid's HTTP Request action has no retry field either. The free-tier way to
 
 1. At the top of the macro, set a variable `fired` to the current time in milliseconds (MacroDroid's system time magic text).
 2. Put the HTTP Request inside a Repeat action set to 3 times.
-3. In the JSON body, add `ts` and `eventId` and insert the `fired` variable for both, so every try sends the original time. Use that same `eventId` on the shop post and the mailbox post.
+3. In the JSON body, add `ts` and `eventId` and insert the `fired` variable for both, so every try sends the original time. Post that body only to the shop computer.
 4. On the HTTP Request action, save the response code to a variable.
 5. After the request, if that code is 200, exit the loop.
 6. If it is not 200, add a Wait of 20 seconds, then let the loop try again.
 
-Three tries with 20 seconds between them stay well inside the 10-minute window for a direct post. A copy that reached the mailbox is kept for 72 hours, so a leave from cellular still applies after the shop computer comes back. Do not raise the direct-post repeat count so high that the last try is older than 10 minutes. The shop computer ignores that direct copy. The mailbox copy still counts.
+Three tries with 20 seconds between them stay well inside the 10-minute window for a direct post. Do not raise the repeat count so high that the last try is older than 10 minutes. The shop computer ignores that late direct copy. The same `eventId` is not used up by that rejection, so a sealed mailbox copy can still apply later. Shortcuts cannot create that copy.
 
 ## How to test
 

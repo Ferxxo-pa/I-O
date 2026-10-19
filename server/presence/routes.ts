@@ -166,6 +166,12 @@ export function mountPresenceRoutes(app: Express) {
   });
 
   app.get("/api/presence/stream", (req, res) => {
+    try {
+      assertPublicReader(req);
+    } catch (err) {
+      sendError(res, err, "Couldn't load presence");
+      return;
+    }
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -572,13 +578,13 @@ export function mountPresenceRoutes(app: Express) {
       inviteUrl: `${base}/join/${code}`,
       opened: invite.opened,
       relayNote: ioMode() === "local-relay"
-        ? "Arrive posts to the shop Wi-Fi and the mailbox. Leave posts to the mailbox, so a cellular leave still clocks out."
+        ? "On Premiere, arrive and leave post to this computer. Shortcuts cannot seal a cellular leave, so a leave off the Wi-Fi waits for a tap or the 7 PM close."
         : "",
     }));
   });
 
-  app.post("/join/:code/open", (req, res) => {
-    const result = openInvite(req.params.code, presenceNow());
+  app.post("/join/:code/open", async (req, res) => {
+    const result = await openInvite(req.params.code, presenceNow());
     res.setHeader("cache-control", "no-store");
     if (result === "missing") return res.status(404).json({ message: "This link is not valid" });
     if (result === "used") return res.status(410).json({ message: "This link was already used" });

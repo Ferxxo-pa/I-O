@@ -1,14 +1,13 @@
-// Prints a shop seal keypair. The public JWK goes to the Cloudflare worker.
-// The private JWK stays in the shop computer's .env. Do not commit either.
-const pair = await crypto.subtle.generateKey(
-  { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
-  true,
-  ["encrypt", "decrypt"],
-);
-const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
-console.log("Worker secret RELAY_SEAL_PUBLIC_JWK (npx wrangler secret put RELAY_SEAL_PUBLIC_JWK):");
-console.log(JSON.stringify(publicJwk));
+// Prints the shop seal key. It stays in the shop .env and in each phone's
+// one-time setup note. Do not put it on Cloudflare. Do not commit it.
+const bytes = new Uint8Array(32);
+crypto.getRandomValues(bytes);
+let bin = "";
+for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+const key = btoa(bin);
+console.log("Shop .env RELAY_SEAL_KEY");
+console.log("The mailbox never sees this. Each phone gets its own derived key on the one-time setup page.");
+console.log(key);
 console.log("");
-console.log("Shop .env RELAY_SEAL_PRIVATE_JWK (this computer only):");
-console.log(JSON.stringify(privateJwk));
+console.log("Worker secret is only RELAY_SHOP_SECRET (npx wrangler secret put RELAY_SHOP_SECRET).");
+console.log("Do not log this output.");
