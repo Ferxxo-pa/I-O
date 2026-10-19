@@ -102,9 +102,9 @@ try {
     body: JSON.stringify({ personId: ada, label: "phone" }),
   });
   assert.equal(setup.status, 200);
-  assert.equal(setup.body.url, "https://shop.example/api/presence/phone");
-  assert.match(String(setup.body.snippet), /https:\/\/shop\.example\/api\/presence\/phone/);
-  assert.match(String(setup.body.snippet), /Bearer /);
+  assert.equal(setup.body.token, undefined);
+  assert.match(String(setup.body.inviteUrl), /^https:\/\/shop\.example\/join\/[A-Za-z0-9_-]+$/);
+  assert.equal(JSON.stringify(setup.body).includes("Bearer"), false);
 
   const probe = await call("/api/health?probe=1");
   assert.equal(probe.status, 200);

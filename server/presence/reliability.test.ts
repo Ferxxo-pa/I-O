@@ -87,7 +87,9 @@ try {
       body: JSON.stringify({ personId, label: "phone" }),
     });
     assert.equal(setup.status, 200);
-    return setup.body.token as string;
+    const opened = await call(`${new URL(setup.body.inviteUrl as string).pathname}/open`, { method: "POST" });
+    assert.equal(opened.status, 200);
+    return opened.body.token as string;
   }
   const adaToken = await enroll(ada.id);
   const benToken = await enroll(ben.id);

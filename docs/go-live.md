@@ -68,7 +68,7 @@ The free stable address is Tailscale Funnel (`https://….ts.net`, no domain). C
 
    On Windows, `cloudflared service install` registers the service. On Mac, `brew services start cloudflared` after the config is in place.
 
-   Set `PUBLIC_BASE_URL` in `.env` to that exact origin, with `https://` and no path. Restart I/O so it reads the file. The phone setup snippet uses this origin. Square webhook checks use `PUBLIC_BASE_URL/api/square/webhook` unless you set `SQUARE_WEBHOOK_NOTIFICATION_URL` yourself.
+   Set `PUBLIC_BASE_URL` in `.env` to that exact origin, with `https://` and no path. Restart I/O so it reads the file. The phone setup link uses this origin. Square webhook checks use `PUBLIC_BASE_URL/api/square/webhook` unless you set `SQUARE_WEBHOOK_NOTIFICATION_URL` yourself.
 6. In Square, send webhooks to `POST https://<that-host>/api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`.
 7. Open `https://<that-host>` once. Create the company, set the shop PIN, and confirm the roster comes from Square. This app does not write wages.
 8. Run the backup once, by hand, and check **+ → Ready**. Backup should show an age, not "No backup yet". Public URL should show the hostname.
@@ -196,6 +196,6 @@ On the shop PC, `.env` needs:
 - `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`
 - `PRESENCE_DEVICE_HASH_PEPPER`
 
-Enroll two phones first, not the whole roster. Each token is that person's Square team member. For one week, the manual tap on the strip is the backup: if a phone misses, they tap in. An arrive while they are already in does not open a second timecard. At the end of the week, check Ready (backup age and public URL) and that each person's Square timecard matches the strip.
+Enroll two phones first, not the whole roster. For each person, record consent, then `POST /api/presence/phone/setup` with the owner key and their Square team member id. Send that person the `inviteUrl` (`/join/:code`). They open it on their phone, follow the three steps, and tap Test it. Each token is that person's Square team member. For one week, the manual tap on the strip is the backup: if a phone misses, they tap in. An arrive while they are already in does not open a second timecard. At the end of the week, check Ready (backup age and public URL) and that each person's Square timecard matches the strip.
 
 `npm test` and `npm run check` should pass before you leave the shop PC running.

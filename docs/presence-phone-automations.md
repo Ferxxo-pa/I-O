@@ -4,7 +4,7 @@ This is the way the shop clock runs with no app to install from us and no extra 
 
 The shop is EZ Designs, 403 E Ben White Blvd, Austin.
 
-Ezven hands you a note from the I/O server. It has a web address, one header line, and four short messages. Copy them exactly. The long code after `Bearer` is a password for your phone. It is shown once. If you lose it, ask Ezven for a new note.
+Ezven sends you one link, `/join/:code`, from the I/O server. Open it on your phone. The page says who it is for. It can tell an iPhone from an Android phone. The long code after `Bearer` is a password for your phone. It is shown once, on that page. If you lose it, ask Ezven for a new link.
 
 Use these placeholders until you paste the real note. The address must start with `https://` when the shop is on the real server.
 
@@ -164,9 +164,9 @@ Three tries with 20 seconds between them stay well inside the 10-minute window. 
 
 Do not text the token to the group chat. Do not put it on a shop PC. The shop computers and printers never count as someone being at work.
 
-## Ezven prepares the note
+## Ezven prepares the link
 
-There is no setup screen. From the owner key, record that person's yes, then ask for a snippet. `PERSON_ID` is their id on the company.
+From the owner key, record that person's yes, then ask for a link. `PERSON_ID` is their id on the company. When Square is connected, that id is their Square team member id.
 
 ```bash
 curl -s -X POST https://shop.example/api/presence/consent \
@@ -180,7 +180,15 @@ curl -s -X POST https://shop.example/api/presence/phone/setup \
   -d '{"personId":"PERSON_ID","label":"Ada phone"}'
 ```
 
-The setup response is `{ personId, deviceId, token, url, snippet }`. Hand the person the `snippet` text. The server stores only a hash of the token. A later call cannot show the same token again. Calling setup again issues a second phone token. The old one keeps working until you revoke it:
+The setup response is `{ personId, name, deviceId, inviteUrl }`. There is no token in it. Send `inviteUrl` to that person. They open it on their phone.
+
+The page is three steps:
+
+1. iPhone: one tap copies two notes (the shop geofence, and Premiere) and opens Shortcuts. Apple will not import an unsigned automation, so they paste each note. Android: one tap downloads `ez-designs.macro`, with Premiere and the geofence already filled in, then they import it in MacroDroid.
+2. That paste, or that import.
+3. Test it. A check means the phone reached the shop. That check does not clock them in.
+
+The server stores only a hash of the token. The invite file seals the token until the first open. A second open is rejected. Calling setup again issues a second phone token. The old one keeps working until you revoke it:
 
 ```bash
 curl -s -X POST https://shop.example/api/presence/devices/DEVICE_ID/revoke \

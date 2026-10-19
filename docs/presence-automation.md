@@ -1,6 +1,6 @@
 # Presence automation
 
-The shop clock is the same one the I/O tap uses: `POST /api/clock/in` and `POST /api/clock/out` call `earnEngine.clockInPerson` and `earnEngine.clockOutPerson`. A phone arrive calls that clock-in. A phone leave calls that clock-out after the quiet grace. The source on the shift is `phone-geo` or `phone-wifi`. A tap is `manual`. If the person is already clocked in, another arrive does not start a second shift and does not replace a manual tap. A phone leave still uses the same clock-out after the quiet grace. Staff steps, the exact Shortcut and MacroDroid fields, and the one-time setup snippet are in `docs/presence-phone-automations.md`.
+The shop clock is the same one the I/O tap uses: `POST /api/clock/in` and `POST /api/clock/out` call `earnEngine.clockInPerson` and `earnEngine.clockOutPerson`. A phone arrive calls that clock-in. A phone leave calls that clock-out after the quiet grace. The source on the shift is `phone-geo` or `phone-wifi`. A tap is `manual`. If the person is already clocked in, another arrive does not start a second shift and does not replace a manual tap. A phone leave still uses the same clock-out after the quiet grace. Staff steps and the phone setup page are in `docs/presence-phone-automations.md`.
 
 This page is the server side: the phone token, the checks on every automatic signal, and the optional Wi-Fi watcher and BLE stub. Square stays a dry run unless `SQUARE_PRESENCE_MIRROR=live` and `SQUARE_ACCESS_TOKEN` are both set. Nothing in this path sends an hourly rate or an amount.
 
@@ -32,7 +32,9 @@ Without a yes, `POST /api/presence/phone`, `POST /api/presence/signal`, and `POS
 
 ## Phone token
 
-`POST /api/presence/phone/setup` (owner key) issues one device for one person and returns the ready-to-copy snippet: public URL, `Authorization: Bearer` token, and the four JSON bodies. The token looks like `io_` plus 32 random bytes, base64url. Only `sha256$` of it is stored. Revoke with `POST /api/presence/devices/:id/revoke`. List with `GET /api/presence/devices`. The list and the files never include the token.
+`POST /api/presence/phone/setup` (owner key) issues one device for one person on the roster and returns `inviteUrl` (`/join/:code`). It does not return the token. The employee opens that link on their phone. The page says who it is for, tells iPhone from Android, and reveals the token once. A second open is rejected. The token looks like `io_` plus 32 random bytes, base64url. The device file stores only `sha256$` of it. The invite file stores it sealed (`v1$`), not as plaintext. Revoke with `POST /api/presence/devices/:id/revoke`. List with `GET /api/presence/devices`. The list never includes the token.
+
+`POST /api/presence/phone/ping` with the same Bearer token checks that the phone is enrolled. It does not clock anyone in.
 
 The phone calls `POST /api/presence/phone` over HTTPS:
 

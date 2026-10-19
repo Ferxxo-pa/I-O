@@ -6,7 +6,9 @@ import { assertPublicReader } from "../auth/reader";
 import { publicBaseUrl } from "../publicBase";
 import { companyView } from "../company";
 import { ingestSignal } from "./ingest";
-import { ingestPhone, phoneSetupSnippet, presencePublicBase } from "./phone";
+import { createInvite, inviteByCode, openInvite, shopFence, shopWifiSsid } from "./invite";
+import { joinMissingHtml, joinPageHtml } from "./joinPage";
+import { ingestPhone, pingPhone, presencePublicBase } from "./phone";
 import { SquareMemberError } from "../square/labor";
 import { squareConfigured } from "../square/client";
 import { parsePunchBody } from "./normalize";
@@ -475,19 +477,26 @@ export function mountPresenceRoutes(app: Express) {
       const issued = issuePersonDevice(person.id, label, { squareTeamMemberId, squareLocationId });
       const proto = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol || "https";
       const host = req.header("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host") || "localhost";
-      const url = `${presencePublicBase({
+      const base = presencePublicBase({
         configured: publicBaseUrl(),
         proto,
         host,
-      })}/api/presence/phone`;
-      const snippet = phoneSetupSnippet({ url, token: issued.token, name: person.name });
-      res.json({
+      });
+      const phoneUrl = `${base}/api/presence/phone`;
+      const invite = createInvite({
         personId: person.id,
         name: person.name,
         deviceId: issued.id,
         token: issued.token,
-        url,
-        snippet,
+        phoneUrl,
+        now: presenceNow(),
+      });
+      res.setHeader("cache-control", "no-store");
+      res.json({
+        personId: person.id,
+        name: person.name,
+        deviceId: issued.id,
+        inviteUrl: `${base}/join/${invite.code}`,
         squareTeamMemberId: issued.squareTeamMemberId,
         squareLocationId: issued.squareLocationId,
       });
@@ -530,6 +539,42 @@ export function mountPresenceRoutes(app: Express) {
     } catch (err) {
       sendError(res, err, "Couldn't read that phone");
     }
+  });
+
+  app.post("/api/presence/phone/ping", (req, res) => {
+    try {
+      const result = pingPhone({ authorization: req.header("authorization"), ip: clientIp(req) });
+      res.setHeader("cache-control", "no-store");
+      res.status(result.status).json(result.body);
+    } catch (err) {
+      sendError(res, err, "Couldn't check that phone");
+    }
+  });
+
+  app.get("/join/:code", (req, res) => {
+    const code = req.params.code;
+    const invite = inviteByCode(code);
+    if (!invite) return res.status(404).type("html").send(joinMissingHtml());
+    const proto = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol || "https";
+    const host = req.header("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host") || "localhost";
+    const base = presencePublicBase({ configured: publicBaseUrl(), proto, host });
+    const fence = shopFence();
+    res.setHeader("cache-control", "no-store");
+    res.type("html").send(joinPageHtml({
+      name: invite.name,
+      ssid: shopWifiSsid(),
+      address: fence.address,
+      inviteUrl: `${base}/join/${code}`,
+      opened: invite.opened,
+    }));
+  });
+
+  app.post("/join/:code/open", (req, res) => {
+    const result = openInvite(req.params.code, presenceNow());
+    res.setHeader("cache-control", "no-store");
+    if (result === "missing") return res.status(404).json({ message: "This link is not valid" });
+    if (result === "used") return res.status(410).json({ message: "This link was already used" });
+    res.json(result);
   });
 
   app.post("/api/presence/phone", async (req, res) => {

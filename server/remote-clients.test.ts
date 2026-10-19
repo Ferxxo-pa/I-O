@@ -226,7 +226,9 @@ try {
     body: JSON.stringify({ personId: "TM_ADA", label: "phone" }),
   });
   assert.equal(setup.status, 200);
-  const token = setup.body.token as string;
+  const opened = await call(`${new URL(setup.body.inviteUrl as string).pathname}/open`, { method: "POST" });
+  assert.equal(opened.status, 200);
+  const token = opened.body.token as string;
   const consent = await call("/api/presence/consent", {
     method: "POST",
     headers: owner,

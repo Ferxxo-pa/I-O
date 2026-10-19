@@ -199,8 +199,8 @@ try {
   assert.equal(adaSetup.body.squareLocationId, "LOC1");
   assert.equal(JSON.stringify(adaSetup.body).includes("hourly"), false);
   assert.equal(benSetup.body.squareTeamMemberId, "TM_BEN");
-  const adaToken = adaSetup.body.token as string;
-  const benToken = benSetup.body.token as string;
+  const adaToken = (await call(`${new URL(adaSetup.body.inviteUrl as string).pathname}/open`, { method: "POST" })).body.token as string;
+  const benToken = (await call(`${new URL(benSetup.body.inviteUrl as string).pathname}/open`, { method: "POST" })).body.token as string;
 
   const nia = await setup("TM_NIA");
   assert.equal(nia.status, 409);

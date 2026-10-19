@@ -87,6 +87,21 @@ function disk() {
   return readdirSync(process.env.DATA_DIR!).map((name) => readFileSync(join(process.env.DATA_DIR!, name), "utf8")).join("\n");
 }
 
+async function reveal(inviteUrl: string) {
+  const opened = await call(`${new URL(inviteUrl).pathname}/open`, { method: "POST" });
+  assert.equal(opened.status, 200);
+  return opened.body as {
+    token: string;
+    url: string;
+    name: string;
+    ssid: string;
+    iphone: string;
+    lat: number;
+    lng: number;
+    macro: { macros: Array<{ m_triggerList: Array<{ m_classType?: string; m_SSID?: string; m_wifiState?: number }> }> };
+  };
+}
+
 let ownerKey = "";
 
 try {
@@ -136,15 +151,50 @@ try {
     body: JSON.stringify({ personId: ids.Ada, label: "Ada phone" }),
   });
   assert.equal(setup.status, 200);
-  const adaToken = setup.body.token as string;
-  assert.equal(setup.body.url, "https://shop.example/api/presence/phone");
-  assert.equal(setup.body.snippet.includes(`Authorization: Bearer ${adaToken}`), true);
-  assert.equal(setup.body.snippet.includes('{"event":"arrive","trigger":"geo"}'), true);
+  assert.equal(setup.body.token, undefined);
+  assert.equal(setup.body.snippet, undefined);
+  assert.match(String(setup.body.inviteUrl), /^https:\/\/shop\.example\/join\/[A-Za-z0-9_-]+$/);
   assert.equal(JSON.stringify(setup.body).includes("hourly"), false);
+  assert.equal(JSON.stringify(setup.body).includes("Bearer"), false);
+  const page = await fetch(`${base}${new URL(setup.body.inviteUrl as string).pathname}`);
+  const html = await page.text();
+  assert.equal(page.status, 200);
+  assert.match(html, /Setting up for Ada/);
+  assert.match(html, /Premiere/);
+  assert.match(html, /403 E Ben White Blvd, Austin/);
+  const opened = await reveal(setup.body.inviteUrl as string);
+  const adaToken = opened.token;
+  assert.equal(html.includes(adaToken), false);
+  assert.equal(opened.url, "https://shop.example/api/presence/phone");
+  assert.equal(opened.name, "Ada");
+  assert.equal(opened.ssid, "Premiere");
+  assert.equal(opened.iphone.includes(`Authorization: Bearer ${adaToken}`), true);
+  assert.equal(opened.iphone.includes('{"event":"arrive","trigger":"geo"}'), true);
+  assert.equal(opened.iphone.includes('{"event":"leave","trigger":"wifi"}'), true);
+  assert.equal(opened.iphone.includes("Premiere"), true);
+  assert.equal(JSON.stringify(opened.macro).includes("GeofenceTrigger"), true);
+  assert.equal(JSON.stringify(opened.macro).includes("WifiConnectionTrigger"), true);
+  assert.equal(JSON.stringify(opened.macro).includes('"m_wifiState":2'), true);
+  assert.equal(JSON.stringify(opened.macro).includes('"m_wifiState":3'), true);
+  assert.equal(opened.lat, SHOP_POINT.lat);
+  assert.equal(opened.lng, SHOP_POINT.lng);
+  const secondOpen = await call(`${new URL(setup.body.inviteUrl as string).pathname}/open`, { method: "POST" });
+  assert.equal(secondOpen.status, 410);
   const listed = await call("/api/presence/devices", { headers: { "x-owner-key": ownerKey } });
   assert.equal(JSON.stringify(listed.body).includes(adaToken), false);
   assert.equal(disk().includes(adaToken), false);
   assert.equal(disk().includes("sha256$"), true);
+  assert.equal(disk().includes("v1$"), true);
+  const ping = await call("/api/presence/phone/ping", {
+    method: "POST",
+    headers: { authorization: `Bearer ${adaToken}` },
+  });
+  assert.equal(ping.status, 200);
+  assert.equal(ping.body.connected, true);
+  assert.equal(ping.body.name, "Ada");
+  assert.equal(await clocked(ids.Ada), false);
+  const pingMissing = await call("/api/presence/phone/ping", { method: "POST" });
+  assert.equal(pingMissing.status, 401);
 
   const noToken = await call("/api/presence/phone", {
     method: "POST",
@@ -158,7 +208,7 @@ try {
     headers: { "content-type": "application/json", "x-owner-key": ownerKey },
     body: JSON.stringify({ personId: ids.Nia }),
   });
-  const niaDenied = await phone(niaSetup.body.token as string, "arrive", "geo");
+  const niaDenied = await phone((await reveal(niaSetup.body.inviteUrl as string)).token, "arrive", "geo");
   assert.equal(niaDenied.status, 403);
   assert.equal(niaDenied.body.reason, "no_consent");
   assert.equal((await punchRows()).some((row) => row.personId === ids.Nia), false);
@@ -234,8 +284,9 @@ try {
     headers: { "content-type": "application/json", "x-owner-key": ownerKey },
     body: JSON.stringify({ personId: ids.Chi }),
   });
+  const chiToken = (await reveal(chi.body.inviteUrl as string)).token;
   setPreviewNow(at(7));
-  const early = await phone(chi.body.token as string, "arrive", "wifi");
+  const early = await phone(chiToken, "arrive", "wifi");
   assert.equal(early.body.applied, "arrive");
   assert.equal(await clocked(ids.Chi), true);
   setPreviewNow(at(19));
@@ -277,13 +328,14 @@ try {
     headers: { "content-type": "application/json", "x-owner-key": ownerKey },
     body: JSON.stringify({ personId: ids.Nia }),
   });
+  const niaToken = (await reveal(nia.body.inviteUrl as string)).token;
   setPreviewNow(at(10));
-  assert.equal((await phone(nia.body.token as string, "arrive", "geo")).body.applied, "arrive");
+  assert.equal((await phone(niaToken, "arrive", "geo")).body.applied, "arrive");
   setPreviewNow(at(10) + 6_000);
   await catchUpPresence();
   const stuck = await call(`/api/presence/health/${ids.Nia}`, { headers: { "x-owner-key": ownerKey } });
   assert.equal(stuck.body.review, "stationary");
-  const ignored = await phone(nia.body.token as string, "arrive", "wifi");
+  const ignored = await phone(niaToken, "arrive", "wifi");
   assert.equal(ignored.body.reason, "stationary");
   const devices = await call("/api/presence/devices", { headers: { "x-owner-key": ownerKey } });
   const niaDevice = (devices.body.devices as Array<{ id: string; personId: string; stationaryAt: number | null }>).find(
@@ -302,8 +354,9 @@ try {
     headers: { "content-type": "application/json", "x-owner-key": ownerKey },
     body: JSON.stringify({ personId: ids.Eve }),
   });
+  const eveToken = (await reveal(eve.body.inviteUrl as string)).token;
   setPreviewNow(at(16));
-  assert.equal((await phone(eve.body.token as string, "arrive", "geo")).body.applied, "arrive");
+  assert.equal((await phone(eveToken, "arrive", "geo")).body.applied, "arrive");
   setPreviewNow(shopDateStart("2026-10-15") + 8 * 3_600_000);
   await catchUpPresence();
   const eveDevices = await call("/api/presence/devices", { headers: { "x-owner-key": ownerKey } });
@@ -420,7 +473,7 @@ try {
 
   resetSignalLimits();
   process.env.PRESENCE_SIGNAL_RATE_PER_MIN = "2";
-  const limitToken = chi.body.token as string;
+  const limitToken = chiToken;
   const first = await phone(limitToken, "leave", "wifi");
   const second = await phone(limitToken, "leave", "geo");
   assert.equal(first.status, 200);

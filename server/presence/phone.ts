@@ -257,3 +257,25 @@ export async function ingestPhone(input: {
   }
   return finish(200, empty({ ok: true, personId: person.id, event: "leave", trigger: signal.trigger, applied: "exit" }));
 }
+
+/** Confirms the token and consent. Does not clock in or out. */
+export function pingPhone(input: {
+  authorization: string | undefined;
+  ip: string;
+}): { status: number; body: { ok: boolean; connected: boolean; name?: string; message?: string } } {
+  const token = bearerToken(input.authorization);
+  if (!token) return { status: 401, body: { ok: false, connected: false, message: "Unknown device" } };
+  try {
+    const found = personForPresentedDevice(token, input.ip);
+    if (!found) return { status: 401, body: { ok: false, connected: false, message: "Unknown device" } };
+    const person = personById(found.personId);
+    if (!person) return { status: 401, body: { ok: false, connected: false, message: "Unknown device" } };
+    if (!personHasConsent(person.id)) {
+      return { status: 403, body: { ok: false, connected: false, name: person.name, message: "No consent" } };
+    }
+    return { status: 200, body: { ok: true, connected: true, name: person.name } };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Too many tries";
+    return { status: 429, body: { ok: false, connected: false, message } };
+  }
+}
