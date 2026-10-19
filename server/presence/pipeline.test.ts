@@ -106,6 +106,13 @@ try {
   }
   const adaPhone = await enroll(ada.id);
   const benPhone = await enroll(ben.id);
+  const adaSilent = await call(`/api/presence/health/${ada.id}`, { headers: { "x-owner-key": ownerKey } });
+  const benSilent = await call(`/api/presence/health/${ben.id}`, { headers: { "x-owner-key": ownerKey } });
+  assert.equal(adaSilent.status, 200);
+  assert.equal(adaSilent.body.silent, true);
+  assert.equal(adaSilent.body.lastSignalAt, null);
+  assert.equal(adaSilent.body.status, "off");
+  assert.equal(benSilent.body.silent, true);
   const devices = await call("/api/presence/devices", { headers: { "x-owner-key": ownerKey } });
   assert.equal(
     (devices.body.devices as Array<{ personId: string; teamId: string }>).every((device) => device.teamId === teamId),
@@ -114,11 +121,22 @@ try {
 
   const arrived = await phone(adaPhone.token, "arrive", "geo", at(9));
   assert.equal(arrived.body.applied, "arrive");
+  const heard = await call(`/api/presence/health/${ada.id}`, { headers: { "x-owner-key": ownerKey } });
+  assert.equal(heard.body.silent, false);
+  assert.equal(heard.body.lastSource, "phone");
+  assert.equal(heard.body.lastTrigger, "geo");
+  assert.equal(heard.body.lastSignalAt, at(9));
+  assert.equal(heard.body.status, "working");
   setPreviewNow(at(9, 1));
   const wifi = await phone(adaPhone.token, "arrive", "wifi", at(9, 1));
   assert.equal(wifi.body.applied, "seen");
   const again = await phone(adaPhone.token, "arrive", "geo", at(9));
   assert.equal(again.body.duplicate, true);
+  const adaLog = await call("/api/presence/log", { headers: { "x-owner-key": ownerKey } });
+  const adaArrives = (adaLog.body.punches as Array<{ personId: string; type: string; accepted: boolean }>).filter(
+    (row) => row.personId === ada.id && row.type === "arrive" && row.accepted,
+  );
+  assert.equal(adaArrives.length, 1);
 
   await catchUpPresence();
   const early = await call(`/api/presence/state/${ada.id}`, { headers: { "x-owner-key": ownerKey } });

@@ -192,6 +192,11 @@ export class EarnEngine {
     return Boolean(this.shifts.find((shift) => shift.personId === personId)?.clockedIn);
   }
 
+  /** Drop presence-owned shifts so a boot can rebuild them from the punch log. */
+  dropPresenceShifts(): void {
+    this.shifts = this.shifts.filter((shift) => shift.managedBy !== "presence");
+  }
+
   /** A Square wage timecard is left to the older clock. Presence drives local shifts. */
   presenceMayDrive(personId: string): boolean {
     const shift = this.shifts.find((entry) => entry.personId === personId);

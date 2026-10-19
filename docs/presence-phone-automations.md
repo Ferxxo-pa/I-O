@@ -134,6 +134,25 @@ Each flow is one trigger, then one HTTP request:
 
 Give the location blocks the shop address, 403 E Ben White Blvd, Austin. Give the Wi-Fi blocks the shop network name Ezven gives you.
 
+## If the phone is offline
+
+The shop accepts a late signal only inside a short window. By default that window is 10 minutes back and 15 seconds ahead (`PRESENCE_PHONE_MAX_AGE_MS` and `PRESENCE_SIGNAL_MAX_FUTURE_MS`). A signal older than that is ignored. Nothing is subtracted, and the clock does not jump.
+
+A retried signal should carry the time the trigger actually fired, so the shop clocks that moment instead of the later retry. Add one more JSON field, `ts`, the Unix time in milliseconds. Store that time when the automation starts, and send the same number on every retry.
+
+Shortcuts has no retry count on Get Contents of URL. A Personal Automation that fails while the phone is offline does not line up to run later. The location and Wi-Fi triggers themselves usually fire again when the phone is back, and the 15-minute grace covers a short iOS delay. Do not add a loop in Shortcuts.
+
+MacroDroid's HTTP Request action has no retry field either. The free-tier way to retry is a short loop, and the loop must finish inside 10 minutes:
+
+1. At the top of the macro, set a variable `fired` to the current time in milliseconds (MacroDroid's system time magic text).
+2. Put the HTTP Request inside a Repeat action set to 3 times.
+3. In the JSON body, add `ts` and insert the `fired` variable, so every try sends the original time.
+4. On the HTTP Request action, save the response code to a variable.
+5. After the request, if that code is 200, exit the loop.
+6. If it is not 200, add a Wait of 20 seconds, then let the loop try again.
+
+Three tries with 20 seconds between them stay well inside the 10-minute window. Do not raise the repeat count so high that the last try is older than 10 minutes. The shop will ignore it.
+
 ## How to test
 
 1. At the shop, join the shop Wi-Fi, or walk up to the building with location on.

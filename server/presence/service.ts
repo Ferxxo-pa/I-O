@@ -460,6 +460,7 @@ function noteSilence() {
 
 export function reloadPresence() {
   book = null;
+  earnEngine.dropPresenceShifts();
   ensureBook();
   return replayAllPhones().then(() => applyAll());
 }
@@ -531,6 +532,7 @@ export function startPresence() {
   ensureBook();
   setEarnClock(presenceNow);
   earnEngine.setPresenceProvider((viewerId) => ensureBook().view(roster(), viewerId, presenceNow()));
+  void replayAllPhones().then(() => applyAll());
   if (timer) return;
   timer = setInterval(() => {
     void sweep();

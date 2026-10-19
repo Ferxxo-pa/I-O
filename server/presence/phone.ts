@@ -18,7 +18,7 @@ import {
   watchFor,
 } from "./service";
 import { shopTeamId } from "./shop";
-import { deviceLatched, dropPhoneLatches, noteSight } from "./watch";
+import { deviceLatched, dropPhoneLatches, noteSight, type WatchPerson } from "./watch";
 
 const phoneSchema = z
   .object({
@@ -42,6 +42,16 @@ export function bearerToken(header: string | undefined): string | null {
   if (!header) return null;
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   return match?.[1] ?? null;
+}
+
+function latestPhoneAt(watch: WatchPerson | null, deviceId: string): number {
+  if (!watch) return 0;
+  const prefix = `phone:${deviceId}:`;
+  let latest = 0;
+  for (const [key, source] of Object.entries(watch.sources)) {
+    if (key.startsWith(prefix) && source.at > latest) latest = source.at;
+  }
+  return latest;
 }
 
 export function presencePublicBase(input: { configured: string | undefined; proto: string; host: string }): string {
@@ -160,6 +170,39 @@ export async function ingestPhone(input: {
 
   const sourceId = `${device.id}:${signal.trigger}`;
   const watch = watchFor(person.id);
+  const latest = latestPhoneAt(watch, device.id);
+  if (at < latest) {
+    recordPhoneEvent({
+      personId: person.id,
+      teamId: shopTeamId(),
+      deviceId: device.id,
+      event: signal.event,
+      trigger: signal.trigger,
+      at,
+      receivedAt: now,
+    });
+    if (signal.event === "arrive") {
+      const open = personDay(person.id);
+      if (open.clockInTs != null && at < open.clockInTs && open.phase !== "closed") {
+        const noted = await commitNote({ person, type: "arrive", ts: at, source: "phone" });
+        return finish(
+          200,
+          empty({
+            ok: true,
+            personId: person.id,
+            event: "arrive",
+            trigger: signal.trigger,
+            applied: noted.record?.accepted ? "arrive" : "rejected",
+            reason: noted.record?.reason ?? null,
+          }),
+        );
+      }
+    }
+    return finish(
+      200,
+      empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "out_of_order" }),
+    );
+  }
   if (signal.event === "arrive") {
     const still = deviceLatched(watch, device.id, now, config.quietMs);
     const sessionStart = still && device.sessionStart != null ? device.sessionStart : at;
