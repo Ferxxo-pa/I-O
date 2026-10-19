@@ -1,11 +1,10 @@
 import { z } from "zod";
+import { earnEngine } from "../clock/engine";
 import { dayConfigFromEnv, signalConfigFromEnv } from "./config";
 import { withinCollection } from "./session";
 import {
-  commitNote,
   enrolledDevice,
   personById,
-  personDay,
   personForPresentedDevice,
   personHasConsent,
   presenceNow,
@@ -181,23 +180,6 @@ export async function ingestPhone(input: {
       at,
       receivedAt: now,
     });
-    if (signal.event === "arrive") {
-      const open = personDay(person.id);
-      if (open.clockInTs != null && at < open.clockInTs && open.phase !== "closed") {
-        const noted = await commitNote({ person, type: "arrive", ts: at, source: "phone" });
-        return finish(
-          200,
-          empty({
-            ok: true,
-            personId: person.id,
-            event: "arrive",
-            trigger: signal.trigger,
-            applied: noted.record?.accepted ? "arrive" : "rejected",
-            reason: noted.record?.reason ?? null,
-          }),
-        );
-      }
-    }
     return finish(
       200,
       empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "out_of_order" }),
@@ -218,28 +200,18 @@ export async function ingestPhone(input: {
     saveDeviceSession(device.id, { sessionStart, lastSeenAt: at, stationaryAt: null });
     saveWatch(person.id, noteSight(watch, { source: "phone", sourceId, at, present: true, latch: true }));
     recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "arrive", trigger: signal.trigger, at, receivedAt: now });
-    const phase = personDay(person.id).phase;
-    if (phase === "working") {
+    const clockPerson = { id: person.id, name: person.name, hourlyCents: person.hourlyCents };
+    const source = signal.trigger === "wifi" ? "phone-wifi" : "phone-geo";
+    const info = earnEngine.shiftInfo(person.id);
+    if (info?.clockedIn) {
+      if (info.managedBy !== "presence" && info.holdAt != null) {
+        await earnEngine.clockInPerson(clockPerson, at, source);
+        return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "arrive" }));
+      }
       return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "seen" }));
     }
-    if (phase === "closed") {
-      return finish(
-        200,
-        empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "ignored", reason: "day_closed" }),
-      );
-    }
-    const noted = await commitNote({ person, type: "arrive", ts: at, source: "phone" });
-    return finish(
-      200,
-      empty({
-        ok: true,
-        personId: person.id,
-        event: "arrive",
-        trigger: signal.trigger,
-        applied: noted.record?.accepted ? "arrive" : "rejected",
-        reason: noted.record?.reason ?? null,
-      }),
-    );
+    await earnEngine.clockInPerson(clockPerson, at, source);
+    return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "arrive" }));
   }
 
   const marked = noteSight(watch, { source: "phone", sourceId, at, present: false, latch: true });
@@ -250,6 +222,8 @@ export async function ingestPhone(input: {
   recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "leave", trigger: signal.trigger, at, receivedAt: now });
   if (!deviceLatched(watchFor(person.id), device.id, now, config.quietMs)) {
     saveDeviceSession(device.id, { sessionStart: null, lastSeenAt: at, stationaryAt: null });
+    const info = earnEngine.shiftInfo(person.id);
+    if (info?.clockedIn && info.managedBy !== "presence") earnEngine.holdWork(person.id, at);
   }
   return finish(200, empty({ ok: true, personId: person.id, event: "leave", trigger: signal.trigger, applied: "exit" }));
 }

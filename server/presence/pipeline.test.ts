@@ -132,11 +132,10 @@ try {
   assert.equal(wifi.body.applied, "seen");
   const again = await phone(adaPhone.token, "arrive", "geo", at(9));
   assert.equal(again.body.duplicate, true);
-  const adaLog = await call("/api/presence/log", { headers: { "x-owner-key": ownerKey } });
-  const adaArrives = (adaLog.body.punches as Array<{ personId: string; type: string; accepted: boolean }>).filter(
-    (row) => row.personId === ada.id && row.type === "arrive" && row.accepted,
-  );
-  assert.equal(adaArrives.length, 1);
+  const adaState = await call("/api/state", { headers: { "x-person-id": ada.id } });
+  const adaIns = (adaState.body.events as Array<{ kind: string }>).filter((event) => event.kind === "clock_in");
+  assert.equal(adaIns.length, 1);
+  assert.equal(adaState.body.session.clockedIn, true);
 
   await catchUpPresence();
   const early = await call(`/api/presence/state/${ada.id}`, { headers: { "x-owner-key": ownerKey } });
@@ -155,7 +154,7 @@ try {
   await catchUpPresence();
   const pending = await call("/api/presence/me", { headers: { authorization: `Bearer ${adaPhone.token}` } });
   assert.equal(pending.status, 200);
-  assert.equal(pending.body.status, "working");
+  assert.equal(pending.body.status, "on_break");
   assert.equal(pending.body.accruedMs, 30 * 60_000);
   assert.equal(pending.body.moneyCents, 1200);
   assert.equal(pending.body.engineCents, 1200);
@@ -168,7 +167,7 @@ try {
   setPreviewNow(at(9, 50));
   await catchUpPresence();
   const onBreak = await call(`/api/presence/state/${ada.id}`, { headers: { "x-owner-key": ownerKey } });
-  assert.equal(onBreak.body.phase, "break");
+  assert.equal(onBreak.body.status, "off");
   assert.equal(onBreak.body.moneyCents, 1200);
   assert.equal(onBreak.body.engineCents, 1200);
 
@@ -214,7 +213,7 @@ try {
   setPreviewNow(at(19, 5));
   await catchUpPresence();
   const closed = await call(`/api/presence/health/${ada.id}`, { headers: { "x-owner-key": ownerKey } });
-  assert.equal(closed.body.phase, "closed");
+  assert.equal(closed.body.status, "off");
   assert.equal(closed.body.flag, "auto_closed");
   assert.equal(closed.body.review, "auto_closed");
   assert.equal(closed.body.accruedMs, 570 * 60_000);

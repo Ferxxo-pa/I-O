@@ -37,7 +37,6 @@ import {
 import { allowSignal, clearDeviceFailures, deviceAuthLocked, noteDeviceFailure, recallSignal, rememberSignal } from "./replay";
 import { blankSession, type SessionState } from "./session";
 import { liveTransport, mirrorMode, type MirrorLink, type MirrorTransport, type PlannedCall, type SquarePerson } from "./square";
-import { accountStatus, moneyCentsFor } from "./account";
 import { appendPhoneEvent, foldPhoneEvents, readPhoneEvents, type PhoneEvent } from "./journal";
 import { deviceOnThisTeam, shopTeamId } from "./shop";
 import { latchedOvernight } from "./session";
@@ -222,6 +221,8 @@ function ensureBook(): PresenceBook {
 }
 
 function applySignal(signal: ClockSignal) {
+  const owned = earnEngine.shiftInfo(signal.personId);
+  if (owned && owned.managedBy !== "presence") return;
   if (!earnEngine.presenceMayDrive(signal.personId)) return;
   const person = roster().find((entry) => entry.id === signal.personId);
   if (!person || person.hourlyCents <= 0) return;
@@ -275,13 +276,20 @@ async function releaseStationary() {
     notePhoneLeave(device.personId, device.id, now);
     const person = roster().find((entry) => entry.id === device.personId);
     if (!person) continue;
+    const info = earnEngine.shiftInfo(person.id);
     const today = ensureBook().day(person.id, now);
+    const onPhoneClock = Boolean(info?.clockedIn && info.managedBy !== "presence");
     let ts = now;
-    if (today.phase !== "working") {
+    if (today.phase !== "working" && !onPhoneClock) {
       if (!overnight) continue;
       const sessionDate = zonedParts(device.sessionStart, day.tz).key;
       const autoCloseAt = shopDateStart(sessionDate, day.tz) + signal.autoCloseMin * 60_000;
       ts = Math.min(now, Math.max(device.sessionStart, autoCloseAt));
+    }
+    if (onPhoneClock) {
+      earnEngine.markReview(person.id, "stationary");
+      await earnEngine.clockOutPerson(person.id, ts);
+      continue;
     }
     await commitNote({
       person,
@@ -307,6 +315,43 @@ async function maintain() {
   for (const person of roster()) {
     try {
       const watch = watchFor(person.id);
+      const info = earnEngine.shiftInfo(person.id);
+      if (info?.clockedIn && info.managedBy !== "presence") {
+        const quietAt = shouldQuietLeave({
+          phase: "working",
+          clockInTs: info.clockedInAt,
+          watch,
+          now,
+          quietMs: signal.quietMs,
+        });
+        if (quietAt != null) await earnEngine.clockOutPerson(person.id, quietAt);
+        const closeAt = shouldAutoClose({
+          phase: "working",
+          clockInTs: info.clockedInAt,
+          watch: watchFor(person.id),
+          now,
+          autoCloseAt: deadline,
+          quietMs: signal.quietMs,
+        });
+        if (closeAt != null && earnEngine.shiftOpen(person.id)) {
+          earnEngine.markReview(person.id, "auto_closed");
+          await earnEngine.clockOutPerson(person.id, closeAt);
+          const fresh = watchFor(person.id);
+          if (fresh) {
+            let next = fresh;
+            for (const key of Object.keys(fresh.sources)) {
+              if (!key.startsWith("phone:")) continue;
+              const deviceId = key.slice("phone:".length).split(":")[0] ?? "";
+              if (deviceId) {
+                next = dropPhoneLatches(next, deviceId, closeAt);
+                notePhoneLeave(person.id, deviceId, closeAt);
+              }
+            }
+            saveWatch(person.id, next);
+          }
+        }
+        continue;
+      }
       let status = current.day(person.id, now);
       const quietAt = shouldQuietLeave({
         phase: status.phase,
@@ -418,13 +463,17 @@ export async function replayPersonPhone(personId: string) {
   const events = readPhoneEvents(journalFile()).filter((event) => event.personId === personId);
   const fold = foldPhoneEvents(events);
   mergePhoneWatch(personId, fold.watch);
-  const book = ensureBook();
-  for (const at of fold.arrives) {
-    if (book.hasNear(personId, "arrive", at, 1000)) continue;
-    const day = book.day(personId, at);
-    if (day.phase === "working" || day.phase === "closed") continue;
-    await commitNote({ person: { id: person.id, name: person.name }, type: "arrive", ts: at, source: "phone" });
-  }
+  const latched = Object.values(fold.watch?.sources ?? {}).some((source) => source.latch && source.present);
+  const info = earnEngine.shiftInfo(personId);
+  if (!latched || info?.clockedIn) return;
+  const lastArrive = [...events].reverse().find((event) => event.event === "arrive");
+  if (!lastArrive) return;
+  const source = lastArrive.trigger === "wifi" ? "phone-wifi" : "phone-geo";
+  await earnEngine.clockInPerson(
+    { id: person.id, name: person.name, hourlyCents: person.hourlyCents },
+    lastArrive.at,
+    source,
+  );
 }
 
 export async function replayAllPhones() {
@@ -469,26 +518,30 @@ export function personWork(personId: string) {
   const person = getCompany().people.find((entry) => entry.id === personId);
   if (!person) return null;
   const now = presenceNow();
-  const current = ensureBook();
-  const day = current.day(personId, now);
-  const paid = day.phase === "pending" && day.leaveTs != null ? current.day(personId, day.leaveTs) : day;
-  const accruedMs = Math.max(0, paid.workedMs);
+  earnEngine.rollHours(now);
+  const info = earnEngine.shiftInfo(personId);
   const hourDurationMs = earnEngine.getState().config.hourDurationMs;
-  const moneyCents = moneyCentsFor(accruedMs, person.hourlyCents, hourDurationMs);
+  const moneyCents = earnEngine.presenceCents(personId, now);
+  const open = Boolean(info?.clockedIn);
+  const startedAt = info?.clockedInAt ?? null;
+  const accruedMs = person.hourlyCents > 0 ? Math.floor((moneyCents * hourDurationMs) / person.hourlyCents) : 0;
+  const status = !open ? "off" : info?.holdAt != null ? "on_break" : "working";
   return {
     personId: person.id,
     teamId: shopTeamId(),
     name: person.name,
-    status: accountStatus(day.phase),
-    phase: day.phase,
-    startedAt: day.clockInTs,
+    status,
+    phase: status === "working" ? "working" : status === "on_break" ? "pending" : "out",
+    startedAt,
     accruedMs,
     accruedSeconds: Math.floor(accruedMs / 1000),
     rateCents: person.hourlyCents,
     hourDurationMs,
     moneyCents,
-    engineCents: earnEngine.presenceCents(personId, now),
-    paused: day.phase === "pending" || day.phase === "break",
+    engineCents: moneyCents,
+    paused: info?.holdAt != null,
+    source: info?.source ?? null,
+    review: info?.review ?? null,
   };
 }
 
@@ -500,7 +553,7 @@ export function personHealth(personId: string) {
   const lastPunch = punches.length ? punches[punches.length - 1] : null;
   const devices = readDevices(deviceFile()).filter((device) => device.personId === personId && device.revokedAt == null);
   const stationary = devices.some((device) => device.stationaryAt != null);
-  const flag = [...punches].reverse().find((row) => row.flag)?.flag ?? null;
+  const flag = work.review ?? ([...punches].reverse().find((row) => row.flag)?.flag ?? null);
   const review = flag === "auto_closed" || flag === "stationary" ? flag : stationary ? "stationary" : null;
   const dayCfg = dayConfigFromEnv();
   const date = zonedParts(presenceNow(), dayCfg.tz).key;

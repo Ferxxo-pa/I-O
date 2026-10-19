@@ -1,6 +1,6 @@
 # Presence automation
 
-The punch log, `data/presence-punches.jsonl`, is the day. Phone automations are the primary way a punch gets there, with no app build and no hardware. Staff steps, the exact Shortcut and MacroDroid fields, and the one-time setup snippet are in `docs/presence-phone-automations.md`.
+The shop clock is the same one the I/O tap uses: `POST /api/clock/in` and `POST /api/clock/out` call `earnEngine.clockInPerson` and `earnEngine.clockOutPerson`. A phone arrive calls that clock-in. A phone leave calls that clock-out after the quiet grace. The source on the shift is `phone-geo` or `phone-wifi`. A tap is `manual`. If the person is already clocked in, another arrive does not start a second shift and does not replace a manual tap. A phone leave still uses the same clock-out after the quiet grace. Staff steps, the exact Shortcut and MacroDroid fields, and the one-time setup snippet are in `docs/presence-phone-automations.md`.
 
 This page is the server side: the phone token, the checks on every automatic signal, and the optional Wi-Fi watcher and BLE stub. Square stays a dry run unless `SQUARE_PRESENCE_MIRROR=live` and `SQUARE_ACCESS_TOKEN` are both set. Nothing in this path sends an hourly rate or an amount.
 

@@ -100,28 +100,23 @@ try {
   await catchUpPresence();
   const stillIn = await call(`/api/presence/state/${ada.id}`, { headers });
   assert.equal(stillIn.body.status, "working");
+  assert.equal(stillIn.body.source, "phone-geo");
   assert.equal(stillIn.body.moneyCents, 200);
   assert.equal(stillIn.body.engineCents, 200);
 
   const earlier = await phone(adaToken, "arrive", "wifi", at(8, 56));
-  assert.equal(earlier.body.applied, "arrive");
-  const earlierAgain = await phone(adaToken, "arrive", "wifi", at(8, 56));
-  assert.equal(earlierAgain.body.duplicate, true);
+  assert.equal(earlier.body.reason, "out_of_order");
   await catchUpPresence();
   const fromFirst = await call(`/api/presence/state/${ada.id}`, { headers });
-  assert.equal(fromFirst.body.accruedMs, 9 * 60_000);
-  assert.equal(fromFirst.body.moneyCents, 360);
-  assert.equal(fromFirst.body.engineCents, 360);
-  assert.ok(fromFirst.body.moneyCents > 0);
+  assert.equal(fromFirst.body.accruedMs, 5 * 60_000);
+  assert.equal(fromFirst.body.moneyCents, 200);
+  assert.equal(fromFirst.body.engineCents, 200);
 
   const wifi = await phone(adaToken, "arrive", "wifi", at(9, 5));
   assert.equal(wifi.body.applied, "seen");
-  const log = await call("/api/presence/log", { headers });
-  const arrives = (log.body.punches as Array<{ personId: string; type: string; accepted: boolean; ts: number }>).filter(
-    (row) => row.personId === ada.id && row.type === "arrive" && row.accepted,
-  );
-  assert.equal(arrives.length, 2);
-  assert.equal(Math.min(...arrives.map((row) => row.ts)), at(8, 56));
+  const adaState = await call("/api/state", { headers: { "x-person-id": ada.id } });
+  const ins = (adaState.body.events as Array<{ kind: string }>).filter((event) => event.kind === "clock_in");
+  assert.equal(ins.length, 1);
 
   setPreviewNow(at(9, 20));
   const stale = await phone(benToken, "arrive", "geo", at(9));
@@ -147,19 +142,69 @@ try {
   setPreviewNow(at(9, 30));
   await catchUpPresence();
   const beforeBoot = await call(`/api/presence/state/${ada.id}`, { headers });
-  assert.equal(beforeBoot.body.accruedMs, 34 * 60_000);
-  assert.equal(beforeBoot.body.moneyCents, 1360);
+  assert.equal(beforeBoot.body.accruedMs, 30 * 60_000);
+  assert.equal(beforeBoot.body.moneyCents, 1200);
   await reloadPresence();
   const afterBoot = await call(`/api/presence/health/${ada.id}`, { headers });
   assert.equal(afterBoot.body.status, "working");
   assert.equal(afterBoot.body.accruedMs, beforeBoot.body.accruedMs);
-  assert.equal(afterBoot.body.moneyCents, 1360);
-  assert.equal(afterBoot.body.engineCents, 1360);
+  assert.equal(afterBoot.body.moneyCents, 1200);
+  assert.equal(afterBoot.body.engineCents, 1200);
   assert.equal(afterBoot.body.lastSource, "phone");
   assert.equal(afterBoot.body.silent, false);
   const benBoot = await call(`/api/presence/state/${ben.id}`, { headers });
   assert.equal(benBoot.body.moneyCents, 18 * 60);
   assert.equal(benBoot.body.engineCents, benBoot.body.moneyCents);
+
+  const rio = await add("Rio", 2400);
+  const rioConsent = await call("/api/presence/consent", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ personId: rio.id, consent: true }),
+  });
+  assert.equal(rioConsent.status, 200);
+  const rioToken = await enroll(rio.id);
+  const pin = await call("/api/fight/pin", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ pin: "2468" }),
+  });
+  assert.equal(pin.status, 200);
+  setPreviewNow(at(10));
+  const beforeTap = await call("/api/state", { headers: { "x-person-id": rio.id } });
+  const beforeIns = (beforeTap.body.events as Array<{ kind: string }>).filter((event) => event.kind === "clock_in").length;
+  const tap = await call("/api/clock/in", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-shop-pin": "2468", "x-person-id": rio.id },
+  });
+  assert.equal(tap.status, 200);
+  assert.equal(tap.body.session.clockedIn, true);
+  const rioArrive = await phone(rioToken, "arrive", "geo", at(10));
+  assert.equal(rioArrive.body.applied, "seen");
+  const rioOpen = await call(`/api/presence/state/${rio.id}`, { headers });
+  assert.equal(rioOpen.body.source, "manual");
+  assert.equal(rioOpen.body.status, "working");
+  const rioEvents = await call("/api/state", { headers: { "x-person-id": rio.id } });
+  const rioIns = (rioEvents.body.events as Array<{ kind: string }>).filter((event) => event.kind === "clock_in");
+  assert.equal(rioIns.length, beforeIns + 1);
+  setPreviewNow(at(10, 10));
+  const rioLeave = await phone(rioToken, "leave", "geo", at(10, 10));
+  assert.equal(rioLeave.body.applied, "exit");
+  setPreviewNow(at(10, 20));
+  await catchUpPresence();
+  const rioHeld = await call(`/api/presence/state/${rio.id}`, { headers });
+  assert.equal(rioHeld.body.status, "on_break");
+  assert.equal(rioHeld.body.moneyCents, 400);
+  const rioBack = await phone(rioToken, "arrive", "wifi", at(10, 20));
+  assert.equal(rioBack.body.applied, "arrive");
+  const rioResumed = await call(`/api/presence/state/${rio.id}`, { headers });
+  assert.equal(rioResumed.body.source, "manual");
+  assert.equal(rioResumed.body.status, "working");
+  setPreviewNow(at(10, 30));
+  await catchUpPresence();
+  const rioLater = await call(`/api/presence/state/${rio.id}`, { headers });
+  assert.equal(rioLater.body.moneyCents, 800);
+  assert.equal(rioLater.body.engineCents, 800);
 } finally {
   earnEngine.stop();
   stopPresence();
