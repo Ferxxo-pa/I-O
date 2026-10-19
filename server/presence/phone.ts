@@ -1,10 +1,21 @@
 import { z } from "zod";
-import { RELAY_TTL_MS } from "@shared/relayBox";
+import {
+  bearerToken,
+  mentionsWage,
+  phoneSetupSnippet,
+  planPhone,
+  type PhoneResponse,
+  type PhoneSignal,
+} from "@shared/cloud/phonePlan.ts";
+
+export { bearerToken, phoneSetupSnippet };
+
 import { earnEngine } from "../clock/engine";
 import { dayConfigFromEnv, signalConfigFromEnv } from "./config";
 import { withinCollection } from "./session";
 import {
   enrolledDevice,
+  flagPersonDevice,
   personById,
   personForPresentedDevice,
   personHasConsent,
@@ -16,11 +27,9 @@ import {
   saveWatch,
   signalAllowed,
   watchFor,
-  flagPersonDevice,
 } from "./service";
 import { shopTeamId } from "./shop";
 import { SquareMemberError } from "../square/labor";
-import { deviceLatched, dropPhoneLatches, noteSight, type WatchPerson } from "./watch";
 
 const phoneSchema = z
   .object({
@@ -31,95 +40,10 @@ const phoneSchema = z
   })
   .strict();
 
-type PhoneSignal = z.infer<typeof phoneSchema>;
-
-export type PhoneResponse = {
-  ok: boolean;
-  duplicate: boolean;
-  personId: string | null;
-  event: "arrive" | "leave" | null;
-  trigger: "geo" | "wifi" | null;
-  applied: "arrive" | "seen" | "exit" | "ignored" | "rejected";
-  reason: string | null;
-};
-
-export function bearerToken(header: string | undefined): string | null {
-  if (!header) return null;
-  const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
-  return match?.[1] ?? null;
-}
-
-function latestPhoneAt(watch: WatchPerson | null, deviceId: string): number {
-  if (!watch) return 0;
-  const prefix = `phone:${deviceId}:`;
-  let latest = 0;
-  for (const [key, source] of Object.entries(watch.sources)) {
-    if (key.startsWith(prefix) && source.at > latest) latest = source.at;
-  }
-  return latest;
-}
-
 export function presencePublicBase(input: { configured: string | undefined; proto: string; host: string }): string {
   const set = input.configured?.trim().replace(/\/$/, "") ?? "";
   if (set) return set;
   return `${input.proto}://${input.host}`;
-}
-
-export function phoneSetupSnippet(input: { url: string; token: string; name: string; relayUrl?: string }): string {
-  const header = `Authorization: Bearer ${input.token}`;
-  if (!input.relayUrl) {
-    return [
-      `Shop presence for ${input.name}`,
-      "",
-      "URL",
-      input.url,
-      "",
-      "Header",
-      header,
-      "",
-      "Arrive at the shop (location)",
-      '{"event":"arrive","trigger":"geo"}',
-      "",
-      "Leave the shop (location)",
-      '{"event":"leave","trigger":"geo"}',
-      "",
-      "Joined the shop Wi-Fi",
-      '{"event":"arrive","trigger":"wifi"}',
-      "",
-      "Left the shop Wi-Fi",
-      '{"event":"leave","trigger":"wifi"}',
-      "",
-      "Method is POST. Send the header on every request. The token is shown once.",
-    ].join("\n");
-  }
-  const body = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
-    `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`;
-  const posts = (event: "arrive" | "leave", trigger: "geo" | "wifi") => {
-    const urls = event === "leave" ? [input.relayUrl!] : [input.url, input.relayUrl!];
-    return urls.map((url) => [`POST ${url}`, header, body(event, trigger)].join("\n")).join("\n\n");
-  };
-  return [
-    `Shop presence for ${input.name}`,
-    "",
-    "Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.",
-    "",
-    "Header",
-    header,
-    "",
-    "Arrive at the shop (location) — shop Wi-Fi and mailbox",
-    posts("arrive", "geo"),
-    "",
-    "Leave the shop (location) — mailbox only, so cellular still clocks out",
-    posts("leave", "geo"),
-    "",
-    "Joined the shop Wi-Fi — shop Wi-Fi and mailbox",
-    posts("arrive", "wifi"),
-    "",
-    "Left the shop Wi-Fi — mailbox only",
-    posts("leave", "wifi"),
-    "",
-    "Method is POST. Send the header on every request. The token is shown once.",
-  ].join("\n");
 }
 
 function empty(partial: Partial<PhoneResponse> = {}): PhoneResponse {
@@ -133,20 +57,6 @@ function empty(partial: Partial<PhoneResponse> = {}): PhoneResponse {
     reason: null,
     ...partial,
   };
-}
-
-function clockTarget(
-  person: { id: string; name: string; hourlyCents: number; squareTeamMemberId: string | null },
-  device: { personId: string; squareTeamMemberId: string },
-): { id: string; name: string; hourlyCents: number } | null {
-  if (device.personId !== person.id) return null;
-  const squareId = person.squareTeamMemberId ?? "";
-  if (device.squareTeamMemberId !== squareId) return null;
-  return { id: squareId || person.id, name: person.name, hourlyCents: person.hourlyCents };
-}
-
-function mentionsWage(raw: string): boolean {
-  return /"(hourly_rate|hourlyCents|hourly|wage|amount)"\s*:/.test(raw);
 }
 
 export async function ingestPhone(input: {
@@ -193,55 +103,80 @@ export async function applyPhoneSignal(input: {
   const now = presenceNow();
   const at = signal.ts ?? now;
   const config = signalConfigFromEnv();
-  const timing = signal.ts == null ? "ok" : at - now > config.maxFutureMs ? "future_signal" : now - at > input.maxAgeMs ? "stale_signal" : "ok";
   const bucket = Math.floor(at / config.phoneDedupeMs);
-  const bucketKey = `phone:${deviceId}:${signal.trigger}:${signal.event}:${bucket}`;
   const eventKey = signal.eventId ? `phone:${deviceId}:evt:${signal.eventId}:${at}` : null;
-  const replayKey = eventKey ?? bucketKey;
+  const replayKey = eventKey ?? `phone:${deviceId}:${signal.trigger}:${signal.event}:${bucket}`;
   const prior = recallReplay(replayKey);
   if (prior && prior.body && typeof prior.body === "object") {
     return { status: prior.status, body: { ...(prior.body as PhoneResponse), duplicate: true } };
   }
-  const finish = (status: number, body: PhoneResponse) => {
-    rememberReplay(replayKey, status, body, eventKey ? RELAY_TTL_MS : undefined);
-    return { status, body };
-  };
-
-  if (timing === "stale_signal") {
-    const body = empty({ ok: true, personId, event: signal.event, trigger: signal.trigger, applied: "rejected", reason: timing });
-    rememberReplay(bucketKey, 200, body);
-    return { status: 200, body };
-  }
-
-  if (timing !== "ok") {
-    return finish(200, empty({ ok: true, personId, event: signal.event, trigger: signal.trigger, applied: "rejected", reason: timing }));
-  }
-  if (!withinCollection(at, dayConfigFromEnv(), config.collectMarginMs)) {
-    return finish(
-      200,
-      empty({ ok: true, personId, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "outside_hours" }),
-    );
-  }
 
   const device = enrolledDevice(deviceId);
   const person = personById(personId);
-  if (!device || !person) {
-    return { status: 401, body: empty({ personId, applied: "rejected", reason: "unknown_device" }) };
-  }
-  if (!personHasConsent(person.id)) {
-    return finish(403, empty({ personId: person.id, event: signal.event, trigger: signal.trigger, applied: "rejected", reason: "no_consent" }));
-  }
-  if (device.stationaryAt != null) {
-    return finish(
-      200,
-      empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "stationary" }),
-    );
+  const watch = person ? watchFor(person.id) : null;
+  const clockId = person ? (person.squareTeamMemberId || person.id) : personId;
+  const info = earnEngine.shiftInfo(clockId);
+  const plan = planPhone({
+    now,
+    signal,
+    deviceId,
+    personId,
+    maxAgeMs: input.maxAgeMs,
+    maxFutureMs: config.maxFutureMs,
+    dedupeMs: config.phoneDedupeMs,
+    inWindow: withinCollection(at, dayConfigFromEnv(), config.collectMarginMs),
+    device: device
+      ? {
+          id: device.id,
+          personId: device.personId,
+          squareTeamMemberId: device.squareTeamMemberId,
+          stationaryAt: device.stationaryAt,
+          sessionStart: device.sessionStart,
+          squareFlag: device.squareFlag,
+        }
+      : null,
+    person: person
+      ? {
+          id: person.id,
+          name: person.name,
+          hourlyCents: person.hourlyCents,
+          squareTeamMemberId: person.squareTeamMemberId,
+          consent: personHasConsent(person.id),
+        }
+      : null,
+    watch,
+    shift: info
+      ? { clockedIn: info.clockedIn, holdAt: info.holdAt, managedBy: info.managedBy }
+      : null,
+    quietMs: config.quietMs,
+    stationaryMs: config.stationaryMs,
+  });
+
+  if (plan.clockIn) {
+    try {
+      await earnEngine.clockInPerson(plan.clockIn.person, plan.clockIn.at, plan.clockIn.source);
+      if (plan.clockIn.clearFlag && device) flagPersonDevice(device.id, null);
+    } catch (err) {
+      if (err instanceof SquareMemberError) {
+        if (device) flagPersonDevice(device.id, err.reason);
+        const body = empty({
+          ok: true,
+          personId: person?.id ?? personId,
+          event: "arrive",
+          trigger: signal.trigger,
+          applied: "rejected",
+          reason: err.reason,
+        });
+        if (plan.replayKey) rememberReplay(plan.replayKey, 200, body, plan.replayTtlMs);
+        return { status: 200, body };
+      }
+      throw err;
+    }
   }
 
-  const sourceId = `${device.id}:${signal.trigger}`;
-  const watch = watchFor(person.id);
-  const latest = latestPhoneAt(watch, device.id);
-  if (at < latest) {
+  if (plan.session && device) saveDeviceSession(device.id, plan.session);
+  if (plan.watch && person) saveWatch(person.id, plan.watch);
+  if (plan.journal && person && device) {
     recordPhoneEvent({
       personId: person.id,
       teamId: shopTeamId(),
@@ -251,71 +186,10 @@ export async function applyPhoneSignal(input: {
       at,
       receivedAt: now,
     });
-    return finish(
-      200,
-      empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "out_of_order" }),
-    );
   }
-  if (signal.event === "arrive") {
-    const still = deviceLatched(watch, device.id, now, config.quietMs);
-    const sessionStart = still && device.sessionStart != null ? device.sessionStart : at;
-    if (at - sessionStart >= config.stationaryMs) {
-    saveDeviceSession(device.id, { sessionStart, lastSeenAt: at, stationaryAt: at });
-    saveWatch(person.id, noteSight(watch, { source: "phone", sourceId, at, present: false, latch: true }));
-    recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "arrive", trigger: signal.trigger, at, receivedAt: now });
-      return finish(
-        200,
-        empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "stationary" }),
-      );
-    }
-    const clockPerson = clockTarget(person, device);
-    if (!clockPerson) {
-      return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "rejected", reason: "square_mismatch" }));
-    }
-    const source = signal.trigger === "wifi" ? "phone-wifi" : "phone-geo";
-    const info = earnEngine.shiftInfo(clockPerson.id);
-    if (!(info?.clockedIn)) {
-      try {
-        await earnEngine.clockInPerson(clockPerson, at, source);
-      } catch (err) {
-        if (err instanceof SquareMemberError) {
-          flagPersonDevice(device.id, err.reason);
-          return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "rejected", reason: err.reason }));
-        }
-        throw err;
-      }
-      if (device.squareFlag) flagPersonDevice(device.id, null);
-    } else if (info.managedBy !== "presence" && info.holdAt != null) {
-      try {
-        await earnEngine.clockInPerson(clockPerson, at, source);
-      } catch (err) {
-        if (err instanceof SquareMemberError) {
-          flagPersonDevice(device.id, err.reason);
-          return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "rejected", reason: err.reason }));
-        }
-        throw err;
-      }
-    }
-    saveDeviceSession(device.id, { sessionStart, lastSeenAt: at, stationaryAt: null });
-    saveWatch(person.id, noteSight(watch, { source: "phone", sourceId, at, present: true, latch: true }));
-    recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "arrive", trigger: signal.trigger, at, receivedAt: now });
-    const applied = info?.clockedIn && info.holdAt == null ? "seen" : "arrive";
-    return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied }));
-  }
-
-  const marked = noteSight(watch, { source: "phone", sourceId, at, present: false, latch: true });
-  // A location leave means they left the shop. It also clears a Wi-Fi latch, so an
-  // iPhone that can join Wi-Fi but cannot send "left the network" still clocks out.
-  const next = signal.trigger === "geo" ? dropPhoneLatches(marked, device.id, at) : marked;
-  saveWatch(person.id, next);
-  recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "leave", trigger: signal.trigger, at, receivedAt: now });
-  if (!deviceLatched(watchFor(person.id), device.id, now, config.quietMs)) {
-    saveDeviceSession(device.id, { sessionStart: null, lastSeenAt: at, stationaryAt: null });
-    const clockPerson = clockTarget(person, device);
-    const info = clockPerson ? earnEngine.shiftInfo(clockPerson.id) : null;
-    if (clockPerson && info?.clockedIn && info.managedBy !== "presence") earnEngine.holdWork(clockPerson.id, at);
-  }
-  return finish(200, empty({ ok: true, personId: person.id, event: "leave", trigger: signal.trigger, applied: "exit" }));
+  if (plan.hold) earnEngine.holdWork(plan.hold.personId, plan.hold.at);
+  if (plan.replayKey) rememberReplay(plan.replayKey, plan.status, plan.body, plan.replayTtlMs);
+  return { status: plan.status, body: plan.body };
 }
 
 /** Confirms the token and consent. Does not clock in or out. */

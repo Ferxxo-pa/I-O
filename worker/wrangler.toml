@@ -1,0 +1,42 @@
+name = "io"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The built strip. `npm run deploy:cf` builds it first. Requests to /api and /join
+# hit the Worker. Everything else is the static strip, same origin, no visual change.
+[assets]
+directory = "../dist/public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/join", "/join/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "io"
+database_id = "replace-after-wrangler-d1-create"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "io-backups"
+
+[[durable_objects.bindings]]
+name = "COMPANY"
+class_name = "CompanyRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CompanyRoom"]
+
+# Every minute: timecards and invoices. 08:00 UTC: encrypted backup to R2.
+[triggers]
+crons = ["* * * * *", "0 8 * * *"]
+
+# Secrets, set with wrangler so they stay out of git:
+#   npx wrangler secret put TOKEN_KEY
+#   npx wrangler secret put BACKUP_KEY
+# TOKEN_KEY seals each company's Square token in D1.
+# Optional single-shop fallback when that company has no sealed token yet:
+#   npx wrangler secret put SQUARE_ACCESS_TOKEN
+#   npx wrangler secret put SQUARE_WEBHOOK_SIGNATURE_KEY

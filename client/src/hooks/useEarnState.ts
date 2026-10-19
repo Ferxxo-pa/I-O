@@ -5,6 +5,7 @@ import { apiUrl } from "@/serverUrl";
 export const WHO_ID = "io.who";
 export const PIN_KEY = "io.shop.pin";
 export const OWNER_KEY = "io.owner";
+export const COMPANY_KEY = "io.company";
 
 export function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -14,6 +15,8 @@ export function authHeaders(): Record<string, string> {
   if (pin) headers["x-shop-pin"] = pin;
   const owner = localStorage.getItem(OWNER_KEY);
   if (owner) headers["x-owner-key"] = owner;
+  const company = localStorage.getItem(COMPANY_KEY);
+  if (company) headers["x-company-id"] = company;
   return headers;
 }
 

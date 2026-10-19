@@ -11,7 +11,10 @@
     "check": "tsc",
     "relay:keys": "node scripts/relay-keys.mjs",
     "relay:deploy": "node scripts/deploy-relay.mjs",
-    "test": "tsx server/square/signature.test.ts && tsx server/square/parse.test.ts && tsx server/labor.test.ts && tsx server/shifts.test.ts && tsx server/store.test.ts && tsx server/fight.test.ts && tsx server/week.test.ts && tsx server/ops.test.ts && tsx server/auth.routes.test.ts && tsx server/presence/day.test.ts && tsx server/presence/geo.test.ts && tsx server/presence/square.test.ts && tsx server/presence/book.test.ts && tsx server/presence/routes.test.ts && tsx server/presence/signal.test.ts && tsx server/presence/phone.test.ts && tsx server/presence/pipeline.test.ts && tsx server/presence/reliability.test.ts && tsx server/presence/square-phone.test.ts && tsx server/remote-clients.test.ts && tsx server/backup.test.ts && tsx server/ready.test.ts && tsx server/public-exposure.test.ts && tsx server/relay.test.ts"
+    "deploy:cf": "npm run build && npx wrangler deploy --config worker/wrangler.toml",
+    "import:cf": "tsx scripts/import-io-state.ts",
+    "test:cf": "vitest run --config worker/vitest.config.ts",
+    "test": "tsx server/square/signature.test.ts && tsx server/square/parse.test.ts && tsx server/labor.test.ts && tsx server/shifts.test.ts && tsx server/store.test.ts && tsx server/fight.test.ts && tsx server/week.test.ts && tsx server/ops.test.ts && tsx server/auth.routes.test.ts && tsx server/presence/day.test.ts && tsx server/presence/geo.test.ts && tsx server/presence/square.test.ts && tsx server/presence/book.test.ts && tsx server/presence/routes.test.ts && tsx server/presence/signal.test.ts && tsx server/presence/phone.test.ts && tsx server/presence/pipeline.test.ts && tsx server/presence/reliability.test.ts && tsx server/presence/square-phone.test.ts && tsx server/remote-clients.test.ts && tsx server/backup.test.ts && tsx server/ready.test.ts && tsx server/public-exposure.test.ts && tsx server/relay.test.ts && tsx shared/cloud/cloud.test.ts"
   },
   "dependencies": {
     "@fontsource/silkscreen": "^5.2.7",
@@ -24,6 +27,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.12.21",
     "@tailwindcss/typography": "^0.5.16",
     "@types/express": "4.17.21",
     "@types/node": "20.16.11",
@@ -37,6 +41,8 @@
     "tailwindcss-animate": "^1.0.7",
     "tsx": "^4.19.1",
     "typescript": "5.6.3",
-    "vite": "^5.4.14"
+    "vite": "^5.4.14",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.151.2"
   }
 }

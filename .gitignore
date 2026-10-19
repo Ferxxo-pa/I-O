@@ -25,6 +25,9 @@ logs
 
 # Runtime data
 data/
+
+# Cloudflare local state
+.wrangler/
 pids
 *.pid
 *.seed

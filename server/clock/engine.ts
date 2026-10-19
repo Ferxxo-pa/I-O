@@ -18,6 +18,7 @@ import { fightBook } from "../fight/book";
 import { saleTapeLabel, type FightView } from "@shared/fight";
 import { emptyPresence, type PresenceView } from "@shared/presence";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
+import { planRemoteTimecard, shouldCloseMissing } from "@shared/cloud/clockPlan.ts";
 import { withPersonLock } from "./lock";
 import { randomUUID } from "crypto";
 
@@ -443,14 +444,12 @@ export class EarnEngine {
    */
   closeShiftsExcept(openTimecardIds: Set<string>, at = now()): void {
     for (const shift of [...this.shifts]) {
-      if (!shift.clockedIn || !shift.timecardId) continue;
-      if (openTimecardIds.has(shift.timecardId)) continue;
-      if (shift.clockedInAt && at - shift.clockedInAt < 20_000) continue;
+      if (!shouldCloseMissing(shift, openTimecardIds, at)) continue;
       this.syncRemoteTimecard({
         personId: shift.personId,
         name: shift.name,
         hourlyCents: shift.hourlyCents,
-        timecardId: shift.timecardId,
+        timecardId: shift.timecardId!,
         open: false,
         startedAt: shift.clockedInAt ?? at,
       });
@@ -460,43 +459,25 @@ export class EarnEngine {
   /** A Square timecard opened or closed somewhere else still joins this book. */
   syncRemoteTimecard(card: RemoteTimecard): void {
     const existing = this.shifts.find((shift) => shift.personId === card.personId);
-    if (card.open) {
-      if (existing?.clockedIn && existing.timecardId === card.timecardId) return;
-      const started = card.startedAt || now();
-      const hourly =
-        card.hourlyCents > 0
-          ? card.hourlyCents
-          : (existing?.hourlyCents ?? this.config.hourlyOutputCents);
-      this.upsertShift({
-        personId: card.personId,
-        name: existing?.name || card.name || "Square",
-        hourlyCents: hourly,
-        clockedIn: true,
-        clockedInAt: existing?.clockedIn ? existing.clockedInAt : started,
-        hourSegmentStartedAt: existing?.clockedIn ? existing.hourSegmentStartedAt : started,
-        outputCents: existing?.outputCents ?? 0,
-        timecardId: card.timecardId,
-        holdAt: existing?.holdAt ?? null,
-        managedBy: null,
-        source: existing?.source ?? null,
-        review: existing?.review ?? null,
-      });
-      if (!existing?.clockedIn) {
+    const plan = planRemoteTimecard(existing, card, now(), this.config.hourlyOutputCents);
+    if (plan.action === "noop") return;
+    if (plan.action === "adopt") {
+      this.upsertShift(plan.shift);
+      if (plan.emitClockIn) {
         this.pushEvent(
           makeEvent({
             kind: "clock_in",
             outputCents: 0,
             inputUnits: 0,
             label: "IN",
-            createdAt: started,
+            createdAt: plan.at,
           }),
         );
       }
       return;
     }
     if (!existing?.clockedIn) return;
-    const t = now();
-    const settled = this.settleShift(existing, t);
+    const settled = this.settleShift(existing, plan.at);
     this.upsertShift({
       ...settled,
       clockedIn: false,
@@ -511,7 +492,7 @@ export class EarnEngine {
         outputCents: 0,
         inputUnits: 0,
         label: "OUT",
-        createdAt: t,
+        createdAt: plan.at,
       }),
     );
   }

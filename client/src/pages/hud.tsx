@@ -41,6 +41,8 @@ function ownerHeaders(): Record<string, string> {
   if (key) headers["x-owner-key"] = key;
   const pin = sessionStorage.getItem(PIN_KEY);
   if (pin) headers["x-shop-pin"] = pin;
+  const company = localStorage.getItem("io.company");
+  if (company) headers["x-company-id"] = company;
   return headers;
 }
 
@@ -538,6 +540,7 @@ export default function Hud() {
 
   const takeCompany = (next: CompanyView) => {
     if (next.ownerKey) localStorage.setItem(OWNER_STORE, next.ownerKey);
+    if (next.id) localStorage.setItem("io.company", next.id);
     setCompany(next);
   };
 

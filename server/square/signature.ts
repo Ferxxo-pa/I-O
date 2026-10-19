@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "crypto";
+import { hmacSha256Base64, signaturesMatch as signaturesEqual } from "@shared/cloud/hmac.ts";
 
 /** Square signs `notificationUrl + rawBody` with the subscription signature key. */
 export function squareSignature(opts: {
@@ -6,14 +6,9 @@ export function squareSignature(opts: {
   notificationUrl: string;
   rawBody: string;
 }): string {
-  return createHmac("sha256", opts.signatureKey)
-    .update(opts.notificationUrl + opts.rawBody)
-    .digest("base64");
+  return hmacSha256Base64(opts.signatureKey, opts.notificationUrl + opts.rawBody);
 }
 
 export function signaturesMatch(header: string, expected: string): boolean {
-  const given = Buffer.from(header);
-  const actual = Buffer.from(expected);
-  if (given.length === 0 || given.length !== actual.length) return false;
-  return timingSafeEqual(given, actual);
+  return signaturesEqual(header, expected);
 }

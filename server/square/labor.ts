@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { timecardFromWebhook as timecardEvent } from "@shared/cloud/clockPlan.ts";
 import { squareFetch } from "./client";
 import { squareLocationId } from "./location";
 import { primaryJobWage, type JobWage, type WageSetting } from "./parse";
@@ -129,22 +130,7 @@ export function timecardCloseBody(card: SquareTimecard, endAt: string) {
 }
 
 export function timecardFromWebhook(body: unknown): RemoteTimecard | null {
-  if (!body || typeof body !== "object") return null;
-  const type = (body as { type?: string }).type ?? "";
-  if (!type.startsWith("labor.timecard.")) return null;
-  const data = (body as { data?: { object?: { timecard?: SquareTimecard } & SquareTimecard } }).data;
-  const card = data?.object?.timecard ?? (data?.object?.id ? data.object : undefined);
-  if (!card?.id || !card.team_member_id) return null;
-  const open = card.status ? card.status === "OPEN" : !card.end_at;
-  const started = card.start_at ? Date.parse(card.start_at) : Date.now();
-  return {
-    personId: card.team_member_id,
-    name: card.wage?.title || "Square",
-    hourlyCents: card.wage?.hourly_rate?.amount ?? 0,
-    timecardId: card.id,
-    open,
-    startedAt: Number.isFinite(started) ? started : Date.now(),
-  };
+  return timecardEvent(body);
 }
 
 const opening = new Map<string, Promise<string>>();

@@ -1,0 +1,36 @@
+name = "io"
+main = "src/index.ts"
+compatibility_date = "2026-03-10"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./assets"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/join", "/join/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "io"
+database_id = "00000000-0000-0000-0000-000000000001"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "io-backups"
+
+[[durable_objects.bindings]]
+name = "COMPANY"
+class_name = "CompanyRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CompanyRoom"]
+
+[triggers]
+crons = ["* * * * *", "0 8 * * *"]
+
+[vars]
+IO_TEST = "1"
+TOKEN_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+BACKUP_KEY = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
