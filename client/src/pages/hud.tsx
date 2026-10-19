@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
+import { apiUrl } from "@/serverUrl";
 import { ching, clearedChime, unlockChing } from "@/lib/ching";
 import {
   DEFAULT_FIGHT_SETTINGS,
@@ -545,12 +546,12 @@ export default function Hud() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("join");
     const load = code
-      ? fetch("/api/company/join", {
+      ? fetch(apiUrl("/api/company/join"), {
           method: "POST",
           headers: ownerHeaders(),
           body: JSON.stringify({ code }),
         })
-      : fetch("/api/company", { headers: ownerHeaders() });
+      : fetch(apiUrl("/api/company"), { headers: ownerHeaders() });
     void load
       .then(async (res) => {
         const next = (await res.json()) as CompanyView;
@@ -575,7 +576,7 @@ export default function Hud() {
 
   const saveCompany = async (path: string, body: unknown) => {
     setSettingsError(null);
-    const res = await fetch(path, {
+    const res = await fetch(apiUrl(path), {
       method: "POST",
       headers: ownerHeaders(),
       body: JSON.stringify(body),
@@ -587,7 +588,7 @@ export default function Hud() {
 
   const saveFight = async (path: string, body: unknown) => {
     setSettingsError(null);
-    const res = await fetch(path, {
+    const res = await fetch(apiUrl(path), {
       method: path.endsWith("/pin") || path.includes("/approve") ? "POST" : "PATCH",
       headers: ownerHeaders(),
       body: JSON.stringify(body),
@@ -609,7 +610,7 @@ export default function Hud() {
     setChange(false);
     setWhoMode(mode);
     setWhoOpen(true);
-    const res = await fetch("/api/company/who");
+    const res = await fetch(apiUrl("/api/company/who"));
     const body = (await res.json()) as { people?: TeamPerson[]; source?: "square" | "manual"; message?: string };
     if (!res.ok) {
       setTeam([]);
@@ -1182,7 +1183,7 @@ function ChangePanel({
 
   useEffect(() => {
     let cancel = false;
-    void fetch("/api/company/roster", { headers: ownerHeaders() })
+    void fetch(apiUrl("/api/company/roster"), { headers: ownerHeaders() })
       .then(async (res) => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.message || "Couldn't load people");
@@ -1206,7 +1207,7 @@ function ChangePanel({
       return;
     }
     setError(null);
-    const res = await fetch(`/api/company/people/${id}`, {
+    const res = await fetch(apiUrl(`/api/company/people/${id}`), {
       method: "PATCH",
       headers: ownerHeaders(),
       body: JSON.stringify({ hourlyCents: cents }),
@@ -1228,7 +1229,7 @@ function ChangePanel({
       return;
     }
     setError(null);
-    const res = await fetch("/api/company/people", {
+    const res = await fetch(apiUrl("/api/company/people"), {
       method: "POST",
       headers: ownerHeaders(),
       body: JSON.stringify({ name, hourlyCents: cents }),
@@ -1434,7 +1435,7 @@ function ChecklistPanel({ demo, onClose }: { demo: boolean; onClose: () => void 
   useEffect(() => {
     if (demo) return;
     let cancel = false;
-    void fetch("/api/health")
+    void fetch(apiUrl("/api/health"))
       .then(async (res) => {
         const body = (await res.json()) as {
           ready?: boolean;

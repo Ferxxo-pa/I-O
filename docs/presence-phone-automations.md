@@ -4,7 +4,7 @@ This is the way the shop clock runs with no app to install from us and no extra 
 
 The shop is EZ Designs, 403 E Ben White Blvd, Austin.
 
-Ezven hands you a note from the shop computer. It has a web address, one header line, and four short messages. Copy them exactly. The long code after `Bearer` is a password for your phone. It is shown once. If you lose it, ask Ezven for a new note.
+Ezven hands you a note from the I/O server. It has a web address, one header line, and four short messages. Copy them exactly. The long code after `Bearer` is a password for your phone. It is shown once. If you lose it, ask Ezven for a new note.
 
 Use these placeholders until you paste the real note. The address must start with `https://` when the shop is on the real server.
 

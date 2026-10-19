@@ -18,6 +18,7 @@ import { fightBook } from "../fight/book";
 import { saleTapeLabel, type FightView } from "@shared/fight";
 import { emptyPresence, type PresenceView } from "@shared/presence";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
+import { withPersonLock } from "./lock";
 import { randomUUID } from "crypto";
 
 let clock = () => Date.now();
@@ -337,6 +338,14 @@ export class EarnEngine {
     at = now(),
     source: "manual" | "phone-geo" | "phone-wifi" = "manual",
   ): Promise<AppState> {
+    return withPersonLock(person.id, () => this.clockInNow(person, at, source));
+  }
+
+  private async clockInNow(
+    person: ClockPerson,
+    at = now(),
+    source: "manual" | "phone-geo" | "phone-wifi" = "manual",
+  ): Promise<AppState> {
     if (!person.id || !person.name || !Number.isInteger(person.hourlyCents) || person.hourlyCents <= 0) {
       throw new Error("That person is not on this business");
     }
@@ -394,6 +403,10 @@ export class EarnEngine {
   }
 
   async clockOutPerson(personId: string, at = now()): Promise<AppState> {
+    return withPersonLock(personId, () => this.clockOutNow(personId, at));
+  }
+
+  private async clockOutNow(personId: string, at = now()): Promise<AppState> {
     const existing = this.shifts.find((shift) => shift.personId === personId);
     if (!existing?.clockedIn) return this.getState(personId);
     if (existing.timecardId && squareConfigured()) {

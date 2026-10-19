@@ -1,9 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { installRemoteCors } from "./http/cors";
 import { flushState } from "./persist";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+installRemoteCors(app);
 app.use(
   express.json({
     verify: (req, _res, buf) => {

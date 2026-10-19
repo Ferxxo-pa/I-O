@@ -26,6 +26,18 @@ function personIdFrom(req: Request): string | null {
   return body || header || null;
 }
 
+/** The computer's linked person and the body must name the same person. */
+function clockPersonId(req: Request): string {
+  const body = typeof req.body?.personId === "string" ? req.body.personId.trim() : "";
+  const header = req.header("x-person-id")?.trim() ?? "";
+  if (body && header && body !== header) {
+    throw new HttpError(403, "This computer is linked to someone else");
+  }
+  const personId = body || header;
+  if (!personId) throw new Error("Choose who you are");
+  return personId;
+}
+
 async function peopleOnTheBusiness(): Promise<
   Array<{ id: string; name: string; hourlyCents: number | null }>
 > {
@@ -85,8 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/clock/in", async (req, res) => {
     try {
       requirePin(req);
-      const personId = personIdFrom(req);
-      if (!personId) throw new Error("Choose who you are");
+      const personId = clockPersonId(req);
       const person = (await peopleOnTheBusiness()).find((entry) => entry.id === personId);
       if (!person) throw new Error("That person is not on this business");
       if (!person.hourlyCents) throw new Error("Square has no hourly wage for that person");
@@ -105,8 +116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/clock/out", async (req, res) => {
     try {
       requirePin(req);
-      const personId = personIdFrom(req);
-      if (!personId) throw new Error("Choose who you are");
+      const personId = clockPersonId(req);
       res.json(await earnEngine.clockOutPerson(personId));
     } catch (err) {
       sendError(res, err, "Clock-out failed");

@@ -1,0 +1,6 @@
+# Replace the name with the domain that points at this machine.
+# Caddy requests the certificate and renews it.
+shop.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:5000
+}

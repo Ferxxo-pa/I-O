@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState, PrintEvent } from "@shared/schema";
+import { apiUrl } from "@/serverUrl";
 
 export const WHO_ID = "io.who";
 export const PIN_KEY = "io.shop.pin";
@@ -26,7 +27,7 @@ function personHeaders(): Record<string, string> {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     ...init,
     headers: { ...personHeaders(), ...(init?.headers as Record<string, string> | undefined) },
   });
@@ -78,7 +79,7 @@ export function useIoState() {
     const id = setInterval(refresh, 200);
     let stream: EventSource | null = null;
     try {
-      stream = new EventSource("/api/presence/stream");
+      stream = new EventSource(apiUrl("/api/presence/stream"));
       stream.onmessage = () => {
         void refresh();
       };

@@ -22,6 +22,7 @@ export function startSquareSync() {
     });
   };
   timer = setInterval(run, 15_000);
+  timer.unref();
   run();
 }
 

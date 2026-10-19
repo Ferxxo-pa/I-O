@@ -147,7 +147,20 @@ export function timecardFromWebhook(body: unknown): RemoteTimecard | null {
   };
 }
 
-export async function openTimecard(teamMemberId: string, hourlyCents: number, locationId?: string): Promise<string> {
+const opening = new Map<string, Promise<string>>();
+
+export function openTimecard(teamMemberId: string, hourlyCents: number, locationId?: string): Promise<string> {
+  const pending = opening.get(teamMemberId);
+  if (pending) return pending;
+  const run = openTimecardNow(teamMemberId, hourlyCents, locationId);
+  opening.set(teamMemberId, run);
+  void run.finally(() => {
+    if (opening.get(teamMemberId) === run) opening.delete(teamMemberId);
+  });
+  return run;
+}
+
+async function openTimecardNow(teamMemberId: string, hourlyCents: number, locationId?: string): Promise<string> {
   const existing = await findOpenTimecard(teamMemberId);
   if (existing) return existing;
 
