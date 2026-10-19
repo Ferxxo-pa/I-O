@@ -4,6 +4,18 @@ import { apiUrl } from "@/serverUrl";
 
 export const WHO_ID = "io.who";
 export const PIN_KEY = "io.shop.pin";
+export const OWNER_KEY = "io.owner";
+
+export function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const who = localStorage.getItem(WHO_ID);
+  if (who) headers["x-person-id"] = who;
+  const pin = sessionStorage.getItem(PIN_KEY);
+  if (pin) headers["x-shop-pin"] = pin;
+  const owner = localStorage.getItem(OWNER_KEY);
+  if (owner) headers["x-owner-key"] = owner;
+  return headers;
+}
 
 export function shopPin(): string | null {
   return sessionStorage.getItem(PIN_KEY);
@@ -18,12 +30,7 @@ export function clearShopPin() {
 }
 
 function personHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const who = localStorage.getItem(WHO_ID);
-  if (who) headers["x-person-id"] = who;
-  const pin = sessionStorage.getItem(PIN_KEY);
-  if (pin) headers["x-shop-pin"] = pin;
-  return headers;
+  return authHeaders();
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {

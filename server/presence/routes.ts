@@ -2,6 +2,8 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { presenceReasonText } from "@shared/presence";
 import { HttpError } from "../auth/pin";
+import { assertPublicReader } from "../auth/reader";
+import { publicBaseUrl } from "../publicBase";
 import { companyView } from "../company";
 import { ingestSignal } from "./ingest";
 import { ingestPhone, phoneSetupSnippet, presencePublicBase } from "./phone";
@@ -152,7 +154,12 @@ export function mountPresenceRoutes(app: Express) {
   startPresence();
 
   app.get("/api/presence", (req, res) => {
-    res.json(presenceView(claimedPerson(req)));
+    try {
+      assertPublicReader(req);
+      res.json(presenceView(claimedPerson(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't load presence");
+    }
   });
 
   app.get("/api/presence/stream", (req, res) => {
@@ -469,7 +476,7 @@ export function mountPresenceRoutes(app: Express) {
       const proto = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol || "https";
       const host = req.header("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host") || "localhost";
       const url = `${presencePublicBase({
-        configured: process.env.PRESENCE_PUBLIC_URL,
+        configured: publicBaseUrl(),
         proto,
         host,
       })}/api/presence/phone`;

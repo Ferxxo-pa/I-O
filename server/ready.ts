@@ -1,5 +1,6 @@
 import { ownLoginPct, readiness, type ReadinessCheck } from "@shared/ops";
 import { backupCheck } from "./backup";
+import { webhookNotificationUrl } from "./publicBase";
 import { earnEngine } from "./clock/engine";
 import { currentScope, getCompany } from "./company";
 import { fightBook } from "./fight/book";
@@ -34,9 +35,7 @@ export async function healthReport(): Promise<HealthReport> {
       ? "Add the team"
       : `${rated} of ${roster}`;
 
-  const webhookConfigured = Boolean(
-    process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && process.env.SQUARE_WEBHOOK_NOTIFICATION_URL,
-  );
+  const webhookConfigured = Boolean(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && webhookNotificationUrl());
   const backup = backupCheck();
   const publicUrl = await publicUrlCheck();
   const report = readiness({

@@ -317,7 +317,7 @@ export function readiness(input: {
       id: "public_url",
       label: "Public URL",
       ok: input.publicUrlOk === true,
-      detail: input.publicUrlDetail ?? "Set PRESENCE_PUBLIC_URL",
+      detail: input.publicUrlDetail ?? "Set PUBLIC_BASE_URL",
       note: input.publicUrlNote,
     },
   ];

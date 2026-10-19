@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PresenceDot, PresenceView } from "@shared/presence";
 import { apiUrl } from "@/serverUrl";
+import { authHeaders } from "@/hooks/useEarnState";
 
 function featured(view: PresenceView | null): PresenceDot | null {
   if (!view || view.dots.length === 0) return null;
@@ -18,7 +19,7 @@ export default function PresencePage() {
     document.title = "Presence · EZ Designs";
     let stop = false;
     const load = () => {
-      void fetch(apiUrl("/api/presence"))
+      void fetch(apiUrl("/api/presence"), { headers: authHeaders() })
         .then(async (res) => {
           const body = (await res.json()) as PresenceView & { message?: string };
           if (!res.ok) throw new Error(body.message || "Couldn't load presence");

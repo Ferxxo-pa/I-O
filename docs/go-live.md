@@ -1,10 +1,10 @@
 # Go live
 
-One spare computer is the I/O server. It can sit at the shop or at home, as long as it stays on. That process is the only copy of the company, the roster, the clock, the wages and collected book, Square polling, Square webhooks, and the phone endpoints.
+The shop PC is the I/O server. Leave it on. That process is the only copy of the company, the roster, the clock, the wages and collected book, Square polling, Square webhooks, and the phone endpoints. A computer at home is the same setup if the shop PC cannot stay awake.
 
-Employee computers do not run the server. Each one opens the spare computer's public HTTPS address and runs only the strip. The browser remembers one person. The shop PIN is unchanged. Phones call that same address. Two computers and a phone for one person share one clock and one Square timecard.
+Employee computers do not run the server. Each one opens the shop PC's public HTTPS address and runs only the strip. The browser remembers one person. The shop PIN is unchanged. Phones call that same address. Two computers and a phone for one person share one clock and one Square timecard.
 
-Do not open a port on the router. Cloudflare Tunnel or Tailscale Funnel makes the HTTPS address. Do not host this on Vercel. The clock is a long-running Node process, and `DATA_DIR` has to be a real disk.
+The free stable address is Tailscale Funnel (`https://….ts.net`, no domain). Cloudflare Tunnel (`https://io.yourdomain.com`) is the alternative when you already have a domain. Do not open a port on the router. Do not host this on Vercel. The clock is a long-running Node process, and `DATA_DIR` has to be a real disk. Fly or Railway is the later always-on path, about $5 a month, after the shop PC has run for a week.
 
 `npm run dev` on a computer you are working at is only for trying a change. Point phones and the other computers at the spare machine's public URL when you are done.
 
@@ -32,7 +32,7 @@ Do not open a port on the router. Cloudflare Tunnel or Tailscale Funnel makes th
    - `PRESENCE_DEVICE_HASH_PEPPER` to a long random string
    - Leave `VITE_IO_SERVER_URL` unset
 
-   You will fill `PRESENCE_PUBLIC_URL` and `SQUARE_WEBHOOK_NOTIFICATION_URL` in step 5, after the tunnel prints the address.
+   You will set `PUBLIC_BASE_URL` in step 5, after the tunnel prints the address. Leave `SQUARE_WEBHOOK_NOTIFICATION_URL` unset unless Square must sign a different URL. It defaults to `PUBLIC_BASE_URL` plus `/api/square/webhook`.
 4. Start I/O on boot, and restart it if it exits. Use the block for this computer's OS below. `GET http://127.0.0.1:5000/api/health?probe=1` returns `{ "ok": true }` when the process is up.
 5. Give it a stable HTTPS name with one of these. Both are free. Neither needs an open router port.
 
@@ -68,12 +68,7 @@ Do not open a port on the router. Cloudflare Tunnel or Tailscale Funnel makes th
 
    On Windows, `cloudflared service install` registers the service. On Mac, `brew services start cloudflared` after the config is in place.
 
-   Set both of these in `.env` to that exact origin, with `https://` and no path:
-
-   - `PRESENCE_PUBLIC_URL`
-   - `SQUARE_WEBHOOK_NOTIFICATION_URL` = that origin plus `/api/square/webhook`
-
-   Restart I/O so it reads the file.
+   Set `PUBLIC_BASE_URL` in `.env` to that exact origin, with `https://` and no path. Restart I/O so it reads the file. The phone setup snippet uses this origin. Square webhook checks use `PUBLIC_BASE_URL/api/square/webhook` unless you set `SQUARE_WEBHOOK_NOTIFICATION_URL` yourself.
 6. In Square, send webhooks to `POST https://<that-host>/api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`.
 7. Open `https://<that-host>` once. Create the company, set the shop PIN, and confirm the roster comes from Square. This app does not write wages.
 8. Run the backup once, by hand, and check **+ → Ready**. Backup should show an age, not "No backup yet". Public URL should show the hostname.
@@ -163,7 +158,8 @@ While the process is off, Square timecards that were already open stay open in S
 ## Hardening
 
 - No inbound ports. Do not forward 5000, 80, or 443 on the router. `HOST=127.0.0.1`.
-- The public address is HTTPS only. Ready rejects an `http://` `PRESENCE_PUBLIC_URL`.
+- The public address is HTTPS only. Ready rejects an `http://` `PUBLIC_BASE_URL`.
+- With `PUBLIC_BASE_URL` set, `GET /api/state`, `GET /api/presence`, the team list, and input posts require the shop PIN or the owner key. Phone posts require `Authorization: Bearer`. Owner setup requires the owner key. The strip already sends the PIN after you type it, and the browser that created the company sends the owner key.
 - Phone clock-in is the bearer token on `POST /api/presence/phone`. A token is one person, stored only as a hash.
 - The shop PIN gates clock in, clock out, and settings. The owner key gates company changes and phone enrollment.
 - Phone and signal routes are rate limited.
@@ -187,4 +183,19 @@ Oracle Cloud Always Free: an Ampere A1 instance, or the Always Free AMD micro, U
 
 Fly: `fly volumes create io_data --size 1 --region dfw`, `fly secrets set` for each `.env` value, `DATA_DIR=/data` is already in `fly.toml`, then `fly deploy`. `auto_stop_machines` is off so the clock keeps running. Railway: `railway.toml` builds the Dockerfile. Add a volume at `/data`, set `DATA_DIR=/data`, and turn sleep off.
 
-`npm test` and `npm run check` should pass before you leave the spare computer running.
+## MVP pilot
+
+Merge the clock work in this order, and do not skip ahead: PR #6 (the geofence clock) first, then the presence stack on top of it, including this draft. One shop, one process.
+
+On the shop PC, `.env` needs:
+
+- `HOST=127.0.0.1`
+- `DATA_DIR` on a disk that survives reboot
+- `BACKUP_DIR` on a second disk or USB
+- `PUBLIC_BASE_URL` = the Funnel or Tunnel `https://` origin
+- `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`
+- `PRESENCE_DEVICE_HASH_PEPPER`
+
+Enroll two phones first, not the whole roster. Each token is that person's Square team member. For one week, the manual tap on the strip is the backup: if a phone misses, they tap in. An arrive while they are already in does not open a second timecard. At the end of the week, check Ready (backup age and public URL) and that each person's Square timecard matches the strip.
+
+`npm test` and `npm run check` should pass before you leave the shop PC running.

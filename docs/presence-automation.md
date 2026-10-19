@@ -124,7 +124,7 @@ The server still judges that fix against the 120 meter fence, 75 meter accuracy,
 ## Env
 
 ```text
-PRESENCE_PUBLIC_URL=https://your-host
+PUBLIC_BASE_URL=https://your-host
 PRESENCE_SIGNAL_QUIET_MS=900000
 PRESENCE_AUTO_CLOSE=19:00
 PRESENCE_SIGNAL_MAX_AGE_MS=120000

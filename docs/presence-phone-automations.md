@@ -187,4 +187,4 @@ curl -s -X POST https://shop.example/api/presence/devices/DEVICE_ID/revoke \
   -H "x-owner-key: OWNER_KEY"
 ```
 
-Set `PRESENCE_PUBLIC_URL` to the public `https://` origin so `url` in that response is the address the phone should call. More of the server rules are in `docs/presence-automation.md`.
+Set `PUBLIC_BASE_URL` to the public `https://` origin so `url` in that response is the address the phone should call. `PRESENCE_PUBLIC_URL` still works if `PUBLIC_BASE_URL` is unset. More of the server rules are in `docs/presence-automation.md`.

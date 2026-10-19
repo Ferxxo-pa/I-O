@@ -121,14 +121,13 @@ export async function ingestPhone(input: {
   authorization: string | undefined;
   ip: string;
 }): Promise<{ status: number; body: PhoneResponse | { message: string } }> {
+  const token = bearerToken(input.authorization);
+  if (!token) return { status: 401, body: { message: "Unknown device" } };
   if (mentionsWage(input.rawBody)) return { status: 400, body: { message: "Presence never writes a wage" } };
+  if (!signalAllowed(input.ip)) return { status: 429, body: { message: "Too many signals" } };
   const parsed = phoneSchema.safeParse(input.body);
   if (!parsed.success) return { status: 400, body: { message: "Check the signal" } };
   const signal = parsed.data;
-  if (!signalAllowed(input.ip)) return { status: 429, body: { message: "Too many signals" } };
-
-  const token = bearerToken(input.authorization);
-  if (!token) return { status: 401, body: { message: "Unknown device" } };
   let deviceId = "";
   let personId = "";
   try {

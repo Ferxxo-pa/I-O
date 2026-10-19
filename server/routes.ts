@@ -4,6 +4,8 @@ import { fightSettingsSchema } from "@shared/fight";
 import { levelRulesSchema } from "@shared/ops";
 import { configSchema, inputTypeSchema } from "@shared/schema";
 import { HttpError, assertShopPin, pinShape } from "./auth/pin";
+import { assertPublicReader } from "./auth/reader";
+import { webhookNotificationUrl } from "./publicBase";
 import { addPerson, companyView, createCompany, joinCompany, setPersonRate, setShopConfig } from "./company";
 import { earnEngine } from "./clock/engine";
 import { fightBook } from "./fight/book";
@@ -99,7 +101,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/state", (req, res) => {
-    res.json(earnEngine.getState(personIdFrom(req)));
+    try {
+      assertPublicReader(req);
+      res.json(earnEngine.getState(personIdFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't load the clock");
+    }
   });
 
   app.post("/api/clock/in", async (req, res) => {
@@ -132,6 +139,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/input/:type", (req, res) => {
+    try {
+      assertPublicReader(req);
+    } catch (err) {
+      return sendError(res, err, "Couldn't record that");
+    }
     const parsed = inputTypeSchema.safeParse(req.params.type);
     if (!parsed.success) {
       return res.status(400).json({ message: "Unknown input type" });
@@ -141,6 +153,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Back-compat alias while UI migrates
   app.post("/api/actions/:type", (req, res) => {
+    try {
+      assertPublicReader(req);
+    } catch (err) {
+      return sendError(res, err, "Couldn't record that");
+    }
     const parsed = inputTypeSchema.safeParse(req.params.type);
     if (!parsed.success) {
       return res.status(400).json({ message: "Unknown input type" });
@@ -200,16 +217,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/company/who", async (_req, res) => {
+  app.get("/api/company/who", async (req, res) => {
     try {
+      assertPublicReader(req);
       const people = await peopleOnTheBusiness();
       res.json({
         source: squareConfigured() ? "square" : "manual",
         people: people.map((person) => ({ id: person.id, name: person.name })),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Couldn't load the team";
-      res.status(400).json({ message });
+      sendError(res, err, "Couldn't load the team");
     }
   });
 
@@ -326,7 +343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/square/webhook", (req, res) => {
     const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
-    const url = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+    const url = webhookNotificationUrl();
     if (!key || !url) {
       return res.status(401).json({ message: "Square webhook is not configured" });
     }

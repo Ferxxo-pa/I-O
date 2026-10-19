@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
+import { OWNER_KEY, PIN_KEY, WHO_ID, authHeaders, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
 import { apiUrl } from "@/serverUrl";
 import { ching, clearedChime, unlockChing } from "@/lib/ching";
 import {
@@ -30,7 +30,7 @@ import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
 
-const OWNER_STORE = "io.owner";
+const OWNER_STORE = OWNER_KEY;
 const WHO_NAME = "io.who.name";
 
 type TeamPerson = { id: string; name: string };
@@ -610,7 +610,7 @@ export default function Hud() {
     setChange(false);
     setWhoMode(mode);
     setWhoOpen(true);
-    const res = await fetch(apiUrl("/api/company/who"));
+    const res = await fetch(apiUrl("/api/company/who"), { headers: authHeaders() });
     const body = (await res.json()) as { people?: TeamPerson[]; source?: "square" | "manual"; message?: string };
     if (!res.ok) {
       setTeam([]);

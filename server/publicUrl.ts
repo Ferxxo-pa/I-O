@@ -1,3 +1,5 @@
+import { publicBaseUrl } from "./publicBase";
+
 const TTL_MS = 60_000;
 const TIMEOUT_MS = 2_500;
 
@@ -9,8 +11,8 @@ export function resetPublicUrlCache() {
 
 /** Ask the public host for the cheap probe so this check cannot call itself. */
 export async function publicUrlCheck(now = Date.now()): Promise<{ ok: boolean; detail: string; note?: string }> {
-  const url = process.env.PRESENCE_PUBLIC_URL?.trim().replace(/\/+$/, "") ?? "";
-  if (!url) return { ok: false, detail: "Set PRESENCE_PUBLIC_URL" };
+  const url = publicBaseUrl();
+  if (!url) return { ok: false, detail: "Set PUBLIC_BASE_URL" };
   let parsed: URL;
   try {
     parsed = new URL(url);
