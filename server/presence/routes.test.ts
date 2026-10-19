@@ -12,6 +12,9 @@ delete process.env.SQUARE_PRESENCE_MIRROR;
 delete process.env.PRESENCE_DESK_TOKEN;
 delete process.env.SHOP_PIN;
 process.env.NODE_ENV = "development";
+process.env.IO_MODE = "public";
+process.env.IO_MDNS = "0";
+delete process.env.RELAY_PUBLIC_URL;
 process.env.PRESENCE_PREVIEW = "1";
 
 const { registerRoutes } = await import("../routes.ts");

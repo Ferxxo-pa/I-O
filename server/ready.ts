@@ -1,5 +1,6 @@
 import { ownLoginPct, readiness, type ReadinessCheck } from "@shared/ops";
 import { backupCheck } from "./backup";
+import { ioMode, lanBaseUrl, relayConfigured } from "./mode";
 import { webhookNotificationUrl } from "./publicBase";
 import { earnEngine } from "./clock/engine";
 import { currentScope, getCompany } from "./company";
@@ -35,13 +36,20 @@ export async function healthReport(): Promise<HealthReport> {
       ? "Add the team"
       : `${rated} of ${roster}`;
 
-  const webhookConfigured = Boolean(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && webhookNotificationUrl());
   const backup = backupCheck();
-  const publicUrl = await publicUrlCheck();
+  const local = ioMode() === "local-relay";
+  const webhookConfigured = local || Boolean(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && webhookNotificationUrl());
+  const publicUrl = local ? null : await publicUrlCheck();
+  let lanNote = "";
+  try {
+    lanNote = new URL(lanBaseUrl()).host;
+  } catch {
+    lanNote = lanBaseUrl();
+  }
   const report = readiness({
     squareToken: square,
     webhookConfigured,
-    webhookSeen: signals.webhookSeen,
+    webhookSeen: local || signals.webhookSeen,
     pinSet: signals.pinSet,
     rentEntered: signals.rentEntered,
     ratesOk,
@@ -51,9 +59,15 @@ export async function healthReport(): Promise<HealthReport> {
     backupOk: backup.ok,
     backupDetail: backup.detail,
     backupNote: backup.note,
-    publicUrlOk: publicUrl.ok,
-    publicUrlDetail: publicUrl.detail,
-    publicUrlNote: publicUrl.note,
+    webhookNote: local ? "Square is polled. Webhooks are off." : undefined,
+    publicUrlOk: local ? relayConfigured() : publicUrl?.ok,
+    publicUrlLabel: local ? "Shop LAN" : undefined,
+    publicUrlDetail: local
+      ? relayConfigured()
+        ? lanBaseUrl()
+        : "Set RELAY_PUBLIC_URL, RELAY_SHOP_SECRET, and RELAY_SEAL_PRIVATE_JWK"
+      : publicUrl?.detail,
+    publicUrlNote: local ? (relayConfigured() ? lanNote : undefined) : publicUrl?.note,
   });
   return { ok: true, ready: report.ready, scope: currentScope(), checks: report.checks };
 }

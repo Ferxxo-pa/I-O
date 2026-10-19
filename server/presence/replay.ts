@@ -6,6 +6,7 @@ type ReplayRow = {
   at: number;
   status: number;
   body: unknown;
+  until?: number;
 };
 
 const hits = new Map<string, number[]>();
@@ -58,8 +59,12 @@ export function recallSignal(file: string, key: string): { status: number; body:
 }
 
 export function rememberSignal(file: string, key: string, status: number, body: unknown, now: number, keepMs: number) {
-  const rows = readReplay(file).filter((entry) => now - entry.at < keepMs && entry.key !== key);
-  rows.push({ key, at: now, status, body });
+  const rows = readReplay(file).filter((entry) => {
+    if (entry.key === key) return false;
+    const until = typeof entry.until === "number" ? entry.until : entry.at + keepMs;
+    return until > now;
+  });
+  rows.push({ key, at: now, status, body, until: now + keepMs });
   const capped = rows.slice(-2000);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify({ version: 1, signals: capped }));

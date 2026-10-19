@@ -12,6 +12,9 @@ delete process.env.HOUR_DURATION_MS;
 process.env.SQUARE_WEBHOOK_SIGNATURE_KEY = "route-test-key";
 process.env.SQUARE_WEBHOOK_NOTIFICATION_URL = "https://shop.example/api/square/webhook";
 process.env.NODE_ENV = "development";
+process.env.IO_MODE = "public";
+process.env.IO_MDNS = "0";
+delete process.env.RELAY_PUBLIC_URL;
 
 const { registerRoutes } = await import("./routes.ts");
 const { earnEngine } = await import("./clock/engine.ts");

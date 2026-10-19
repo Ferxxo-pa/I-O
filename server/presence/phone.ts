@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RELAY_TTL_MS } from "@shared/relayBox";
 import { earnEngine } from "../clock/engine";
 import { dayConfigFromEnv, signalConfigFromEnv } from "./config";
 import { withinCollection } from "./session";
@@ -26,8 +27,11 @@ const phoneSchema = z
     event: z.enum(["arrive", "leave"]),
     trigger: z.enum(["geo", "wifi"]),
     ts: z.number().optional(),
+    eventId: z.string().regex(/^[A-Za-z0-9_-]{8,80}$/).optional(),
   })
   .strict();
+
+type PhoneSignal = z.infer<typeof phoneSchema>;
 
 export type PhoneResponse = {
   ok: boolean;
@@ -61,28 +65,58 @@ export function presencePublicBase(input: { configured: string | undefined; prot
   return `${input.proto}://${input.host}`;
 }
 
-export function phoneSetupSnippet(input: { url: string; token: string; name: string }): string {
+export function phoneSetupSnippet(input: { url: string; token: string; name: string; relayUrl?: string }): string {
   const header = `Authorization: Bearer ${input.token}`;
+  if (!input.relayUrl) {
+    return [
+      `Shop presence for ${input.name}`,
+      "",
+      "URL",
+      input.url,
+      "",
+      "Header",
+      header,
+      "",
+      "Arrive at the shop (location)",
+      '{"event":"arrive","trigger":"geo"}',
+      "",
+      "Leave the shop (location)",
+      '{"event":"leave","trigger":"geo"}',
+      "",
+      "Joined the shop Wi-Fi",
+      '{"event":"arrive","trigger":"wifi"}',
+      "",
+      "Left the shop Wi-Fi",
+      '{"event":"leave","trigger":"wifi"}',
+      "",
+      "Method is POST. Send the header on every request. The token is shown once.",
+    ].join("\n");
+  }
+  const body = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
+    `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`;
+  const posts = (event: "arrive" | "leave", trigger: "geo" | "wifi") => {
+    const urls = event === "leave" ? [input.relayUrl!] : [input.url, input.relayUrl!];
+    return urls.map((url) => [`POST ${url}`, header, body(event, trigger)].join("\n")).join("\n\n");
+  };
   return [
     `Shop presence for ${input.name}`,
     "",
-    "URL",
-    input.url,
+    "Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.",
     "",
     "Header",
     header,
     "",
-    "Arrive at the shop (location)",
-    '{"event":"arrive","trigger":"geo"}',
+    "Arrive at the shop (location) — shop Wi-Fi and mailbox",
+    posts("arrive", "geo"),
     "",
-    "Leave the shop (location)",
-    '{"event":"leave","trigger":"geo"}',
+    "Leave the shop (location) — mailbox only, so cellular still clocks out",
+    posts("leave", "geo"),
     "",
-    "Joined the shop Wi-Fi",
-    '{"event":"arrive","trigger":"wifi"}',
+    "Joined the shop Wi-Fi — shop Wi-Fi and mailbox",
+    posts("arrive", "wifi"),
     "",
-    "Left the shop Wi-Fi",
-    '{"event":"leave","trigger":"wifi"}',
+    "Left the shop Wi-Fi — mailbox only",
+    posts("leave", "wifi"),
     "",
     "Method is POST. Send the header on every request. The token is shown once.",
   ].join("\n");
@@ -140,20 +174,44 @@ export async function ingestPhone(input: {
     return { status: 429, body: { message } };
   }
 
+  return applyPhoneSignal({
+    deviceId,
+    personId,
+    signal,
+    maxAgeMs: signalConfigFromEnv().phoneMaxAgeMs,
+  });
+}
+
+/** Same clock path as a phone post. The relay poller passes a 72 hour window. */
+export async function applyPhoneSignal(input: {
+  deviceId: string;
+  personId: string;
+  signal: PhoneSignal;
+  maxAgeMs: number;
+}): Promise<{ status: number; body: PhoneResponse }> {
+  const { deviceId, personId, signal } = input;
   const now = presenceNow();
   const at = signal.ts ?? now;
   const config = signalConfigFromEnv();
-  const timing = signal.ts == null ? "ok" : at - now > config.maxFutureMs ? "future_signal" : now - at > config.phoneMaxAgeMs ? "stale_signal" : "ok";
+  const timing = signal.ts == null ? "ok" : at - now > config.maxFutureMs ? "future_signal" : now - at > input.maxAgeMs ? "stale_signal" : "ok";
   const bucket = Math.floor(at / config.phoneDedupeMs);
-  const replayKey = `phone:${deviceId}:${signal.trigger}:${signal.event}:${bucket}`;
+  const bucketKey = `phone:${deviceId}:${signal.trigger}:${signal.event}:${bucket}`;
+  const eventKey = signal.eventId ? `phone:${deviceId}:evt:${signal.eventId}:${at}` : null;
+  const replayKey = eventKey ?? bucketKey;
   const prior = recallReplay(replayKey);
   if (prior && prior.body && typeof prior.body === "object") {
     return { status: prior.status, body: { ...(prior.body as PhoneResponse), duplicate: true } };
   }
   const finish = (status: number, body: PhoneResponse) => {
-    rememberReplay(replayKey, status, body);
+    rememberReplay(replayKey, status, body, eventKey ? RELAY_TTL_MS : undefined);
     return { status, body };
   };
+
+  if (timing === "stale_signal") {
+    const body = empty({ ok: true, personId, event: signal.event, trigger: signal.trigger, applied: "rejected", reason: timing });
+    rememberReplay(bucketKey, 200, body);
+    return { status: 200, body };
+  }
 
   if (timing !== "ok") {
     return finish(200, empty({ ok: true, personId, event: signal.event, trigger: signal.trigger, applied: "rejected", reason: timing }));
@@ -167,7 +225,9 @@ export async function ingestPhone(input: {
 
   const device = enrolledDevice(deviceId);
   const person = personById(personId);
-  if (!device || !person) return { status: 401, body: { message: "Unknown device" } };
+  if (!device || !person) {
+    return { status: 401, body: empty({ personId, applied: "rejected", reason: "unknown_device" }) };
+  }
   if (!personHasConsent(person.id)) {
     return finish(403, empty({ personId: person.id, event: signal.event, trigger: signal.trigger, applied: "rejected", reason: "no_consent" }));
   }

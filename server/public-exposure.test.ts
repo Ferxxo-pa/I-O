@@ -12,6 +12,9 @@ delete process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
 delete process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
 delete process.env.SHOP_PIN;
 process.env.NODE_ENV = "development";
+process.env.IO_MODE = "public";
+process.env.IO_MDNS = "0";
+delete process.env.RELAY_PUBLIC_URL;
 
 const { publicBaseUrl, webhookNotificationUrl } = await import("./publicBase.ts");
 assert.equal(publicBaseUrl(), "https://shop.example");

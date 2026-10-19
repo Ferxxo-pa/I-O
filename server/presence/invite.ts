@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getCompany } from "../company";
+import { ioMode, lanPhoneUrl, relayDropUrl } from "../mode";
 import { fenceFromEnv } from "./geo";
 
 const SHOP_ADDRESS = "403 E Ben White Blvd, Austin";
@@ -129,14 +130,26 @@ export function iphoneAutomationText(input: {
   lat: number;
   lng: number;
   radius: number;
+  relayUrl?: string;
 }): string {
   const header = `Authorization: Bearer ${input.token}`;
-  const call = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
-    [`POST ${input.url}`, header, `{"event":"${event}","trigger":"${trigger}"}`].join("\n");
+  const tagged = Boolean(input.relayUrl);
+  const body = (event: "arrive" | "leave", trigger: "geo" | "wifi") =>
+    tagged
+      ? `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`
+      : `{"event":"${event}","trigger":"${trigger}"}`;
+  const call = (event: "arrive" | "leave", trigger: "geo" | "wifi") => {
+    const urls = !input.relayUrl ? [input.url] : event === "leave" ? [input.relayUrl] : [input.url, input.relayUrl];
+    return urls.map((url) => [`POST ${url}`, header, body(event, trigger)].join("\n")).join("\n\n");
+  };
+  const lead = tagged
+    ? ["Capture the current time in milliseconds once. Use that same number as ts and eventId on every post of that firing.", ""]
+    : [];
   return [
     `Shop geofence — ${input.address}`,
     `Center ${input.lat}, ${input.lng}. Radius ${input.radius} m.`,
     "",
+    ...lead,
     "Arrive",
     call("arrive", "geo"),
     "",
@@ -153,18 +166,27 @@ export function iphoneAutomationText(input: {
   ].join("\n");
 }
 
-function httpAction(url: string, token: string, event: "arrive" | "leave", trigger: "geo" | "wifi", sig: string) {
+function httpAction(url: string, token: string, event: "arrive" | "leave", trigger: "geo" | "wifi", sig: string, tagged: boolean) {
+  const body = tagged
+    ? `{"event":"${event}","trigger":"${trigger}","ts":EVENT_ID,"eventId":"EVENT_ID"}`
+    : JSON.stringify({ event, trigger });
   return {
     m_classType: "HttpRequestAction",
     m_url: url,
     m_httpMethod: "POST",
     m_contentType: "application/json",
-    m_body: JSON.stringify({ event, trigger }),
+    m_body: body,
     m_headerKeys: ["Authorization"],
     m_headerValues: [`Bearer ${token}`],
     m_SIGUID: sig,
     m_constraintList: [{ m_classType: "TriggerThatInvokedConstraint", m_SIGUID: `${sig}c` }],
   };
+}
+
+function actionUrls(url: string, relayUrl: string | undefined, event: "arrive" | "leave"): string[] {
+  if (!relayUrl) return [url];
+  if (event === "leave") return [relayUrl];
+  return [url, relayUrl];
 }
 
 export function macroFile(input: {
@@ -175,7 +197,13 @@ export function macroFile(input: {
   lat: number;
   lng: number;
   radius: number;
+  relayUrl?: string;
 }): InviteOpen["macro"] {
+  const tagged = Boolean(input.relayUrl);
+  const actions = (event: "arrive" | "leave", trigger: "geo" | "wifi", sig: string) =>
+    actionUrls(input.url, input.relayUrl, event).map((url, index) =>
+      httpAction(url, input.token, event, trigger, `${sig}${index === 0 ? "a" : "b"}`, tagged),
+    );
   const geo = (name: string, enter: boolean, event: "arrive" | "leave", sig: string): Macro => ({
     m_name: name,
     m_GUID: 0,
@@ -192,7 +220,7 @@ export function macroFile(input: {
         m_SIGUID: sig,
       },
     ],
-    m_actionList: [httpAction(input.url, input.token, event, "geo", `${sig}a`)],
+    m_actionList: actions(event, "geo", sig),
     m_constraintList: [],
   });
   const wifi = (name: string, state: 2 | 3, event: "arrive" | "leave", sig: string): Macro => ({
@@ -208,7 +236,7 @@ export function macroFile(input: {
         m_SIGUID: sig,
       },
     ],
-    m_actionList: [httpAction(input.url, input.token, event, "wifi", `${sig}a`)],
+    m_actionList: actions(event, "wifi", sig),
     m_constraintList: [],
   });
   return {
@@ -263,14 +291,17 @@ export function openInvite(code: string, now: number): InviteOpen | "used" | "mi
   writeInvites(invites);
   const fence = shopFence();
   const ssid = shopWifiSsid();
+  const local = ioMode() === "local-relay";
+  const relay = local ? relayDropUrl() : "";
   const fields = {
-    url: row.phoneUrl,
+    url: local ? lanPhoneUrl() : row.phoneUrl,
     token,
     ssid,
     address: fence.address,
     lat: fence.lat,
     lng: fence.lng,
     radius: fence.radius,
+    relayUrl: relay || undefined,
   };
   return {
     ...fields,

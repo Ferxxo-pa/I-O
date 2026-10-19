@@ -27,7 +27,9 @@ function loadEnv(file) {
 
 loadEnv(join(root, ".env"));
 process.env.NODE_ENV = process.env.NODE_ENV || "production";
-process.env.HOST = process.env.HOST || "127.0.0.1";
+if (!process.env.HOST) {
+  process.env.HOST = process.env.IO_MODE === "public" ? "127.0.0.1" : "0.0.0.0";
+}
 
 const child = spawn(process.execPath, [join(root, "dist", "index.js")], {
   cwd: root,

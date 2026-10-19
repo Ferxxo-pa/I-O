@@ -1,85 +1,82 @@
 # Go live
 
-The shop PC is the I/O server. Leave it on. That process is the only copy of the company, the roster, the clock, the wages and collected book, Square polling, Square webhooks, and the phone endpoints. A computer at home is the same setup if the shop PC cannot stay awake.
+One shop computer runs I/O on the shop Wi-Fi. The other computers open that address and show the strip. Phones on Premiere post arrive straight to that computer. Every arrive and every leave also goes to a free Cloudflare mailbox. A leave from cellular still lands, because the phone can reach the mailbox when it cannot reach the shop. The shop computer polls the mailbox outbound, about every 5 seconds. Nothing on the internet calls in.
 
-Employee computers do not run the server. Each one opens the shop PC's public HTTPS address and runs only the strip. The browser remembers one person. The shop PIN is unchanged. Phones call that same address. Two computers and a phone for one person share one clock and one Square timecard.
+This mode is `IO_MODE=local-relay`. It is the default. Square stays outbound polling. Webhooks stay off. Do not open a port on the router. Do not turn on Tailscale Funnel or a Cloudflare Tunnel for this path. Do not host this on Vercel. The clock is a long-running Node process, and `DATA_DIR` has to be a real disk.
 
-The free stable address is Tailscale Funnel (`https://….ts.net`, no domain). Cloudflare Tunnel (`https://io.yourdomain.com`) is the alternative when you already have a domain. Do not open a port on the router. Do not host this on Vercel. The clock is a long-running Node process, and `DATA_DIR` has to be a real disk. Fly or Railway is the later always-on path, about $5 a month, after the shop PC has run for a week.
+`npm run dev` on a computer you are working at is only for trying a change. The shop computer is the one that stays on.
 
-`npm run dev` on a computer you are working at is only for trying a change. Point phones and the other computers at the spare machine's public URL when you are done.
+## What Ezven creates
 
-## What Ezven does
+You create these once. The repo does not contain them.
 
-1. Pick the spare computer. Plug it into power. Put a UPS on it if you have one, so a short outage does not cut the disk while it is writing. A power cut mid-write is the failure a UPS is for. The nightly backup is the recovery when that still happens.
-2. Turn sleep off, and turn automatic OS updates on. Commands are below.
-3. Install Node 22. Clone this repo, for example to `/opt/io` (Mac or Linux) or `C:\io` (Windows).
+1. A free Cloudflare account.
+2. A worker named `io-relay`, from `relay/`, with `npx wrangler deploy`.
+3. A D1 database named `io-relay` (`npx wrangler d1 create io-relay`). Paste the printed `database_id` into `relay/wrangler.toml`.
+4. A long random `RELAY_SHOP_SECRET`. The same value goes on the worker and in the shop `.env`. Phones never see it.
+5. A seal keypair from `npm run relay:keys`. The public JWK is the worker secret `RELAY_SEAL_PUBLIC_JWK`. The private JWK is `RELAY_SEAL_PRIVATE_JWK` in the shop `.env` only. The mailbox stores ciphertext. It does not keep names, wages, or Square data.
+6. The shop `.env`: `IO_MODE=local-relay`, `HOST=0.0.0.0`, `LAN_BASE_URL`, `RELAY_PUBLIC_URL`, `RELAY_SHOP_SECRET`, `RELAY_SEAL_PRIVATE_JWK`, `DATA_DIR`, `BACKUP_DIR`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `PRESENCE_DEVICE_HASH_PEPPER`.
+7. The shop computer set to start I/O on boot, sleep off.
+8. Each phone enrolled from `/join/:code` while that phone is on Premiere.
+
+## Steps
+
+1. Pick the shop computer. Plug it into power. Put a UPS on it if you have one, so a short outage does not cut the disk while it is writing. Turn sleep off, and turn automatic OS updates on. Commands are below.
+2. Install Node 22. Clone this repo, for example to `/opt/io` (Mac or Linux) or `C:\io` (Windows).
 
    ```sh
    cd /opt/io
    npm ci
    npm run build
    cp .env.example .env
+   npm run relay:keys
    ```
 
-   Edit `.env` and do not commit it. Set:
-
-   - `HOST=127.0.0.1` so the shop Wi-Fi cannot reach the process, only the tunnel on this machine can
-   - `DATA_DIR` to a folder on this computer's disk (`/var/lib/io` or `C:\io-data`)
-   - `BACKUP_DIR` to a different disk or a USB drive that stays plugged in
-   - `BACKUP_CLOUD_DIR` only if you also want a copy in a private synced folder
-   - `SQUARE_ACCESS_TOKEN` and `SQUARE_LOCATION_ID` (the token stays in this file)
-   - `SQUARE_WEBHOOK_SIGNATURE_KEY`
-   - `PRESENCE_DEVICE_HASH_PEPPER` to a long random string
-   - Leave `VITE_IO_SERVER_URL` unset
-
-   You will set `PUBLIC_BASE_URL` in step 5, after the tunnel prints the address. Leave `SQUARE_WEBHOOK_NOTIFICATION_URL` unset unless Square must sign a different URL. It defaults to `PUBLIC_BASE_URL` plus `/api/square/webhook`.
-4. Start I/O on boot, and restart it if it exits. Use the block for this computer's OS below. `GET http://127.0.0.1:5000/api/health?probe=1` returns `{ "ok": true }` when the process is up.
-5. Give it a stable HTTPS name with one of these. Both are free. Neither needs an open router port.
-
-   **Tailscale Funnel**, if you do not have a domain. Install Tailscale, sign in, and in the Tailscale admin turn on HTTPS certificates and Funnel. Then, on the spare computer:
+   `relay:keys` prints two JSON values. Put the public one in Cloudflare in the next step. Put the private one in `.env` as `RELAY_SEAL_PRIVATE_JWK`. Do not commit `.env`. Do not put the private key on Cloudflare.
+3. Deploy the mailbox from this repo, on any computer, after `npx wrangler login` with the free Cloudflare account:
 
    ```sh
-   tailscale funnel --bg 5000
-   tailscale funnel status
+   cd relay
+   npx wrangler d1 create io-relay
    ```
 
-   The status line is the URL, like `https://shop.your-tailnet.ts.net`. Enable the Tailscale service so it starts on boot, then run the funnel command once. On Linux, keep the funnel across reboots with:
+   Paste the printed database id into `relay/wrangler.toml` where it says `replace-after-wrangler-d1-create`. Then:
 
    ```sh
-   sudo cp deploy/io-funnel.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now io-funnel
+   npx wrangler secret put RELAY_SHOP_SECRET
+   npx wrangler secret put RELAY_SEAL_PUBLIC_JWK
+   npx wrangler d1 execute io-relay --remote --file=schema.sql
+   npx wrangler deploy
    ```
 
-   **Cloudflare Tunnel**, if you already have a domain. Install `cloudflared`, then:
+   `npm run relay:deploy` from the repo root is the same deploy. Wrangler prints the worker URL, like `https://io-relay.<your-subdomain>.workers.dev`. That is `RELAY_PUBLIC_URL`.
+4. Edit the shop `.env`:
 
-   ```sh
-   cloudflared tunnel login
-   cloudflared tunnel create io
-   cloudflared tunnel route dns io io.yourdomain.com
-   ```
+   - `IO_MODE=local-relay`
+   - `HOST=0.0.0.0`
+   - `LAN_BASE_URL=http://io.local:5000` or `http://192.168.x.x:5000` if you reserve a fixed address on the router
+   - `RELAY_PUBLIC_URL` the worker origin, no path
+   - `RELAY_SHOP_SECRET` the same string you gave the worker
+   - `RELAY_SEAL_PRIVATE_JWK` the private JSON from `relay:keys`
+   - `DATA_DIR` on this computer's disk (`/var/lib/io` or `C:\io-data`)
+   - `BACKUP_DIR` a different disk or a USB drive that stays plugged in
+   - `SQUARE_ACCESS_TOKEN` and `SQUARE_LOCATION_ID`
+   - `PRESENCE_DEVICE_HASH_PEPPER` a long random string
+   - Leave `PUBLIC_BASE_URL`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, and `VITE_IO_SERVER_URL` unset
 
-   Copy `deploy/cloudflared/config.yml` to `/etc/cloudflared/config.yml`. Put in the tunnel id and the credentials file that `tunnel create` printed. Set the hostname to `io.yourdomain.com`. Then:
-
-   ```sh
-   sudo cloudflared service install
-   sudo systemctl enable --now cloudflared
-   ```
-
-   On Windows, `cloudflared service install` registers the service. On Mac, `brew services start cloudflared` after the config is in place.
-
-   Set `PUBLIC_BASE_URL` in `.env` to that exact origin, with `https://` and no path. Restart I/O so it reads the file. The phone setup link uses this origin. Square webhook checks use `PUBLIC_BASE_URL/api/square/webhook` unless you set `SQUARE_WEBHOOK_NOTIFICATION_URL` yourself.
-6. In Square, send webhooks to `POST https://<that-host>/api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`.
-7. Open `https://<that-host>` once. Create the company, set the shop PIN, and confirm the roster comes from Square. This app does not write wages.
-8. Run the backup once, by hand, and check **+ → Ready**. Backup should show an age, not "No backup yet". Public URL should show the hostname.
+   Square timecards keep updating because I/O polls Square. You do not add a webhook.
+5. Start I/O on boot, and restart it if it exits. Use the block for this computer's OS below. `GET http://127.0.0.1:5000/api/health?probe=1` returns `{ "ok": true }` when the process is up. From another computer on Premiere, open `http://io.local:5000` (or the fixed LAN IP). The strip should load. If `io.local` does not resolve, use the fixed IP in `LAN_BASE_URL` and on the other computers.
+6. Do not forward port 5000, 80, or 443. The shop Wi-Fi can reach the computer. The internet cannot.
+7. Open the shop computer's address once. Create the company, set the shop PIN, and confirm the roster comes from Square. This app does not write wages.
+8. Run the backup once, by hand, and check **+ → Ready**. Backup should show an age. Shop LAN should show `io.local:5000` (or your fixed host). Webhook should say Square is polled and webhooks are off.
 
    ```sh
    node scripts/backup-data.mjs
    ```
 
-   Then schedule it nightly. The script copies every file in `DATA_DIR` (including `io-state.json`, `presence-punches.jsonl`, and `presence-phone.jsonl`) into `BACKUP_DIR/io-YYYY-MM-DD`, and into `BACKUP_CLOUD_DIR` when that is set. It keeps 14 days. It writes `DATA_DIR/backup.json` only after the copy works. Ready stays green for 36 hours (`BACKUP_MAX_AGE_MS`).
-9. Send each employee `https://<that-host>/?join=<company code>`. They do not install Node and they do not get `.env`. In Chrome or Edge, install I/O from the address bar. The window is the strip. They pick their own name once. Clock in still asks for the shop PIN. If the browser will not install, the same link as a bookmark is enough. A native app is not required.
-10. Phones use that same `https://` origin. The Shortcuts and MacroDroid note is in `docs/presence-phone-automations.md`.
+   Then schedule it nightly. The script copies every file in `DATA_DIR` into `BACKUP_DIR/io-YYYY-MM-DD`, and into `BACKUP_CLOUD_DIR` when that is set. It keeps 14 days. Ready stays green for 36 hours (`BACKUP_MAX_AGE_MS`).
+9. On each employee computer, open `http://io.local:5000` (or the fixed LAN IP). They do not install Node and they do not get `.env`. In Chrome or Edge, install I/O from the address bar. The window is the strip. They pick their own name once. Clock in still asks for the shop PIN. A bookmark works if the browser will not install. A native app is not required. `VITE_IO_SERVER_URL` is only for a strip built on another host. Leave it unset when the shop computer serves the strip.
+10. Enroll each phone while it is joined to Premiere. From the owner key, record consent, then `POST /api/presence/phone/setup`. Send that person the `inviteUrl`. They open it on the phone. The page is three steps. Test it does not clock them in. The copied note posts arrive to the shop and to the mailbox, and posts leave only to the mailbox. Premiere and the shop geofence (403 E Ben White Blvd) are already filled in. The Shortcuts and MacroDroid note is in `docs/presence-phone-automations.md`.
 
 ## Start on boot
 
@@ -95,7 +92,7 @@ sudo systemctl enable --now io
 sudo systemctl enable --now io-backup.timer
 ```
 
-`deploy/io.service` listens on `127.0.0.1` and restarts after a crash. The timer runs the backup at 02:15 and, if the computer was off then, runs it on the next boot.
+`deploy/io.service` reads `HOST` from `.env` and restarts after a crash. local-relay sets `HOST=0.0.0.0`. The timer runs the backup at 02:15 and, if the computer was off then, runs it on the next boot.
 
 Sleep off, security updates on:
 
@@ -118,7 +115,7 @@ sudo pmset -a sleep 0 disksleep 0 displaysleep 10
 sudo softwareupdate --schedule on
 ```
 
-`KeepAlive` starts it at login and starts it again if it exits. The backup plist runs at 02:15. The Mac user has to be logged in, so turn on automatic login for that user, or the process will not start until someone logs in.
+`KeepAlive` starts it at login and starts it again if it exits. The backup plist runs at 02:15. The Mac user has to be logged in, so turn on automatic login for that user, or the process will not start until someone logs in. `scripts/run-with-env.mjs` reads `.env`. With `IO_MODE=local-relay` and no `HOST`, it binds `0.0.0.0`.
 
 ### Windows
 
@@ -131,7 +128,7 @@ powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
 ```
 
-Leave Windows Update set to automatic. The start script runs `scripts\run-with-env.mjs`, which reads `.env`, binds `127.0.0.1`, and starts again 3 seconds after an exit.
+Leave Windows Update set to automatic. The start script runs `scripts\run-with-env.mjs`, which reads `.env` and starts again 3 seconds after an exit.
 
 If you would rather have a Windows service, install [nssm](https://nssm.cc/) and point it at `node.exe` with arguments `C:\io\scripts\run-with-env.mjs`, AppDirectory `C:\io`, and exit action Restart. pm2 (`pm2 start scripts/run-with-env.mjs --name io` then `pm2 save` and `pm2 startup`) is the other service option. The Task Scheduler commands above are the one that does not add a tool.
 
@@ -139,63 +136,67 @@ If you would rather have a Windows service, install [nssm](https://nssm.cc/) and
 
 1. Stop I/O (`sudo systemctl stop io`, or unload the Mac plist, or end the Windows task).
 2. Pick a day folder, `io-YYYY-MM-DD`, from the USB drive or the cloud folder.
-3. Copy those files over `DATA_DIR`, replacing `io-state.json` and the punch logs. Leave the spare computer's `.env` where it is. The backup does not contain `.env`.
-4. Start I/O again.
-5. Open the public URL. The company, the open shifts, and the punch log should be that day's copy. Clock anyone out who was left in by the outage, then let Ready go green after the next backup.
+3. Copy those files over `DATA_DIR`, replacing `io-state.json` and the punch logs. Leave the shop computer's `.env` where it is. The backup does not contain `.env`, and it does not contain the seal private key.
+4. Start I/O again. It polls the mailbox and applies anything still waiting, using the original phone time.
+5. Open the LAN address. The company, the open shifts, and the punch log should be that day's copy.
 
-## When the power or the internet drops
+## When the shop computer, the Wi-Fi, or the mailbox drops
 
-The strip keeps the last state it loaded. A refresh that cannot reach the server does not clear those numbers.
+The strip keeps the last state it loaded. A refresh that cannot reach the shop computer does not clear those numbers.
 
-Phones retry, inside a limit. The server accepts a phone `ts` up to 10 minutes old (`PRESENCE_PHONE_MAX_AGE_MS`). The MacroDroid loop in the phone doc sends that same `ts` a few times, 20 seconds apart. Shortcuts has no queue: if the request fails, the next Arrive or Wi-Fi trigger sends a new one, and it counts only when that time is still inside 10 minutes. Older than that, the server ignores it.
+On Premiere, arrive posts to the shop computer and to the mailbox. Leave posts only to the mailbox, so a phone that has already gone to cellular still clocks out. The shop computer dedupes the two copies by `eventId` and `ts`. Capture that id once per firing (the current time in milliseconds) and send the same number on both posts.
 
-After that window, the person taps the strip once the server is back. That tap is the normal clock-in. If they already clocked in on Square, the tap joins that timecard instead of opening a second one.
+The mailbox keeps a message for 72 hours. If the mailbox is down, the phone's direct arrive still hits the shop computer when the phone is on Premiere. If the shop computer is off, messages wait in the mailbox. When it is back, a late leave clocks out at the original `ts`, not at the time the computer woke up.
 
-An open shift is saved in `DATA_DIR`. When the spare computer boots, the shift is still open and the hours it was off are counted, because the clock continues from the saved hour. A phone day that was still open at 7:00 PM Chicago closes at 7:00 PM once the process is running again. A manual tap does not. After an outage, clock out anyone who was not working.
+A direct post to the shop computer, with no mailbox copy, is still only accepted for 10 minutes (`PRESENCE_PHONE_MAX_AGE_MS`). The mailbox path is the one that covers a computer that was off, up to 72 hours. After that, the person taps the strip. That tap is the normal clock-in.
 
-While the process is off, Square timecards that were already open stay open in Square. This server cannot close them until it is back.
+An open shift is saved in `DATA_DIR`. When the shop computer boots, the shift is still open. A phone day that was still open at 7:00 PM Chicago closes at 7:00 PM once the process is running again. A manual tap does not. After an outage, clock out anyone who was not working and whose phone never sent a leave.
+
+While the process is off, Square timecards that were already open stay open in Square. This server cannot close them until it is back. Polling resumes on its own. A webhook is not required.
 
 ## Hardening
 
-- No inbound ports. Do not forward 5000, 80, or 443 on the router. `HOST=127.0.0.1`.
-- The public address is HTTPS only. Ready rejects an `http://` `PUBLIC_BASE_URL`.
-- With `PUBLIC_BASE_URL` set, `GET /api/state`, `GET /api/presence`, the team list, and input posts require the shop PIN or the owner key. Phone posts require `Authorization: Bearer`. Owner setup requires the owner key. The strip already sends the PIN after you type it, and the browser that created the company sends the owner key.
-- Phone clock-in is the bearer token on `POST /api/presence/phone`. A token is one person, stored only as a hash.
-- The shop PIN gates clock in, clock out, and settings. The owner key gates company changes and phone enrollment.
-- Phone and signal routes are rate limited.
-- `.env` is not committed. The Square token is only in that file, on this computer.
+- No inbound ports. Do not forward 5000, 80, or 443. The bind is `0.0.0.0` so the shop LAN can connect. The router is what keeps the internet out.
+- The mailbox is outbound only. The shop computer calls it. It does not call the shop.
+- The mailbox stores a hash of the phone token and a sealed payload. The worker seals with the shop public key during the request, then forgets the body. Do not log the worker. The private key stays in `.env` on the shop computer.
+- Phone posts use `Authorization: Bearer`. A token is one person, stored only as a hash. The shop secret is a different value and is what `/pull` and `/ack` require.
+- With `PUBLIC_BASE_URL` set (public mode only), `GET /api/state`, `GET /api/presence`, the team list, and input posts require the shop PIN or the owner key. Leave `PUBLIC_BASE_URL` unset in local-relay. The shop PIN still gates clock in, clock out, and settings. The owner key gates company changes and phone enrollment.
+- Phone and mailbox routes are rate limited. Messages expire after 72 hours.
+- `.env` is not committed. The Square token and the seal private key are only in that file, on this computer.
 - The nightly copy is a second disk, and optionally a private folder. It is not a public link.
 
-Open **+ → Ready** after setup. Backup shows the age. Public URL shows the hostname when `https://<host>/api/health?probe=1` answers. The other rows are the Square token, a signed webhook, the PIN, pay rates, rent, and each person having clocked in once.
+Open **+ → Ready** after setup. Backup shows the age. Shop LAN shows the host when the mailbox secrets are set. The other rows are the Square token, the webhook row (polled, off), the PIN, pay rates, rent, and each person having clocked in once.
 
-## Other hosts
+## Public mode, later
 
-Use the spare computer unless it cannot stay on. Then:
+Set `IO_MODE=public` when the shop computer should be reachable off the LAN. Then `HOST=127.0.0.1`, set `PUBLIC_BASE_URL`, and put a tunnel in front. Phones post only to that public origin. The mailbox is not required.
 
-| | Spare computer + Tunnel or Funnel | Oracle or Google always-free VM | Railway or Fly |
+**Tailscale Funnel**, if you do not have a domain. Install Tailscale, sign in, and in the Tailscale admin turn on HTTPS certificates and Funnel. Then, on the shop computer:
+
+```sh
+tailscale funnel --bg 5000
+tailscale funnel status
+```
+
+The status line is the URL, like `https://shop.your-tailnet.ts.net`. On Linux, keep the funnel across reboots with `deploy/io-funnel.service`.
+
+**Cloudflare Tunnel**, if you already have a domain. Install `cloudflared`, create a tunnel named `io`, route DNS, and use `deploy/cloudflared/config.yml`. That tunnel is not the mailbox worker. Leave it off in local-relay.
+
+Set `PUBLIC_BASE_URL` to that exact origin, with `https://` and no path. Restart I/O. In Square, send webhooks to `POST https://<that-host>/api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Ready then checks that a signed webhook has arrived, and that `https://<host>/api/health?probe=1` answers.
+
+Fly or Railway is the paid always-on path, about $5 a month, after the shop computer has run for a week. `fly.toml` and `railway.toml` are in the repo. `DATA_DIR=/data` on a volume. Not Vercel.
+
+| | Shop LAN + mailbox | Spare computer + Tunnel or Funnel | Railway or Fly |
 | --- | --- | --- | --- |
-| Cost | $0. Funnel needs no domain. A Cloudflare tunnel uses a domain you already have. | $0 compute inside the always-free allowance. A billing account is required to sign up. | About $5 a month for a machine that stays on, plus a small disk. |
-| Safety | No open router ports. The disk is in your shop. You patch the OS and keep the UPS. | The provider's network. You still patch the VM. Ports 80 and 443 are open for Caddy. | The host runs the process. Secrets are in their dashboard. The volume is their disk. |
-| Effort | One sitting: Node, boot script, tunnel, backup disk. | Create a VM, open 80 and 443, install Node, systemd, and Caddy. Free capacity is sometimes unavailable; try another region. | Connect the repo, set secrets, add a volume at `/data`. |
-| Power or internet at the shop | Server stops. Strips show the last state. Phones retry for about 10 minutes, then someone taps the strip when it is back. Open shifts keep the missed time unless you clock them out. | Shop power does not stop the server. Shop internet still blocks the strips and the phones the same way. People already clocked in keep accruing on the server. | Same as the VM. |
-
-Oracle Cloud Always Free: an Ampere A1 instance, or the Always Free AMD micro, Ubuntu. Google Cloud: one `e2-micro` in `us-west1`, `us-central1`, or `us-east1`. On that VM, `deploy/io.service`, `deploy/io-backup.timer`, and `deploy/Caddyfile` are the same files. Replace the name in the Caddyfile. The tunnel is optional there because Caddy has a public address; still do not put the Square token anywhere but `.env`.
-
-Fly: `fly volumes create io_data --size 1 --region dfw`, `fly secrets set` for each `.env` value, `DATA_DIR=/data` is already in `fly.toml`, then `fly deploy`. `auto_stop_machines` is off so the clock keeps running. Railway: `railway.toml` builds the Dockerfile. Add a volume at `/data`, set `DATA_DIR=/data`, and turn sleep off.
+| Cost | $0. A free Cloudflare account for the mailbox. | $0. Funnel needs no domain. A tunnel uses a domain you already have. | About $5 a month. |
+| Who can connect | Shop Wi-Fi for the strip and for arrive. Cellular for the mailbox. | Anyone with the https address. | Anyone with the https address. |
+| Inbound ports | None. | None. The tunnel dials out. | The host's ports. |
+| Shop computer off | Mailbox holds events for 72 hours. Late leaves use the original time. | The server is down until that computer is back. | The host keeps running. |
 
 ## MVP pilot
 
-Merge the clock work in this order, and do not skip ahead: PR #6 (the geofence clock) first, then the presence stack on top of it, including this draft. One shop, one process.
+Merge the clock work in this order, and do not skip ahead: PR #6 (the geofence clock) first, then this draft. One shop, one process. Do not merge this draft until you mean to.
 
-On the shop PC, `.env` needs:
+On the shop computer, `.env` needs the local-relay values in the steps above. Enroll two phones first, not the whole roster. For one week, the manual tap on the strip is the backup: if a phone misses, they tap in. An arrive while they are already in does not open a second timecard. At the end of the week, check Ready and that each person's Square timecard matches the strip.
 
-- `HOST=127.0.0.1`
-- `DATA_DIR` on a disk that survives reboot
-- `BACKUP_DIR` on a second disk or USB
-- `PUBLIC_BASE_URL` = the Funnel or Tunnel `https://` origin
-- `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_WEBHOOK_SIGNATURE_KEY`
-- `PRESENCE_DEVICE_HASH_PEPPER`
-
-Enroll two phones first, not the whole roster. For each person, record consent, then `POST /api/presence/phone/setup` with the owner key and their Square team member id. Send that person the `inviteUrl` (`/join/:code`). They open it on their phone, follow the three steps, and tap Test it. Each token is that person's Square team member. For one week, the manual tap on the strip is the backup: if a phone misses, they tap in. An arrive while they are already in does not open a second timecard. At the end of the week, check Ready (backup age and public URL) and that each person's Square timecard matches the strip.
-
-`npm test` and `npm run check` should pass before you leave the shop PC running.
+`npm test` and `npm run check` should pass before you leave the shop computer running.

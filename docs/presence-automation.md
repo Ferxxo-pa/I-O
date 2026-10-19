@@ -126,7 +126,13 @@ The server still judges that fix against the 120 meter fence, 75 meter accuracy,
 ## Env
 
 ```text
-PUBLIC_BASE_URL=https://your-host
+IO_MODE=local-relay
+HOST=0.0.0.0
+LAN_BASE_URL=http://io.local:5000
+RELAY_PUBLIC_URL=https://io-relay.your-subdomain.workers.dev
+RELAY_SHOP_SECRET=
+RELAY_SEAL_PRIVATE_JWK=
+PUBLIC_BASE_URL=
 PRESENCE_SIGNAL_QUIET_MS=900000
 PRESENCE_AUTO_CLOSE=19:00
 PRESENCE_SIGNAL_MAX_AGE_MS=120000
@@ -143,4 +149,4 @@ PRESENCE_BLE_ENABLED=
 PRESENCE_DEVICE_HASH_PEPPER=
 ```
 
-`PRESENCE_WIFI_HMAC_SECRET`, `PRESENCE_BLE_HMAC_SECRET`, `PRESENCE_DEVICE_HASH_PEPPER`, and device tokens stay on the server. The setup response is the one time a device token is returned.
+`PRESENCE_WIFI_HMAC_SECRET`, `PRESENCE_BLE_HMAC_SECRET`, `PRESENCE_DEVICE_HASH_PEPPER`, and device tokens stay on the server. The setup response is an invite link. The token is shown once, on that phone's `/join/:code` page. local-relay is the shop path in `docs/go-live.md`. `IO_MODE=public` keeps a single public URL and does not use the mailbox.

@@ -1,0 +1,14 @@
+name = "io-relay"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Create the database once: npx wrangler d1 create io-relay
+# Paste the printed database_id here before the first deploy.
+[[d1_databases]]
+binding = "DB"
+database_name = "io-relay"
+database_id = "replace-after-wrangler-d1-create"
+
+# Secrets are not vars. Set them with wrangler so they stay off disk in git:
+#   npx wrangler secret put RELAY_SHOP_SECRET
+#   npx wrangler secret put RELAY_SEAL_PUBLIC_JWK

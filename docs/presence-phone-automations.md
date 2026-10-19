@@ -2,11 +2,18 @@
 
 This is the way the shop clock runs with no app to install from us and no extra hardware. You set it up once on your own phone. After that, arriving at the shop or joining the shop Wi-Fi clocks you in. Leaving the shop or leaving that Wi-Fi clocks you out. You do not tap anything on a work day.
 
-The shop is EZ Designs, 403 E Ben White Blvd, Austin.
+The shop is EZ Designs, 403 E Ben White Blvd, Austin. The shop Wi-Fi is Premiere.
 
-Ezven sends you one link, `/join/:code`, from the I/O server. Open it on your phone. The page says who it is for. It can tell an iPhone from an Android phone. The long code after `Bearer` is a password for your phone. It is shown once, on that page. If you lose it, ask Ezven for a new link.
+Ezven sends you one link, `/join/:code`, from the I/O server. Open it on your phone while you are on Premiere. The page says who it is for. It can tell an iPhone from an Android phone. The long code after `Bearer` is a password for your phone. It is shown once, on that page. If you lose it, ask Ezven for a new one.
 
-Use these placeholders until you paste the real note. The address must start with `https://` when the shop is on the real server.
+On the shop LAN (`IO_MODE=local-relay`, the normal setup) the copied note is already filled in:
+
+- Arrive posts twice, with the same `ts` and `eventId`: once to `http://io.local:5000/api/presence/phone` (or the fixed LAN address Ezven gives you) and once to the mailbox `https://<relay>/drop`.
+- Leave posts only to the mailbox, so it still clocks you out after the phone has gone to cellular.
+- Capture the current time in milliseconds once when the automation fires. Use that same number as `ts` and as `eventId` on every copy of that firing. The note writes this as `EVENT_ID`.
+- Premiere and the geofence (403 E Ben White Blvd, 120 m) are already in the note.
+
+The block below is the public-mode shape, one URL for every event. Use it only if Ezven says the shop is on a public https address. The address must start with `https://` in that mode.
 
 ```text
 URL
@@ -136,7 +143,7 @@ Give the location blocks the shop address, 403 E Ben White Blvd, Austin. Give th
 
 ## If the phone is offline
 
-The shop accepts a late signal only inside a short window. By default that window is 10 minutes back and 15 seconds ahead (`PRESENCE_PHONE_MAX_AGE_MS` and `PRESENCE_SIGNAL_MAX_FUTURE_MS`). A signal older than that is ignored. Nothing is subtracted, and the clock does not jump.
+A direct post to the shop computer is accepted for 10 minutes back and 15 seconds ahead (`PRESENCE_PHONE_MAX_AGE_MS` and `PRESENCE_SIGNAL_MAX_FUTURE_MS`). The mailbox keeps the same event for 72 hours. If the shop computer is off, the leave waits there and clocks out at the original `ts` when the computer is back. A direct post older than 10 minutes, with no mailbox copy, is ignored. Nothing is subtracted, and the clock does not jump.
 
 A retried signal should carry the time the trigger actually fired, so the shop clocks that moment instead of the later retry. Add one more JSON field, `ts`, the Unix time in milliseconds. Store that time when the automation starts, and send the same number on every retry.
 
@@ -146,12 +153,12 @@ MacroDroid's HTTP Request action has no retry field either. The free-tier way to
 
 1. At the top of the macro, set a variable `fired` to the current time in milliseconds (MacroDroid's system time magic text).
 2. Put the HTTP Request inside a Repeat action set to 3 times.
-3. In the JSON body, add `ts` and insert the `fired` variable, so every try sends the original time.
+3. In the JSON body, add `ts` and `eventId` and insert the `fired` variable for both, so every try sends the original time. Use that same `eventId` on the shop post and the mailbox post.
 4. On the HTTP Request action, save the response code to a variable.
 5. After the request, if that code is 200, exit the loop.
 6. If it is not 200, add a Wait of 20 seconds, then let the loop try again.
 
-Three tries with 20 seconds between them stay well inside the 10-minute window. Do not raise the repeat count so high that the last try is older than 10 minutes. The shop will ignore it.
+Three tries with 20 seconds between them stay well inside the 10-minute window for a direct post. A copy that reached the mailbox is kept for 72 hours, so a leave from cellular still applies after the shop computer comes back. Do not raise the direct-post repeat count so high that the last try is older than 10 minutes. The shop computer ignores that direct copy. The mailbox copy still counts.
 
 ## How to test
 
@@ -195,4 +202,4 @@ curl -s -X POST https://shop.example/api/presence/devices/DEVICE_ID/revoke \
   -H "x-owner-key: OWNER_KEY"
 ```
 
-Set `PUBLIC_BASE_URL` to the public `https://` origin so `url` in that response is the address the phone should call. `PRESENCE_PUBLIC_URL` still works if `PUBLIC_BASE_URL` is unset. More of the server rules are in `docs/presence-automation.md`.
+In local-relay, leave `PUBLIC_BASE_URL` unset. The invite link uses `LAN_BASE_URL` (default `http://io.local:5000`). The phone has to be on Premiere to open it. In public mode, set `PUBLIC_BASE_URL` to the public `https://` origin. `PRESENCE_PUBLIC_URL` still works if `PUBLIC_BASE_URL` is unset. More of the server rules are in `docs/presence-automation.md`. The mailbox steps are in `docs/go-live.md`.

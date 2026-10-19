@@ -11,6 +11,9 @@ delete process.env.SHOP_PIN;
 delete process.env.PRESENCE_PUBLIC_URL;
 delete process.env.BACKUP_MAX_AGE_MS;
 process.env.NODE_ENV = "development";
+process.env.IO_MODE = "public";
+process.env.IO_MDNS = "0";
+delete process.env.RELAY_PUBLIC_URL;
 
 const { healthReport } = await import("./ready.ts");
 const { resetPublicUrlCache } = await import("./publicUrl.ts");

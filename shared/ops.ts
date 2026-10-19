@@ -263,6 +263,9 @@ export function readiness(input: {
   publicUrlOk?: boolean;
   publicUrlDetail?: string;
   publicUrlNote?: string;
+  publicUrlLabel?: string;
+  webhookNote?: string;
+  webhookLabel?: string;
 }): { ready: boolean; checks: ReadinessCheck[] } {
   const webhookOk = input.webhookConfigured && input.webhookSeen;
   let webhookDetail = "Add the signature key and the notification URL";
@@ -278,9 +281,10 @@ export function readiness(input: {
     },
     {
       id: "webhook",
-      label: "Webhook",
+      label: input.webhookLabel ?? "Webhook",
       ok: webhookOk,
       detail: webhookDetail,
+      note: input.webhookNote,
     },
     {
       id: "pin",
@@ -315,7 +319,7 @@ export function readiness(input: {
     },
     {
       id: "public_url",
-      label: "Public URL",
+      label: input.publicUrlLabel ?? "Public URL",
       ok: input.publicUrlOk === true,
       detail: input.publicUrlDetail ?? "Set PUBLIC_BASE_URL",
       note: input.publicUrlNote,

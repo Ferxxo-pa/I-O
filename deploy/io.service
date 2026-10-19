@@ -12,7 +12,8 @@ Environment=NODE_ENV=production
 Environment=PORT=5000
 Environment=DATA_DIR=/var/lib/io
 EnvironmentFile=-/opt/io/.env
-Environment=HOST=127.0.0.1
+# HOST comes from .env. local-relay uses 0.0.0.0 on the shop LAN.
+# public mode sets HOST=127.0.0.1 so only a tunnel on this machine can connect.
 ExecStart=/usr/bin/node /opt/io/dist/index.js
 Restart=always
 RestartSec=3

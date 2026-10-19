@@ -3,6 +3,7 @@ import { z } from "zod";
 import { presenceReasonText } from "@shared/presence";
 import { HttpError } from "../auth/pin";
 import { assertPublicReader } from "../auth/reader";
+import { ioMode, lanBaseUrl } from "../mode";
 import { publicBaseUrl } from "../publicBase";
 import { companyView } from "../company";
 import { ingestSignal } from "./ingest";
@@ -477,11 +478,13 @@ export function mountPresenceRoutes(app: Express) {
       const issued = issuePersonDevice(person.id, label, { squareTeamMemberId, squareLocationId });
       const proto = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol || "https";
       const host = req.header("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host") || "localhost";
-      const base = presencePublicBase({
-        configured: publicBaseUrl(),
-        proto,
-        host,
-      });
+      const base = ioMode() === "local-relay"
+        ? lanBaseUrl()
+        : presencePublicBase({
+            configured: publicBaseUrl(),
+            proto,
+            host,
+          });
       const phoneUrl = `${base}/api/presence/phone`;
       const invite = createInvite({
         personId: person.id,
@@ -557,7 +560,9 @@ export function mountPresenceRoutes(app: Express) {
     if (!invite) return res.status(404).type("html").send(joinMissingHtml());
     const proto = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol || "https";
     const host = req.header("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host") || "localhost";
-    const base = presencePublicBase({ configured: publicBaseUrl(), proto, host });
+    const base = ioMode() === "local-relay"
+      ? lanBaseUrl()
+      : presencePublicBase({ configured: publicBaseUrl(), proto, host });
     const fence = shopFence();
     res.setHeader("cache-control", "no-store");
     res.type("html").send(joinPageHtml({
@@ -566,6 +571,9 @@ export function mountPresenceRoutes(app: Express) {
       address: fence.address,
       inviteUrl: `${base}/join/${code}`,
       opened: invite.opened,
+      relayNote: ioMode() === "local-relay"
+        ? "Arrive posts to the shop Wi-Fi and the mailbox. Leave posts to the mailbox, so a cellular leave still clocks out."
+        : "",
     }));
   });
 

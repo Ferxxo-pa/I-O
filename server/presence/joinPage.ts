@@ -35,6 +35,7 @@ export function joinPageHtml(input: {
   address: string;
   inviteUrl: string;
   opened: boolean;
+  relayNote?: string;
 }): string {
   const name = esc(input.name);
   const ssid = esc(input.ssid);
@@ -114,6 +115,7 @@ export function joinPageHtml(input: {
   <main>
     <h1>Setting up for ${name}</h1>
     <p class="meta">${ssid} · ${address}</p>
+    ${input.relayNote ? `<p class="meta">${esc(input.relayNote)}</p>` : ""}
     <p class="used" id="used" hidden>This link was already opened. Ask Ezven for a new one.</p>
     <section id="desk">
       <p>${lead}</p>

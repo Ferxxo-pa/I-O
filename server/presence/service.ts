@@ -35,6 +35,8 @@ import {
   type RadioKind,
   type RadioRow,
 } from "./radios";
+import { startMdns, stopMdns } from "../lan/mdns";
+import { startRelayPoll, stopRelayPoll } from "../relay/poll";
 import { allowSignal, clearDeviceFailures, deviceAuthLocked, noteDeviceFailure, recallSignal, rememberSignal } from "./replay";
 import { blankSession, type SessionState } from "./session";
 import { liveTransport, mirrorMode, type MirrorLink, type MirrorTransport, type PlannedCall, type SquarePerson } from "./square";
@@ -599,6 +601,8 @@ export function startPresence() {
   setEarnClock(presenceNow);
   earnEngine.setPresenceProvider((viewerId) => ensureBook().view(roster(), viewerId, presenceNow()));
   void replayAllPhones().then(() => applyAll());
+  startRelayPoll();
+  startMdns();
   if (timer) return;
   timer = setInterval(() => {
     void sweep();
@@ -609,6 +613,8 @@ export function startPresence() {
 export function stopPresence() {
   if (timer) clearInterval(timer);
   timer = null;
+  stopRelayPoll();
+  stopMdns();
   setEarnClock(null);
   for (const res of Array.from(listeners)) res.end();
   listeners.clear();
@@ -816,9 +822,19 @@ export function recallReplay(key: string) {
   return recallSignal(replayFile(), key);
 }
 
-export function rememberReplay(key: string, status: number, body: unknown) {
+export function rememberReplay(key: string, status: number, body: unknown, keepMs?: number) {
   const signal = signalConfigFromEnv();
-  rememberSignal(replayFile(), key, status, body, Date.now(), Math.max(signal.maxAgeMs * 4, 10 * 60_000));
+  const keep = keepMs ?? Math.max(signal.maxAgeMs * 4, 10 * 60_000);
+  rememberSignal(replayFile(), key, status, body, Date.now(), keep);
+}
+
+export function personForTokenHash(deviceKeyHex: string): { personId: string; deviceId: string } | null {
+  const hex = deviceKeyHex.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(hex)) return null;
+  const stored = `sha256$${hex}`;
+  const row = readDevices(deviceFile()).find((device) => device.revokedAt == null && device.tokenHash === stored);
+  if (!row || !deviceOnThisTeam(row.teamId)) return null;
+  return { personId: row.personId, deviceId: row.id };
 }
 
 export function signalAllowed(ip: string): boolean {
