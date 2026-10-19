@@ -113,6 +113,30 @@ try {
     "x-person-pin": "2468",
     "x-person-id": ada,
   };
+  const beforeConsent = await call("/api/presence/punch", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      type: "arrive",
+      ts: morning,
+      lat: SHOP_POINT.lat,
+      lng: SHOP_POINT.lng,
+      accuracy: 20,
+      source: "phone",
+    }),
+  });
+  assert.equal(beforeConsent.status, 403);
+  assert.equal(beforeConsent.body.reason, "no_consent");
+  assert.equal(beforeConsent.body.accepted, false);
+
+  const consent = await call("/api/presence/consent", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-owner-key": ownerKey },
+    body: JSON.stringify({ personId: ada, consent: true }),
+  });
+  assert.equal(consent.status, 200);
+  assert.equal(consent.body.consent, true);
+
   const outside = await call("/api/presence/punch", {
     method: "POST",
     headers,

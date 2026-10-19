@@ -114,6 +114,12 @@ export class PresenceBook {
     return deriveDay(this.accepted(personId), this.opts.config, now);
   }
 
+  /** Fold the shop date of `ts`, using `now` for grace and cutoff. */
+  private dayOn(personId: string, now: number, ts: number): PersonDay {
+    const date = zonedParts(ts, this.opts.config.tz).key;
+    return deriveDay(this.accepted(personId), this.opts.config, now, date);
+  }
+
   async punch(input: PunchInput): Promise<{
     record: PunchRecord;
     effect: PunchEffect;
@@ -291,6 +297,66 @@ export class PresenceBook {
     return { record, effect: effectOf(before, after, true), day: after };
   }
 
+  /**
+   * Server-authored punch. Arrival uses the server clock. A quiet leave or
+   * auto-close may use an earlier last-seen time. GPS is not judged here.
+   */
+  async note(input: {
+    person: { id: string; name: string };
+    type: PunchType;
+    ts: number;
+    source: string;
+    closesDay?: boolean;
+    flag?: string | null;
+    fix?: Fix | null;
+    distanceM?: number;
+  }): Promise<{ record: PunchRecord | null; effect: PunchEffect; day: PersonDay }> {
+    if (this.inflight.has(input.person.id)) throw new Error("Punch already in progress");
+    this.inflight.add(input.person.id);
+    try {
+      const now = this.opts.now();
+      const before = this.dayOn(input.person.id, now, input.ts);
+      if (input.type === "leave" && (before.phase === "out" || before.phase === "closed")) {
+        return { record: null, effect: "none", day: before };
+      }
+      if (input.type === "arrive" && before.phase === "closed") {
+        const record = this.store(
+          { person: input.person, claimedPersonId: null, type: "arrive", fix: input.fix ?? null, source: input.source, desk: false },
+          now,
+          false,
+          "day_closed",
+          input.fix ?? null,
+          input.distanceM ?? 0,
+          false,
+          null,
+        );
+        return { record, effect: "none", day: before };
+      }
+      const fix = input.fix ?? {
+        lat: this.opts.fence.lat,
+        lng: this.opts.fence.lng,
+        accuracy: 0,
+        capturedAt: input.ts,
+      };
+      const record = this.keep(
+        input.person,
+        input.type,
+        fix,
+        input.ts,
+        input.source,
+        true,
+        null,
+        input.distanceM ?? 0,
+        Boolean(input.closesDay),
+        input.flag ?? null,
+      );
+      const after = this.dayOn(input.person.id, now, input.ts);
+      return { record, effect: effectOf(before, after, true), day: after };
+    } finally {
+      this.inflight.delete(input.person.id);
+    }
+  }
+
   private keep(
     person: { id: string; name: string },
     type: PunchType,
@@ -301,6 +367,7 @@ export class PresenceBook {
     reason: string | null,
     distanceM: number,
     closesDay: boolean,
+    flag: string | null = null,
   ): PunchRecord {
     return this.store(
       { person, claimedPersonId: null, type, fix, source, desk: false },
@@ -310,6 +377,7 @@ export class PresenceBook {
       fix,
       distanceM,
       closesDay,
+      flag,
     );
   }
 
@@ -321,6 +389,7 @@ export class PresenceBook {
     fix: Fix | null,
     distanceM: number,
     closesDay = false,
+    flag: string | null = null,
   ): PunchRecord {
     const record: PunchRecord = {
       id: randomUUID(),
@@ -337,6 +406,7 @@ export class PresenceBook {
       receivedAt: this.opts.now(),
       closesDay,
       distanceM,
+      flag,
     };
     this.opts.append(record);
     this.records.push(record);

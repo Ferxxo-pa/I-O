@@ -14,7 +14,9 @@ The shop is EZ Designs, 403 E Ben White Blvd, Austin. Hours are about 9–5 and 
 
 Iban's geolocation client can send the same call with `action: "in" | "out"` and `fix: { lat, lng, accuracyM, capturedAt }`. `in` is arrive, `out` is leave. `source` should be `iban` or `phone`.
 
-Identity is that person's PIN, header `x-person-pin` (or `pin` in the body). The PIN is checked with scrypt and is not written into the log or the response. A body or `x-person-id` that names someone else is stored as a rejected punch (`wrong_person`, HTTP 403) and does not move their day. Six bad PINs lock that IP for 30 seconds.
+Identity is that person's PIN, header `x-person-pin` (or `pin` in the body), or a device token in `x-device-token` after Ezven enrolls the phone. The PIN is checked with scrypt and is not written into the log or the response. A body or `x-person-id` that names someone else is stored as a rejected punch (`wrong_person`, HTTP 403) and does not move their day. Six bad PINs lock that IP for 30 seconds.
+
+Presence does not count until that person has said yes. `POST /api/presence/consent` with `{ "personId", "consent": true }` records it. The owner key can record anyone. A PIN or device token can record only that person. A punch before the yes is HTTP 403 `no_consent` and is not appended, so no location is stored. The day-to-day path is a Shortcuts or MacroDroid automation, not this manual punch. See `docs/presence-phone-automations.md`.
 
 Every attempt is appended to `data/presence-punches.jsonl`. Lines are only added. A rejected line stays in the file and is ignored by the day, the streak, the week bar, and Square.
 

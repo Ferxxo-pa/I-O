@@ -1,0 +1,130 @@
+# Presence automation
+
+The punch log, `data/presence-punches.jsonl`, is the day. Phone automations are the primary way a punch gets there, with no app build and no hardware. Staff steps, the exact Shortcut and MacroDroid fields, and the one-time setup snippet are in `docs/presence-phone-automations.md`.
+
+This page is the server side: the phone token, the checks on every automatic signal, and the optional Wi-Fi watcher and BLE stub. Square stays a dry run unless `SQUARE_PRESENCE_MIRROR=live` and `SQUARE_ACCESS_TOKEN` are both set. Nothing in this path sends an hourly rate or an amount.
+
+A web page cannot geofence in the background. Do not build a browser punch for that. A native wrapper is optional and is not required for the shop to run.
+
+## Consent
+
+Automatic presence is opt-in. The owner records it, or the person does with their PIN or device token:
+
+`POST /api/presence/consent` with `{ "personId", "consent": true }` or `"consent": false`.
+
+Owner calls send `x-owner-key`. A person can only answer for themselves. `GET /api/presence/consent` is owner-only.
+
+Without a yes, `POST /api/presence/phone`, `POST /api/presence/signal`, and `POST /api/presence/punch` return 403 `no_consent`. That refusal does not append a punch and does not store a location. Quiet leaves and the 7 PM auto-close of a day that is already open do not ask for consent again.
+
+## Phone token
+
+`POST /api/presence/phone/setup` (owner key) issues one device for one person and returns the ready-to-copy snippet: public URL, `Authorization: Bearer` token, and the four JSON bodies. The token looks like `io_` plus 32 random bytes, base64url. Only `sha256$` of it is stored. Revoke with `POST /api/presence/devices/:id/revoke`. List with `GET /api/presence/devices`. The list and the files never include the token.
+
+The phone calls `POST /api/presence/phone` over HTTPS:
+
+```http
+Authorization: Bearer io_PASTE_THE_TOKEN_EZVEN_GIVES_YOU
+Content-Type: application/json
+
+{"event":"arrive","trigger":"geo"}
+```
+
+`event` is `arrive` or `leave`. `trigger` is `geo` or `wifi`. `ts` is optional. Omit it and the server clock is the event time. If `ts` is present it must be within `PRESENCE_PHONE_MAX_AGE_MS` (default 10 minutes) and not more than `PRESENCE_SIGNAL_MAX_FUTURE_MS` (default 15 seconds) ahead. The stored arrive punch still uses the server clock, so a phone cannot backdate a clock-in.
+
+Shortcuts and MacroDroid do not send coordinates and cannot easily compute an HMAC. The operating-system trigger is the fence for this path. The token is the authenticator. It is bound to one person. Eight bad tokens from one IP lock that IP for 30 seconds.
+
+The same token is also accepted as `x-device-token` on a manual punch and on the optional geofence signal below.
+
+Server checks on every phone call:
+
+- Rate limit, `PRESENCE_SIGNAL_RATE_PER_MIN` (default 60) per IP. Over the limit is HTTP 429.
+- Dedupe. The same device, trigger, and event inside `PRESENCE_PHONE_DEDUPE_MS` (default 2 minutes) returns the first result with `duplicate: true` and does not write a second punch.
+- Consent, as above.
+- Collection window. Automatic signals count only from open minus `PRESENCE_COLLECT_MARGIN_MS` through close plus that margin. Defaults are 9:00–17:00 and a 2 hour margin, so 7:00–19:00 Chicago. Outside that the response is `outside_hours` and nothing is stored. A manual punch is not limited to this window.
+- Stationary. A phone latch that stays on for `PRESENCE_STATIONARY_MS` (default 14 hours), or that is still on after the Chicago date changes, is flagged `stationary`, clocked out, and ignored until `POST /api/presence/devices/:id/review`.
+
+An arrive latches that trigger until its leave. Any latched trigger keeps the day open. A location leave clears every latch for that phone, so an iPhone that can join Wi-Fi but has no "left the network" switch still clocks out from the Leave location automation. A Wi-Fi leave clears only the Wi-Fi latch. If the location latch is still on, a Wi-Fi flicker does not start a departure.
+
+Departure is written when no source still holds and the last signal is at least `PRESENCE_SIGNAL_QUIET_MS` old (default 15 minutes). The leave time is the last signal, not the moment the grace ends. The existing 10 minute away rule then decides a short trip versus a break. iPhone location delays of a few minutes sit inside that 15 minute grace.
+
+If a latch is still holding at `PRESENCE_AUTO_CLOSE` (default 19:00 Chicago), the day closes at that instant with `source: "auto_close"` and `flag: "auto_closed"`, and the phone latches are dropped so the next morning can arrive. Closing at the morning arrive would erase the shift. A manual punch with no signal watch is not auto-closed. The correction flow still covers a forgotten tap.
+
+## Optional Wi-Fi watcher
+
+A router webhook or a small poller can POST `POST /api/presence/signal`. This is optional. Phone automations do not need it. UniFi, Omada, and Eero were not verified here. Do not point a stock controller at this URL and expect it to speak this JSON. Put a translator or poller in front, and treat vendor menu paths as unchecked.
+
+```http
+POST /api/presence/signal
+x-presence-signature: <hex hmac-sha256 of the raw body>
+Content-Type: application/json
+
+{
+  "source": "wifi",
+  "sourceId": "shop-ap",
+  "event": "seen",
+  "ts": 1710000000000,
+  "id": "wifi-event-0001",
+  "deviceId": "aa:bb:cc:dd:ee:ff"
+}
+```
+
+`x-hub-signature-256` is accepted too (`sha256=` plus the hex, or the hex alone). The secret is `PRESENCE_WIFI_HMAC_SECRET`. `event` is `seen` or `not_seen` (also `enter` / `exit`). `id` is the idempotency key. `ts` must be within `PRESENCE_SIGNAL_MAX_AGE_MS` (default 2 minutes).
+
+Hostnames are not identity. `hostname`, `host`, `name`, `clientName`, `dhcpName`, `dnsName`, and `ssid` are stripped and never matched to a person.
+
+Before a sighting counts, the owner maps the device:
+
+`POST /api/presence/wifi` with `{ "deviceId", "personId", "label", "kind" }`.
+
+`kind` is `phone`, `pc`, `printer`, or `other`. Only `phone` can drive presence. Shop PCs stay on the shop Wi-Fi all day and must not count. A PC, a printer, `other`, or any unenrolled id returns 200 `ignored` (`not_phone` or `unenrolled`) and writes no punch. The raw id is not stored.
+
+MAC addresses are normalized to `aa:bb:cc:dd:ee:ff` and stored as `hmac-sha256$` with `PRESENCE_DEVICE_HASH_PEPPER`. In production an empty pepper refuses the map, so a low-entropy MAC is not kept under a public hash. Development uses a fixed fallback pepper. Phones randomize their Wi-Fi address per network. For this watcher the phone must use one stable private address on the shop network: iPhone Settings, that network, Private Wi-Fi Address set to Fixed. On Android, turn off the per-network randomized MAC for the shop network. A hostname match is not trusted.
+
+Watcher sightings are heartbeats, not latches. `seen` holds presence only while it is younger than the 15 minute quiet window. `not_seen`, or silence, starts the same departure rule.
+
+A watcher device that is present across the overnight edge, or continuously longer than 14 hours, stops driving presence until `POST /api/presence/wifi/:id/review`.
+
+## Optional BLE
+
+Same endpoint, `"source": "ble"`, signed with `PRESENCE_BLE_HMAC_SECRET`. Map beacons with `POST /api/presence/beacons` and the same `kind` rule. Until `PRESENCE_BLE_ENABLED` is `1`, `true`, `on`, or `yes`, a signed BLE call returns `ble_stub` and writes nothing. Leave it off.
+
+## Optional native wrapper
+
+A future Capacitor or Expo app can POST `/api/presence/signal` with `"source": "geofence"`, header `x-device-token`, and a fresh fix:
+
+```json
+{
+  "source": "geofence",
+  "sourceId": "phone-gps",
+  "event": "enter",
+  "ts": 1710000000000,
+  "id": "geo-event-0001",
+  "lat": 30.2198,
+  "lng": -97.7607,
+  "accuracy": 12
+}
+```
+
+The server still judges that fix against the 120 meter fence, 75 meter accuracy, and 30 second freshness. Background delivery has to be a real geofence API (iOS region monitoring, Android geofencing), not a page left open in Safari or Chrome. Phone Shortcuts remain the path the shop uses.
+
+## Env
+
+```text
+PRESENCE_PUBLIC_URL=https://your-host
+PRESENCE_SIGNAL_QUIET_MS=900000
+PRESENCE_AUTO_CLOSE=19:00
+PRESENCE_SIGNAL_MAX_AGE_MS=120000
+PRESENCE_SIGNAL_MAX_FUTURE_MS=15000
+PRESENCE_SIGNAL_RATE_PER_MIN=60
+PRESENCE_COLLECT_MARGIN_MS=7200000
+PRESENCE_STATIONARY_MS=50400000
+PRESENCE_OVERNIGHT_EDGE_MS=1800000
+PRESENCE_PHONE_MAX_AGE_MS=600000
+PRESENCE_PHONE_DEDUPE_MS=120000
+PRESENCE_WIFI_HMAC_SECRET=
+PRESENCE_BLE_HMAC_SECRET=
+PRESENCE_BLE_ENABLED=
+PRESENCE_DEVICE_HASH_PEPPER=
+```
+
+`PRESENCE_WIFI_HMAC_SECRET`, `PRESENCE_BLE_HMAC_SECRET`, `PRESENCE_DEVICE_HASH_PEPPER`, and device tokens stay on the server. The setup response is the one time a device token is returned.

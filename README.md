@@ -51,7 +51,7 @@ Square does not publish a customer-messages API. Points follow invoices you send
 
 ## Presence
 
-Phones punch arrive and leave at the shop. The day, the green and gray dots, the day streak, and the week under the flame all read that same punch log. Square can mirror accepted punches and stays the source of truth for hours. See `docs/presence-clock.md`.
+Phones clock in from a Shortcuts or MacroDroid automation, with no extra app and no hardware. The day, the green and gray dots, the day streak, and the week under the flame all read that same punch log. Square can mirror accepted punches and stays the source of truth for hours. See `docs/presence-phone-automations.md` and `docs/presence-clock.md`.
 
 ## Go live
 

@@ -74,6 +74,8 @@ export const punchRecordSchema = z.object({
   receivedAt: z.number(),
   closesDay: z.boolean().default(false),
   distanceM: z.number().default(0),
+  /** Set on a synthesized close, for example auto_closed. Absent on older lines. */
+  flag: z.string().max(32).nullable().default(null),
 });
 export type PunchRecord = z.infer<typeof punchRecordSchema>;
 
