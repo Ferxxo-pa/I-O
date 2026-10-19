@@ -146,6 +146,12 @@ export const boardPersonSchema = z.object({
   /** Yes on the member record. The consent file is the same fact, keyed by this id. */
   consentedAt: z.number().nullable().default(null),
   consentRevokedAt: z.number().nullable().default(null),
+  /** Owner's words when they recorded a yes for the roster. */
+  consentNote: z.string().nullable().default(null),
+  /** Square team member this person is. Null when the shop is not on Square. The id stays the board id. */
+  squareTeamMemberId: z.string().nullable().default(null),
+  /** Square location this member is assigned to for the shop clock. */
+  squareLocationId: z.string().nullable().default(null),
 });
 export type BoardPerson = z.infer<typeof boardPersonSchema>;
 
@@ -155,7 +161,7 @@ export const shopConfigSchema = z.object({
   fenceLat: z.number().nullable().default(null),
   fenceLng: z.number().nullable().default(null),
   fenceRadiusM: z.number().nullable().default(null),
-  wifiSsid: z.string().default(""),
+  wifiSsid: z.string().default("Premiere"),
   openMin: z.number().int().nullable().default(null),
   closeMin: z.number().int().nullable().default(null),
   autoCloseMin: z.number().int().nullable().default(null),
@@ -168,7 +174,7 @@ export const DEFAULT_SHOP: ShopConfig = {
   fenceLat: null,
   fenceLng: null,
   fenceRadiusM: null,
-  wifiSsid: "",
+  wifiSsid: "Premiere",
   openMin: null,
   closeMin: null,
   autoCloseMin: null,

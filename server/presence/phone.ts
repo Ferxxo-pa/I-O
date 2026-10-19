@@ -15,8 +15,10 @@ import {
   saveWatch,
   signalAllowed,
   watchFor,
+  flagPersonDevice,
 } from "./service";
 import { shopTeamId } from "./shop";
+import { SquareMemberError } from "../square/labor";
 import { deviceLatched, dropPhoneLatches, noteSight, type WatchPerson } from "./watch";
 
 const phoneSchema = z
@@ -97,6 +99,16 @@ function empty(partial: Partial<PhoneResponse> = {}): PhoneResponse {
     reason: null,
     ...partial,
   };
+}
+
+function clockTarget(
+  person: { id: string; name: string; hourlyCents: number; squareTeamMemberId: string | null },
+  device: { personId: string; squareTeamMemberId: string },
+): { id: string; name: string; hourlyCents: number } | null {
+  if (device.personId !== person.id) return null;
+  const squareId = person.squareTeamMemberId ?? "";
+  if (device.squareTeamMemberId !== squareId) return null;
+  return { id: squareId || person.id, name: person.name, hourlyCents: person.hourlyCents };
 }
 
 function mentionsWage(raw: string): boolean {
@@ -197,21 +209,39 @@ export async function ingestPhone(input: {
         empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "stationary" }),
       );
     }
+    const clockPerson = clockTarget(person, device);
+    if (!clockPerson) {
+      return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "rejected", reason: "square_mismatch" }));
+    }
+    const source = signal.trigger === "wifi" ? "phone-wifi" : "phone-geo";
+    const info = earnEngine.shiftInfo(clockPerson.id);
+    if (!(info?.clockedIn)) {
+      try {
+        await earnEngine.clockInPerson(clockPerson, at, source);
+      } catch (err) {
+        if (err instanceof SquareMemberError) {
+          flagPersonDevice(device.id, err.reason);
+          return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "rejected", reason: err.reason }));
+        }
+        throw err;
+      }
+      if (device.squareFlag) flagPersonDevice(device.id, null);
+    } else if (info.managedBy !== "presence" && info.holdAt != null) {
+      try {
+        await earnEngine.clockInPerson(clockPerson, at, source);
+      } catch (err) {
+        if (err instanceof SquareMemberError) {
+          flagPersonDevice(device.id, err.reason);
+          return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "rejected", reason: err.reason }));
+        }
+        throw err;
+      }
+    }
     saveDeviceSession(device.id, { sessionStart, lastSeenAt: at, stationaryAt: null });
     saveWatch(person.id, noteSight(watch, { source: "phone", sourceId, at, present: true, latch: true }));
     recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "arrive", trigger: signal.trigger, at, receivedAt: now });
-    const clockPerson = { id: person.id, name: person.name, hourlyCents: person.hourlyCents };
-    const source = signal.trigger === "wifi" ? "phone-wifi" : "phone-geo";
-    const info = earnEngine.shiftInfo(person.id);
-    if (info?.clockedIn) {
-      if (info.managedBy !== "presence" && info.holdAt != null) {
-        await earnEngine.clockInPerson(clockPerson, at, source);
-        return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "arrive" }));
-      }
-      return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "seen" }));
-    }
-    await earnEngine.clockInPerson(clockPerson, at, source);
-    return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "arrive" }));
+    const applied = info?.clockedIn && info.holdAt == null ? "seen" : "arrive";
+    return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied }));
   }
 
   const marked = noteSight(watch, { source: "phone", sourceId, at, present: false, latch: true });
@@ -222,8 +252,9 @@ export async function ingestPhone(input: {
   recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "leave", trigger: signal.trigger, at, receivedAt: now });
   if (!deviceLatched(watchFor(person.id), device.id, now, config.quietMs)) {
     saveDeviceSession(device.id, { sessionStart: null, lastSeenAt: at, stationaryAt: null });
-    const info = earnEngine.shiftInfo(person.id);
-    if (info?.clockedIn && info.managedBy !== "presence") earnEngine.holdWork(person.id, at);
+    const clockPerson = clockTarget(person, device);
+    const info = clockPerson ? earnEngine.shiftInfo(clockPerson.id) : null;
+    if (clockPerson && info?.clockedIn && info.managedBy !== "presence") earnEngine.holdWork(clockPerson.id, at);
   }
   return finish(200, empty({ ok: true, personId: person.id, event: "leave", trigger: signal.trigger, applied: "exit" }));
 }

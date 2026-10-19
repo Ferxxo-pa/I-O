@@ -10,6 +10,12 @@ export type DeviceRow = SessionState & {
   tokenHash: string;
   /** Company id. Empty on devices enrolled before the team id was stamped. */
   teamId: string;
+  /** Square team member this token may clock. Empty when the shop is not on Square. */
+  squareTeamMemberId: string;
+  /** Square location captured when the token was issued. */
+  squareLocationId: string;
+  /** Set when Square refuses this member. Cleared on the next accepted signal. */
+  squareFlag: "deactivated" | "unassigned" | null;
   createdAt: number;
   revokedAt: number | null;
 };
@@ -52,6 +58,9 @@ export function readDevices(file: string): DeviceRow[] {
         label: typeof row.label === "string" ? row.label : "",
         tokenHash: row.tokenHash,
         teamId: typeof row.teamId === "string" ? row.teamId : "",
+        squareTeamMemberId: typeof row.squareTeamMemberId === "string" ? row.squareTeamMemberId : "",
+        squareLocationId: typeof row.squareLocationId === "string" ? row.squareLocationId : "",
+        squareFlag: row.squareFlag === "deactivated" || row.squareFlag === "unassigned" ? row.squareFlag : null,
         createdAt: row.createdAt,
         revokedAt: row.revokedAt ?? null,
         sessionStart: row.sessionStart ?? null,
@@ -71,7 +80,14 @@ function writeDevices(file: string, devices: DeviceRow[]) {
 
 export function issueDevice(
   file: string,
-  input: { personId: string; label: string; now: number; teamId?: string },
+  input: {
+    personId: string;
+    label: string;
+    now: number;
+    teamId?: string;
+    squareTeamMemberId?: string;
+    squareLocationId?: string;
+  },
 ): { device: DeviceRow; token: string } {
   const token = `io_${randomBytes(32).toString("base64url")}`;
   const device: DeviceRow = {
@@ -80,6 +96,9 @@ export function issueDevice(
     label: input.label,
     tokenHash: hashDeviceToken(token),
     teamId: input.teamId?.trim() || "",
+    squareTeamMemberId: input.squareTeamMemberId?.trim() || "",
+    squareLocationId: input.squareLocationId?.trim() || "",
+    squareFlag: null,
     createdAt: input.now,
     revokedAt: null,
     ...blankSession(),
@@ -120,10 +139,26 @@ export function writeDeviceSession(file: string, id: string, session: SessionSta
   return row;
 }
 
+export function writeDeviceSquareFlag(
+  file: string,
+  id: string,
+  flag: DeviceRow["squareFlag"],
+): DeviceRow | null {
+  const devices = readDevices(file);
+  const row = devices.find((device) => device.id === id);
+  if (!row) return null;
+  row.squareFlag = flag;
+  writeDevices(file, devices);
+  return row;
+}
+
 export function publicDevice(device: DeviceRow): {
   id: string;
   personId: string;
   teamId: string;
+  squareTeamMemberId: string;
+  squareLocationId: string;
+  squareFlag: DeviceRow["squareFlag"];
   label: string;
   createdAt: number;
   revokedAt: number | null;
@@ -133,6 +168,9 @@ export function publicDevice(device: DeviceRow): {
     id: device.id,
     personId: device.personId,
     teamId: device.teamId,
+    squareTeamMemberId: device.squareTeamMemberId,
+    squareLocationId: device.squareLocationId,
+    squareFlag: device.squareFlag,
     label: device.label,
     createdAt: device.createdAt,
     revokedAt: device.revokedAt,

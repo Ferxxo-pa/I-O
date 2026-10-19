@@ -6,7 +6,7 @@ import { zonedParts } from "@shared/fight";
 import { SHOP_PRESENCE, presenceReasonText, shopDateStart, type PresenceView, type PunchRecord, type PunchType } from "@shared/presence";
 import { HttpError } from "../auth/pin";
 import { earnEngine, setEarnClock } from "../clock/engine";
-import { getCompany, setPersonConsent } from "../company";
+import { getCompany, linkSquarePerson, setPersonConsent } from "../company";
 import type { ClockSignal, Correction, PunchEffect, PunchInput } from "./book";
 import { PresenceBook } from "./book";
 import { consentActive, readConsent, setConsent, type ConsentRow } from "./consent";
@@ -18,6 +18,7 @@ import {
   readDevices,
   revokeDevice,
   writeDeviceSession,
+  writeDeviceSquareFlag,
   type DeviceRow,
 } from "./devices";
 import { fenceFromEnv, shopLabel } from "./geo";
@@ -39,10 +40,19 @@ import { blankSession, type SessionState } from "./session";
 import { liveTransport, mirrorMode, type MirrorLink, type MirrorTransport, type PlannedCall, type SquarePerson } from "./square";
 import { appendPhoneEvent, foldPhoneEvents, readPhoneEvents, type PhoneEvent } from "./journal";
 import { deviceOnThisTeam, shopTeamId } from "./shop";
+import { gateSquareMember } from "../square/labor";
+import { squareConfigured } from "../square/client";
+import { squarePayRoster } from "../square/sync";
 import { latchedOvernight } from "./session";
 import { deviceLatched, dropPhoneLatches, shouldAutoClose, shouldQuietLeave, type WatchPerson } from "./watch";
 
-type RosterPerson = { id: string; name: string; hourlyCents: number };
+type RosterPerson = {
+  id: string;
+  name: string;
+  hourlyCents: number;
+  squareTeamMemberId: string | null;
+  squareLocationId: string | null;
+};
 
 let book: PresenceBook | null = null;
 let squarePeople: SquarePerson[] = [];
@@ -137,6 +147,8 @@ function roster(): RosterPerson[] {
       id: person.id,
       name: person.name,
       hourlyCents: person.hourlyCents,
+      squareTeamMemberId: person.squareTeamMemberId ?? null,
+      squareLocationId: person.squareLocationId ?? null,
     }));
 }
 
@@ -574,6 +586,7 @@ export function personHealth(personId: string) {
     review,
     silent: Boolean(duringShop && enrolled && personHasConsent(personId) && (lastSignalAt == null || lastSignalAt < openAt)),
     deviceStationary: stationary,
+    squareFlag: devices.find((device) => device.squareFlag)?.squareFlag ?? null,
   };
 }
 
@@ -657,15 +670,49 @@ export function consentView(): Array<{ personId: string; consent: boolean; conse
   }));
 }
 
-export function issuePersonDevice(personId: string, label: string): { id: string; personId: string; label: string; token: string; createdAt: number } {
+export function issuePersonDevice(
+  personId: string,
+  label: string,
+  square?: { squareTeamMemberId?: string; squareLocationId?: string },
+): { id: string; personId: string; label: string; token: string; createdAt: number; squareTeamMemberId: string; squareLocationId: string } {
   if (!roster().some((person) => person.id === personId)) throw new Error("That person is not on this business");
   const { device, token } = issueDevice(deviceFile(), {
     personId,
     label: label.trim().slice(0, 80),
     now: presenceNow(),
     teamId: shopTeamId(),
+    squareTeamMemberId: square?.squareTeamMemberId,
+    squareLocationId: square?.squareLocationId,
   });
-  return { id: device.id, personId: device.personId, label: device.label, token, createdAt: device.createdAt };
+  return {
+    id: device.id,
+    personId: device.personId,
+    label: device.label,
+    token,
+    createdAt: device.createdAt,
+    squareTeamMemberId: device.squareTeamMemberId,
+    squareLocationId: device.squareLocationId,
+  };
+}
+
+/** The Square team member the owner picked, from the same roster the tap clock uses. */
+export async function linkRosterMember(personId: string) {
+  if (!squareConfigured()) throw new Error("Square is not connected");
+  const gate = await gateSquareMember(personId);
+  const listed = (await squarePayRoster())?.some((person) => person.id === personId);
+  if (!listed) throw new Error("That person is not on this business");
+  return linkSquarePerson({
+    teamMemberId: gate.teamMemberId,
+    locationId: gate.locationId,
+    name: gate.name,
+    hourlyCents: gate.hourlyCents,
+  });
+}
+
+export function flagPersonDevice(id: string, flag: DeviceRow["squareFlag"]) {
+  const row = writeDeviceSquareFlag(deviceFile(), id, flag);
+  if (!row) throw new Error("That device isn't here");
+  return publicDevice(row);
 }
 
 export function listPersonDevices() {

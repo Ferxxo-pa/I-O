@@ -1,5 +1,5 @@
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
-import { DEFAULT_SHOP, type CompanyState, type ShopConfig } from "@shared/schema";
+import { DEFAULT_SHOP, type BoardPerson, type CompanyState, type ShopConfig } from "@shared/schema";
 import { squareConfigured } from "./square/client";
 
 let company: CompanyState = {
@@ -117,7 +117,7 @@ export function joinCompany(code: string, presented: string | null = null): Comp
   return companyView(presented);
 }
 
-export function addPerson(name: string, hourlyCents: number, id = randomUUID()): CompanyState {
+export function addPerson(name: string, hourlyCents: number, id: string = randomUUID()): CompanyState {
   if (!company.name) throw new Error("Create a company first");
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Name the person");
@@ -136,6 +136,9 @@ export function addPerson(name: string, hourlyCents: number, id = randomUUID()):
         status: "active",
         consentedAt: null,
         consentRevokedAt: null,
+        consentNote: null,
+        squareTeamMemberId: null,
+        squareLocationId: null,
       },
     ],
   };
@@ -144,7 +147,7 @@ export function addPerson(name: string, hourlyCents: number, id = randomUUID()):
 }
 
 /** Mirror a presence yes/no onto the member. The person id does not change. */
-export function setPersonConsent(id: string, consent: boolean, now: number): CompanyState {
+export function setPersonConsent(id: string, consent: boolean, now: number, note?: string | null): CompanyState {
   const person = company.people.find((entry) => entry.id === id);
   if (!person) throw new Error("That person is not on this business");
   company = {
@@ -155,12 +158,47 @@ export function setPersonConsent(id: string, consent: boolean, now: number): Com
             ...entry,
             consentedAt: consent ? now : entry.consentedAt,
             consentRevokedAt: consent ? null : now,
+            consentNote: consent && note !== undefined ? note : (entry.consentNote ?? null),
           }
         : entry,
     ),
   };
   touch();
   return company;
+}
+
+/** One board person for one Square team member. The board id is the Square team member id, same as the tap clock. */
+export function linkSquarePerson(input: {
+  teamMemberId: string;
+  locationId: string;
+  name: string;
+  hourlyCents: number;
+}): BoardPerson {
+  const teamMemberId = input.teamMemberId.trim();
+  const existing = company.people.find(
+    (person) => person.id === teamMemberId || person.squareTeamMemberId === teamMemberId,
+  );
+  if (!existing) addPerson(input.name, input.hourlyCents, teamMemberId);
+  const id = existing?.id ?? teamMemberId;
+  company = {
+    ...company,
+    people: company.people.map((person) =>
+      person.id === id
+        ? {
+            ...person,
+            name: input.name.trim() || person.name,
+            hourlyCents: input.hourlyCents,
+            status: "active",
+            squareTeamMemberId: teamMemberId,
+            squareLocationId: input.locationId,
+          }
+        : person,
+    ),
+  };
+  touch();
+  const linked = company.people.find((person) => person.id === id);
+  if (!linked) throw new Error("That person is not on this business");
+  return linked;
 }
 
 export function setPersonStatus(id: string, status: "active" | "removed"): CompanyState {

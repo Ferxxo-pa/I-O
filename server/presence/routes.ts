@@ -5,6 +5,8 @@ import { HttpError } from "../auth/pin";
 import { companyView } from "../company";
 import { ingestSignal } from "./ingest";
 import { ingestPhone, phoneSetupSnippet, presencePublicBase } from "./phone";
+import { SquareMemberError } from "../square/labor";
+import { squareConfigured } from "../square/client";
 import { parsePunchBody } from "./normalize";
 import { assertKnownPin, resetPresencePinAttempts } from "./pins";
 import { isRadioKind } from "./radios";
@@ -14,6 +16,7 @@ import {
   consentView,
   deskAuthorized,
   issuePersonDevice,
+  linkRosterMember,
   listPersonDevices,
   listRadios,
   personById,
@@ -440,14 +443,29 @@ export function mountPresenceRoutes(app: Express) {
     }
   });
 
-  app.post("/api/presence/phone/setup", (req, res) => {
+  app.post("/api/presence/phone/setup", async (req, res) => {
     try {
       if (!owner(req)) throw new HttpError(403, "Only Ezven can enroll a device");
-      const personId = typeof req.body?.personId === "string" ? req.body.personId.trim() : "";
-      const person = personById(personId);
+      const requestedId = typeof req.body?.personId === "string" ? req.body.personId.trim() : "";
+      let person = personById(requestedId);
+      let squareTeamMemberId = "";
+      let squareLocationId = "";
+      if (squareConfigured()) {
+        try {
+          const linked = await linkRosterMember(requestedId);
+          person = personById(linked.id);
+          squareTeamMemberId = linked.squareTeamMemberId ?? "";
+          squareLocationId = linked.squareLocationId ?? "";
+        } catch (err) {
+          if (err instanceof SquareMemberError) {
+            return res.status(409).json({ message: err.message, reason: err.reason, flag: err.reason });
+          }
+          throw err;
+        }
+      }
       if (!person) return res.status(400).json({ message: "That person is not on this business" });
       const label = typeof req.body?.label === "string" && req.body.label.trim() ? req.body.label : "Phone";
-      const issued = issuePersonDevice(personId, label);
+      const issued = issuePersonDevice(person.id, label, { squareTeamMemberId, squareLocationId });
       const proto = req.header("x-forwarded-proto")?.split(",")[0]?.trim() || req.protocol || "https";
       const host = req.header("x-forwarded-host")?.split(",")[0]?.trim() || req.get("host") || "localhost";
       const url = `${presencePublicBase({
@@ -456,7 +474,16 @@ export function mountPresenceRoutes(app: Express) {
         host,
       })}/api/presence/phone`;
       const snippet = phoneSetupSnippet({ url, token: issued.token, name: person.name });
-      res.json({ personId, deviceId: issued.id, token: issued.token, url, snippet });
+      res.json({
+        personId: person.id,
+        name: person.name,
+        deviceId: issued.id,
+        token: issued.token,
+        url,
+        snippet,
+        squareTeamMemberId: issued.squareTeamMemberId,
+        squareLocationId: issued.squareLocationId,
+      });
     } catch (err) {
       sendError(res, err, "Couldn't prepare that phone");
     }

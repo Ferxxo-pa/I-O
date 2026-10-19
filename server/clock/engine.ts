@@ -12,7 +12,7 @@ import {
 } from "@shared/schema";
 import type { InvoiceSnapshot } from "../square/parse";
 import { squareConfigured } from "../square/client";
-import { closeTimecard, openTimecard, type RemoteTimecard } from "../square/labor";
+import { closeTimecard, gateSquareMember, openTimecard, type RemoteTimecard } from "../square/labor";
 import { getCompany } from "../company";
 import { fightBook } from "../fight/book";
 import { saleTapeLabel, type FightView } from "@shared/fight";
@@ -342,8 +342,11 @@ export class EarnEngine {
     }
     const existing = this.shifts.find((shift) => shift.personId === person.id);
     let timecardId = existing?.timecardId ?? null;
+    let hourlyCents = person.hourlyCents;
     if (squareConfigured()) {
-      timecardId = await openTimecard(person.id, person.hourlyCents);
+      const gate = await gateSquareMember(person.id);
+      hourlyCents = gate.hourlyCents;
+      timecardId = await openTimecard(person.id, gate.hourlyCents, gate.locationId);
     }
     if (existing?.clockedIn) {
       if (existing.holdAt != null) this.rollHours(Math.min(at, existing.holdAt));
@@ -355,7 +358,7 @@ export class EarnEngine {
       this.upsertShift({
         ...current,
         name: person.name,
-        hourlyCents: person.hourlyCents,
+        hourlyCents,
         timecardId: timecardId ?? current.timecardId,
         hourSegmentStartedAt,
         holdAt: null,
@@ -367,7 +370,7 @@ export class EarnEngine {
     this.upsertShift({
       personId: person.id,
       name: person.name,
-      hourlyCents: person.hourlyCents,
+      hourlyCents,
       clockedIn: true,
       clockedInAt: t,
       hourSegmentStartedAt: t,
@@ -394,7 +397,7 @@ export class EarnEngine {
     const existing = this.shifts.find((shift) => shift.personId === personId);
     if (!existing?.clockedIn) return this.getState(personId);
     if (existing.timecardId && squareConfigured()) {
-      await closeTimecard(existing.timecardId);
+      await closeTimecard(existing.timecardId, existing.personId);
     }
 
     const t = at;

@@ -12,6 +12,8 @@ There is no second roster. The company in `data/io-state.json` is the team. Its 
 
 Iban's shop clock (PR #6) reads the same list: `getCompany().people`, or the Square pay roster when Square is connected. This branch does not add another person table, so that PR still maps by those ids.
 
+When Square is connected, that pay roster is the list the owner picks from and the list the I/O tap clocks. Each picked member becomes a `BoardPerson` whose id is the Square team member id, with `squareTeamMemberId` and `squareLocationId` stored on the person and on the phone token. A token clocks only that member. Arrive and leave call `clockInPerson` / `clockOutPerson`, which open or close that member's Square timecard at their job, wage, and shop location. The wage is read from Square. Nothing in this path writes a wage setting. A deactivated member, or one not assigned to the shop location, is rejected and flagged. An open Square timecard is joined instead of opened again. Clock-out closes only the timecard stored for that same team member.
+
 New fields on the member default so an older save still loads: `status` (`active` or `removed`), `consentedAt`, and `consentRevokedAt`. Removing someone keeps the row. New fields on the company are `shop` (fence, Wi-Fi name, open and close minutes). Empty shop fields keep the `PRESENCE_*` and `GEO_FENCE_*` environment values. `PATCH /api/company/shop` with the owner key writes them.
 
 A device stores that company id. A token from a different company id is rejected. Punches written before the id existed have no team id and still count for this shop.
