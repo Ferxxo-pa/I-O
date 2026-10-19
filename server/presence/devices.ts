@@ -8,6 +8,8 @@ export type DeviceRow = SessionState & {
   personId: string;
   label: string;
   tokenHash: string;
+  /** Company id. Empty on devices enrolled before the team id was stamped. */
+  teamId: string;
   createdAt: number;
   revokedAt: number | null;
 };
@@ -49,6 +51,7 @@ export function readDevices(file: string): DeviceRow[] {
         personId: row.personId,
         label: typeof row.label === "string" ? row.label : "",
         tokenHash: row.tokenHash,
+        teamId: typeof row.teamId === "string" ? row.teamId : "",
         createdAt: row.createdAt,
         revokedAt: row.revokedAt ?? null,
         sessionStart: row.sessionStart ?? null,
@@ -68,7 +71,7 @@ function writeDevices(file: string, devices: DeviceRow[]) {
 
 export function issueDevice(
   file: string,
-  input: { personId: string; label: string; now: number },
+  input: { personId: string; label: string; now: number; teamId?: string },
 ): { device: DeviceRow; token: string } {
   const token = `io_${randomBytes(32).toString("base64url")}`;
   const device: DeviceRow = {
@@ -76,6 +79,7 @@ export function issueDevice(
     personId: input.personId,
     label: input.label,
     tokenHash: hashDeviceToken(token),
+    teamId: input.teamId?.trim() || "",
     createdAt: input.now,
     revokedAt: null,
     ...blankSession(),
@@ -119,6 +123,7 @@ export function writeDeviceSession(file: string, id: string, session: SessionSta
 export function publicDevice(device: DeviceRow): {
   id: string;
   personId: string;
+  teamId: string;
   label: string;
   createdAt: number;
   revokedAt: number | null;
@@ -127,6 +132,7 @@ export function publicDevice(device: DeviceRow): {
   return {
     id: device.id,
     personId: device.personId,
+    teamId: device.teamId,
     label: device.label,
     createdAt: device.createdAt,
     revokedAt: device.revokedAt,

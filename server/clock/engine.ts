@@ -20,8 +20,15 @@ import { emptyPresence, type PresenceView } from "@shared/presence";
 import { createClockAdapter, type ClockAdapter } from "./adapters";
 import { randomUUID } from "crypto";
 
+let clock = () => Date.now();
+
+/** Presence points this at the punch clock so accrual and the punch log share one now. */
+export function setEarnClock(fn: (() => number) | null) {
+  clock = fn ?? (() => Date.now());
+}
+
 function now() {
-  return Date.now();
+  return clock();
 }
 
 function makeEvent(
@@ -192,6 +199,78 @@ export class EarnEngine {
     return shift.timecardId == null;
   }
 
+  /** Settled plus live cents for one person at `at`. */
+  presenceCents(personId: string, at = now()): number {
+    const shift = this.shifts.find((entry) => entry.personId === personId);
+    if (!shift) return 0;
+    return shift.outputCents + this.shiftAccrual(shift, at);
+  }
+
+  /**
+   * Replace this person's presence shift so the counter equals the punch-log
+   * minutes. Repeated calls with the same worked time do not add money.
+   */
+  syncPresenceShift(input: {
+    personId: string;
+    name: string;
+    hourlyCents: number;
+    clockedIn: boolean;
+    clockedInAt: number | null;
+    holdAt: number | null;
+    workedMs: number;
+    at: number;
+  }): void {
+    if (!input.personId || !input.name || !Number.isInteger(input.hourlyCents) || input.hourlyCents <= 0) return;
+    if (!this.presenceMayDrive(input.personId)) return;
+    const hour = this.config.hourDurationMs;
+    const workedMs = Math.max(0, Math.floor(input.workedMs));
+    const money = hour > 0 ? Math.floor((workedMs * input.hourlyCents) / hour) : 0;
+    const full = hour > 0 ? Math.floor(workedMs / hour) : 0;
+    const remainder = hour > 0 ? workedMs % hour : 0;
+    const existing = this.shifts.find((shift) => shift.personId === input.personId);
+    let outputCents = full * input.hourlyCents;
+    let hourSegmentStartedAt: number | null = input.clockedIn ? input.at - remainder : null;
+    let holdAt = input.holdAt;
+    if (!input.clockedIn || holdAt != null) {
+      outputCents = money;
+      hourSegmentStartedAt = input.clockedIn ? holdAt : null;
+      if (!input.clockedIn) holdAt = null;
+    }
+    this.upsertShift({
+      personId: input.personId,
+      name: input.name,
+      hourlyCents: input.hourlyCents,
+      clockedIn: input.clockedIn,
+      clockedInAt: input.clockedIn ? input.clockedInAt : null,
+      hourSegmentStartedAt,
+      outputCents,
+      timecardId: null,
+      holdAt,
+      managedBy: "presence",
+    });
+    if (input.clockedIn && !existing?.clockedIn) {
+      this.pushEvent(
+        makeEvent({
+          kind: "clock_in",
+          outputCents: 0,
+          inputUnits: 0,
+          label: "IN",
+          createdAt: input.at,
+        }),
+      );
+    } else if (!input.clockedIn && existing?.clockedIn) {
+      this.pushEvent(
+        makeEvent({
+          kind: "clock_out",
+          outputCents: 0,
+          inputUnits: 0,
+          label: "OUT",
+          createdAt: input.at,
+        }),
+      );
+    }
+  }
+
   /** Start the shop-computer counter. Does not call Square. */
   beginWork(person: ClockPerson, at = now()): void {
     if (!person.id || !person.name || !Number.isInteger(person.hourlyCents) || person.hourlyCents <= 0) return;
@@ -210,6 +289,7 @@ export class EarnEngine {
       outputCents: existing?.outputCents ?? 0,
       timecardId: null,
       holdAt: null,
+      managedBy: null,
     });
     this.pushEvent(
       makeEvent({
@@ -319,6 +399,7 @@ export class EarnEngine {
       outputCents: existing?.outputCents ?? 0,
       timecardId,
       holdAt: null,
+      managedBy: existing?.managedBy ?? null,
     });
     this.pushEvent(
       makeEvent({
@@ -401,6 +482,7 @@ export class EarnEngine {
         outputCents: existing?.outputCents ?? 0,
         timecardId: card.timecardId,
         holdAt: existing?.holdAt ?? null,
+        managedBy: null,
       });
       if (!existing?.clockedIn) {
         this.pushEvent(
@@ -617,6 +699,7 @@ export class EarnEngine {
     }
 
     for (const shift of [...this.shifts]) {
+      if (shift.managedBy === "presence") continue;
       if (!shift.clockedIn || !shift.hourSegmentStartedAt) continue;
       const elapsed = paidThrough(shift, t) - shift.hourSegmentStartedAt;
       if (elapsed < this.config.hourDurationMs) continue;

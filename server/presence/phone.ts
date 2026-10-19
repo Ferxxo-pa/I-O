@@ -10,12 +10,14 @@ import {
   personHasConsent,
   presenceNow,
   recallReplay,
+  recordPhoneEvent,
   rememberReplay,
   saveDeviceSession,
   saveWatch,
   signalAllowed,
   watchFor,
 } from "./service";
+import { shopTeamId } from "./shop";
 import { deviceLatched, dropPhoneLatches, noteSight } from "./watch";
 
 const phoneSchema = z
@@ -162,8 +164,9 @@ export async function ingestPhone(input: {
     const still = deviceLatched(watch, device.id, now, config.quietMs);
     const sessionStart = still && device.sessionStart != null ? device.sessionStart : at;
     if (at - sessionStart >= config.stationaryMs) {
-      saveDeviceSession(device.id, { sessionStart, lastSeenAt: at, stationaryAt: at });
-      saveWatch(person.id, noteSight(watch, { source: "phone", sourceId, at, present: false, latch: true }));
+    saveDeviceSession(device.id, { sessionStart, lastSeenAt: at, stationaryAt: at });
+    saveWatch(person.id, noteSight(watch, { source: "phone", sourceId, at, present: false, latch: true }));
+    recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "arrive", trigger: signal.trigger, at, receivedAt: now });
       return finish(
         200,
         empty({ ok: true, personId: person.id, event: signal.event, trigger: signal.trigger, applied: "ignored", reason: "stationary" }),
@@ -171,6 +174,7 @@ export async function ingestPhone(input: {
     }
     saveDeviceSession(device.id, { sessionStart, lastSeenAt: at, stationaryAt: null });
     saveWatch(person.id, noteSight(watch, { source: "phone", sourceId, at, present: true, latch: true }));
+    recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "arrive", trigger: signal.trigger, at, receivedAt: now });
     const phase = personDay(person.id).phase;
     if (phase === "working") {
       return finish(200, empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "seen" }));
@@ -181,7 +185,7 @@ export async function ingestPhone(input: {
         empty({ ok: true, personId: person.id, event: "arrive", trigger: signal.trigger, applied: "ignored", reason: "day_closed" }),
       );
     }
-    const noted = await commitNote({ person, type: "arrive", ts: now, source: "phone" });
+    const noted = await commitNote({ person, type: "arrive", ts: at, source: "phone" });
     return finish(
       200,
       empty({
@@ -200,6 +204,7 @@ export async function ingestPhone(input: {
   // iPhone that can join Wi-Fi but cannot send "left the network" still clocks out.
   const next = signal.trigger === "geo" ? dropPhoneLatches(marked, device.id, at) : marked;
   saveWatch(person.id, next);
+  recordPhoneEvent({ personId: person.id, teamId: shopTeamId(), deviceId: device.id, event: "leave", trigger: signal.trigger, at, receivedAt: now });
   if (!deviceLatched(watchFor(person.id), device.id, now, config.quietMs)) {
     saveDeviceSession(device.id, { sessionStart: null, lastSeenAt: at, stationaryAt: null });
   }

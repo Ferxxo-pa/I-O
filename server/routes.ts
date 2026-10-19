@@ -4,7 +4,7 @@ import { fightSettingsSchema } from "@shared/fight";
 import { levelRulesSchema } from "@shared/ops";
 import { configSchema, inputTypeSchema } from "@shared/schema";
 import { HttpError, assertShopPin, pinShape } from "./auth/pin";
-import { addPerson, companyView, createCompany, joinCompany, setPersonRate } from "./company";
+import { addPerson, companyView, createCompany, joinCompany, setPersonRate, setShopConfig } from "./company";
 import { earnEngine } from "./clock/engine";
 import { fightBook } from "./fight/book";
 import { startPersistence } from "./persist";
@@ -233,6 +233,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(companyView(ownerKeyFrom(req)));
     } catch (err) {
       sendError(res, err, "Could not save that rate");
+    }
+  });
+
+  app.patch("/api/company/shop", (req, res) => {
+    try {
+      requirePinIfSet(req);
+      requireOwner(req);
+      const body = req.body ?? {};
+      const num = (key: string): number | null | undefined => {
+        if (body[key] == null || body[key] === "") return undefined;
+        const value = Number(body[key]);
+        return Number.isFinite(value) ? value : undefined;
+      };
+      setShopConfig({
+        ...(typeof body.timezone === "string" && body.timezone.trim() ? { timezone: body.timezone.trim() } : {}),
+        ...(typeof body.wifiSsid === "string" ? { wifiSsid: body.wifiSsid.trim() } : {}),
+        ...(num("fenceLat") !== undefined ? { fenceLat: num("fenceLat")! } : {}),
+        ...(num("fenceLng") !== undefined ? { fenceLng: num("fenceLng")! } : {}),
+        ...(num("fenceRadiusM") !== undefined ? { fenceRadiusM: num("fenceRadiusM")! } : {}),
+        ...(num("openMin") !== undefined ? { openMin: num("openMin")! } : {}),
+        ...(num("closeMin") !== undefined ? { closeMin: num("closeMin")! } : {}),
+        ...(num("autoCloseMin") !== undefined ? { autoCloseMin: num("autoCloseMin")! } : {}),
+        ...(num("graceMs") !== undefined ? { graceMs: num("graceMs")! } : {}),
+      });
+      res.json(companyView(ownerKeyFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't save the shop");
     }
   });
 

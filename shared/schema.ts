@@ -90,6 +90,8 @@ export const personShiftSchema = z.object({
   timecardId: z.string().nullable().default(null),
   /** Accrual stops at this time while a short trip is still undecided. */
   holdAt: z.number().nullable().default(null),
+  /** Presence owns this shift and rebuilds it from the punch log. */
+  managedBy: z.enum(["presence"]).nullable().default(null),
 });
 export type PersonShift = z.infer<typeof personShiftSchema>;
 
@@ -135,17 +137,49 @@ export const boardPersonSchema = z.object({
   madeCents: z.number().int(),
   /** What this person earns per hour, in cents. Square replaces this when connected. */
   hourlyCents: z.number().int().positive().default(2000),
+  /** active members are on the roster. removed stays in the file so old punches still resolve. */
+  status: z.enum(["active", "removed"]).default("active"),
+  /** Yes on the member record. The consent file is the same fact, keyed by this id. */
+  consentedAt: z.number().nullable().default(null),
+  consentRevokedAt: z.number().nullable().default(null),
 });
 export type BoardPerson = z.infer<typeof boardPersonSchema>;
+
+/** Shop fence and hours on the company. Null fields keep the PRESENCE_* / GEO_FENCE_* env. */
+export const shopConfigSchema = z.object({
+  timezone: z.string().default("America/Chicago"),
+  fenceLat: z.number().nullable().default(null),
+  fenceLng: z.number().nullable().default(null),
+  fenceRadiusM: z.number().nullable().default(null),
+  wifiSsid: z.string().default(""),
+  openMin: z.number().int().nullable().default(null),
+  closeMin: z.number().int().nullable().default(null),
+  autoCloseMin: z.number().int().nullable().default(null),
+  graceMs: z.number().int().nullable().default(null),
+});
+export type ShopConfig = z.infer<typeof shopConfigSchema>;
+
+export const DEFAULT_SHOP: ShopConfig = {
+  timezone: "America/Chicago",
+  fenceLat: null,
+  fenceLng: null,
+  fenceRadiusM: null,
+  wifiSsid: "",
+  openMin: null,
+  closeMin: null,
+  autoCloseMin: null,
+  graceMs: null,
+};
 
 export const companyStateSchema = z.object({
   name: z.string().nullable(),
   code: z.string().nullable(),
   people: z.array(boardPersonSchema),
-  /** Stable id for this shop's book. Null until the first save mints one. */
+  /** Stable id for this shop's book. Null until the first save mints one. This is the team id. */
   id: z.string().min(1).max(80).nullable().default(null),
   /** Square location, or "local" when Square has no location yet. */
   locationId: z.string().min(1).max(80).nullable().default(null),
+  shop: shopConfigSchema.default(DEFAULT_SHOP),
 });
 export type CompanyState = z.infer<typeof companyStateSchema>;
 

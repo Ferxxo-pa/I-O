@@ -5,8 +5,8 @@ import type { Response } from "express";
 import { zonedParts } from "@shared/fight";
 import { SHOP_PRESENCE, presenceReasonText, shopDateStart, type PresenceView, type PunchRecord, type PunchType } from "@shared/presence";
 import { HttpError } from "../auth/pin";
-import { earnEngine } from "../clock/engine";
-import { getCompany } from "../company";
+import { earnEngine, setEarnClock } from "../clock/engine";
+import { getCompany, setPersonConsent } from "../company";
 import type { ClockSignal, Correction, PunchEffect, PunchInput } from "./book";
 import { PresenceBook } from "./book";
 import { consentActive, readConsent, setConsent, type ConsentRow } from "./consent";
@@ -37,6 +37,9 @@ import {
 import { allowSignal, clearDeviceFailures, deviceAuthLocked, noteDeviceFailure, recallSignal, rememberSignal } from "./replay";
 import { blankSession, type SessionState } from "./session";
 import { liveTransport, mirrorMode, type MirrorLink, type MirrorTransport, type PlannedCall, type SquarePerson } from "./square";
+import { accountStatus, moneyCentsFor } from "./account";
+import { appendPhoneEvent, foldPhoneEvents, readPhoneEvents, type PhoneEvent } from "./journal";
+import { deviceOnThisTeam, shopTeamId } from "./shop";
 import { latchedOvernight } from "./session";
 import { deviceLatched, dropPhoneLatches, shouldAutoClose, shouldQuietLeave, type WatchPerson } from "./watch";
 
@@ -101,6 +104,10 @@ function replayFile(): string {
   return join(dataDir(), "presence-replay.json");
 }
 
+function journalFile(): string {
+  return join(dataDir(), "presence-phone.jsonl");
+}
+
 export function presenceNow(): number {
   return previewNow ?? Date.now();
 }
@@ -125,11 +132,13 @@ export function deskAuthorized(presented: string | undefined): boolean {
 }
 
 function roster(): RosterPerson[] {
-  return getCompany().people.map((person) => ({
-    id: person.id,
-    name: person.name,
-    hourlyCents: person.hourlyCents,
-  }));
+  return getCompany().people
+    .filter((person) => person.status !== "removed")
+    .map((person) => ({
+      id: person.id,
+      name: person.name,
+      hourlyCents: person.hourlyCents,
+    }));
 }
 
 function readCorrections(): Correction[] {
@@ -207,34 +216,30 @@ function ensureBook(): PresenceBook {
       writeLinks(links);
     },
     transport,
+    homeTeamId: shopTeamId,
   });
   return book;
 }
 
-function rateFor(personId: string): number {
-  return roster().find((person) => person.id === personId)?.hourlyCents || earnEngine.getState().config.hourlyOutputCents;
-}
-
 function applySignal(signal: ClockSignal) {
   if (!earnEngine.presenceMayDrive(signal.personId)) return;
-  const person = { id: signal.personId, name: signal.name, hourlyCents: rateFor(signal.personId) };
-  if (signal.phase === "working") {
-    if (!earnEngine.shiftOpen(signal.personId)) earnEngine.beginWork(person);
-    else earnEngine.releaseHold(signal.personId);
-    return;
-  }
-  if (signal.phase === "pending" && signal.leaveTs != null) {
-    if (!earnEngine.shiftOpen(signal.personId)) earnEngine.beginWork(person);
-    earnEngine.holdWork(signal.personId, signal.leaveTs);
-    return;
-  }
-  if (signal.phase === "break" && signal.leaveTs != null) {
-    earnEngine.endWorkAt(signal.personId, signal.leaveTs);
-    return;
-  }
-  if (signal.phase === "closed") {
-    earnEngine.endWorkAt(signal.personId, signal.closedAt ?? signal.leaveTs ?? presenceNow());
-  }
+  const person = roster().find((entry) => entry.id === signal.personId);
+  if (!person || person.hourlyCents <= 0) return;
+  const now = presenceNow();
+  const current = ensureBook();
+  const day = current.day(signal.personId, now);
+  const paid = day.phase === "pending" && day.leaveTs != null ? current.day(signal.personId, day.leaveTs) : day;
+  const accruedMs = Math.max(0, paid.workedMs);
+  earnEngine.syncPresenceShift({
+    personId: person.id,
+    name: person.name,
+    hourlyCents: person.hourlyCents,
+    clockedIn: day.phase === "working" || day.phase === "pending",
+    clockedInAt: day.clockInTs,
+    holdAt: day.phase === "pending" ? day.leaveTs : null,
+    workedMs: accruedMs,
+    at: now,
+  });
 }
 
 function applyAll() {
@@ -267,6 +272,7 @@ async function releaseStationary() {
     if (!tooLong && !overnight) continue;
     saveDeviceSession(device.id, { sessionStart: device.sessionStart, lastSeenAt: now, stationaryAt: now });
     clearPhoneLatch(device.personId, device.id, now);
+    notePhoneLeave(device.personId, device.id, now);
     const person = roster().find((entry) => entry.id === device.personId);
     if (!person) continue;
     const today = ensureBook().day(person.id, now);
@@ -289,6 +295,8 @@ async function releaseStationary() {
 }
 
 async function maintain() {
+  replayAllPhones();
+  noteSilence();
   const now = presenceNow();
   const signal = signalConfigFromEnv();
   const current = ensureBook();
@@ -340,7 +348,10 @@ async function maintain() {
             if (!key.startsWith("phone:") || !fresh.sources[key]?.present) continue;
             const sourceId = key.slice("phone:".length);
             const deviceId = sourceId.split(":")[0] ?? "";
-            if (deviceId) next = dropPhoneLatches(next, deviceId, closeAt);
+            if (deviceId) {
+              next = dropPhoneLatches(next, deviceId, closeAt);
+              notePhoneLeave(person.id, deviceId, closeAt);
+            }
           }
           saveWatch(person.id, next);
         }
@@ -368,12 +379,157 @@ async function sweep() {
   }
 }
 
+const silenceSeen = new Set<string>();
+
+function notePhoneLeave(personId: string, deviceId: string, at: number) {
+  if (!personId || !deviceId) return;
+  appendPhoneEvent(journalFile(), {
+    personId,
+    teamId: shopTeamId(),
+    deviceId,
+    event: "leave",
+    trigger: "geo",
+    at,
+    receivedAt: presenceNow(),
+  });
+}
+
+function mergePhoneWatch(personId: string, phone: ReturnType<typeof foldPhoneEvents>["watch"]) {
+  const current = watchFor(personId);
+  const sources: NonNullable<ReturnType<typeof watchFor>>["sources"] = {};
+  for (const [key, value] of Object.entries(current?.sources ?? {})) {
+    if (!key.startsWith("phone:")) sources[key] = value;
+  }
+  for (const [key, value] of Object.entries(phone?.sources ?? {})) {
+    if (key.startsWith("phone:")) sources[key] = value;
+  }
+  if (!current && !phone) return;
+  saveWatch(personId, {
+    lastSignalAt: Math.max(current?.lastSignalAt ?? 0, phone?.lastSignalAt ?? 0),
+    lastSeenAt: Math.max(current?.lastSeenAt ?? 0, phone?.lastSeenAt ?? 0),
+    sources,
+  });
+}
+
+/** Rebuild phone latches from the journal and append any arrive the log does not have yet. */
+export async function replayPersonPhone(personId: string) {
+  const person = getCompany().people.find((entry) => entry.id === personId);
+  if (!person || person.status === "removed") return;
+  const events = readPhoneEvents(journalFile()).filter((event) => event.personId === personId);
+  const fold = foldPhoneEvents(events);
+  mergePhoneWatch(personId, fold.watch);
+  const book = ensureBook();
+  for (const at of fold.arrives) {
+    if (book.hasNear(personId, "arrive", at, 1000)) continue;
+    const day = book.day(personId, at);
+    if (day.phase === "working" || day.phase === "closed") continue;
+    await commitNote({ person: { id: person.id, name: person.name }, type: "arrive", ts: at, source: "phone" });
+  }
+}
+
+export async function replayAllPhones() {
+  const ids = new Set(readPhoneEvents(journalFile()).map((event) => event.personId));
+  for (const id of Array.from(ids)) await replayPersonPhone(id);
+}
+
+export function recordPhoneEvent(event: PhoneEvent) {
+  appendPhoneEvent(journalFile(), event);
+}
+
+function noteSilence() {
+  const now = presenceNow();
+  const day = dayConfigFromEnv();
+  const date = zonedParts(now, day.tz).key;
+  const minute = Math.floor((now - shopDateStart(date, day.tz)) / 60_000);
+  if (minute < day.normalOpenMin || minute > day.normalCloseMin) return;
+  const openAt = shopDateStart(date, day.tz) + day.normalOpenMin * 60_000;
+  for (const person of roster()) {
+    const key = `${shopTeamId()}:${date}:${person.id}`;
+    if (silenceSeen.has(key)) continue;
+    const enrolled = readDevices(deviceFile()).some(
+      (device) => device.personId === person.id && device.revokedAt == null && deviceOnThisTeam(device.teamId),
+    );
+    if (!enrolled || !personHasConsent(person.id)) continue;
+    const watch = watchFor(person.id);
+    const last = watch?.lastSignalAt ?? 0;
+    if (last >= openAt) continue;
+    silenceSeen.add(key);
+    console.log(`presence: ${person.name} has no phone signal during shop hours`);
+  }
+}
+
+export function reloadPresence() {
+  book = null;
+  ensureBook();
+  return replayAllPhones().then(() => applyAll());
+}
+
+export function personWork(personId: string) {
+  const person = getCompany().people.find((entry) => entry.id === personId);
+  if (!person) return null;
+  const now = presenceNow();
+  const current = ensureBook();
+  const day = current.day(personId, now);
+  const paid = day.phase === "pending" && day.leaveTs != null ? current.day(personId, day.leaveTs) : day;
+  const accruedMs = Math.max(0, paid.workedMs);
+  const hourDurationMs = earnEngine.getState().config.hourDurationMs;
+  const moneyCents = moneyCentsFor(accruedMs, person.hourlyCents, hourDurationMs);
+  return {
+    personId: person.id,
+    teamId: shopTeamId(),
+    name: person.name,
+    status: accountStatus(day.phase),
+    phase: day.phase,
+    startedAt: day.clockInTs,
+    accruedMs,
+    accruedSeconds: Math.floor(accruedMs / 1000),
+    rateCents: person.hourlyCents,
+    hourDurationMs,
+    moneyCents,
+    engineCents: earnEngine.presenceCents(personId, now),
+    paused: day.phase === "pending" || day.phase === "break",
+  };
+}
+
+export function personHealth(personId: string) {
+  const work = personWork(personId);
+  if (!work) return null;
+  const watch = watchFor(personId);
+  const punches = ensureBook().list().filter((row) => row.personId === personId && row.accepted);
+  const lastPunch = punches.length ? punches[punches.length - 1] : null;
+  const devices = readDevices(deviceFile()).filter((device) => device.personId === personId && device.revokedAt == null);
+  const stationary = devices.some((device) => device.stationaryAt != null);
+  const flag = [...punches].reverse().find((row) => row.flag)?.flag ?? null;
+  const review = flag === "auto_closed" || flag === "stationary" ? flag : stationary ? "stationary" : null;
+  const dayCfg = dayConfigFromEnv();
+  const date = zonedParts(presenceNow(), dayCfg.tz).key;
+  const openAt = shopDateStart(date, dayCfg.tz) + dayCfg.normalOpenMin * 60_000;
+  const closeAt = shopDateStart(date, dayCfg.tz) + dayCfg.normalCloseMin * 60_000;
+  const now = presenceNow();
+  const duringShop = now >= openAt && now <= closeAt;
+  const lastSignalAt = watch?.lastSignalAt || lastPunch?.ts || null;
+  const events = readPhoneEvents(journalFile()).filter((event) => event.personId === personId);
+  const lastEvent = events.length ? events[events.length - 1] : null;
+  const enrolled = devices.some((device) => deviceOnThisTeam(device.teamId));
+  return {
+    ...work,
+    lastSignalAt,
+    lastSource: lastEvent ? "phone" : (lastPunch?.source ?? null),
+    lastTrigger: lastEvent?.trigger ?? null,
+    flag,
+    review,
+    silent: Boolean(duringShop && enrolled && personHasConsent(personId) && (lastSignalAt == null || lastSignalAt < openAt)),
+    deviceStationary: stationary,
+  };
+}
+
 export async function catchUpPresence() {
   await sweep();
 }
 
 export function startPresence() {
   ensureBook();
+  setEarnClock(presenceNow);
   earnEngine.setPresenceProvider((viewerId) => ensureBook().view(roster(), viewerId, presenceNow()));
   if (timer) return;
   timer = setInterval(() => {
@@ -385,6 +541,7 @@ export function startPresence() {
 export function stopPresence() {
   if (timer) clearInterval(timer);
   timer = null;
+  setEarnClock(null);
   for (const res of Array.from(listeners)) res.end();
   listeners.clear();
 }
@@ -428,8 +585,11 @@ export function personHasConsent(personId: string): boolean {
 }
 
 export function saveConsent(personId: string, consent: boolean): ConsentRow {
-  if (!roster().some((person) => person.id === personId)) throw new Error("That person is not on this business");
-  return setConsent(consentFile(), personId, consent, presenceNow());
+  if (!getCompany().people.some((person) => person.id === personId)) throw new Error("That person is not on this business");
+  const now = presenceNow();
+  const row = setConsent(consentFile(), personId, consent, now);
+  setPersonConsent(personId, consent, now);
+  return row;
 }
 
 export function consentView(): Array<{ personId: string; consent: boolean; consentedAt: number; revokedAt: number | null }> {
@@ -444,7 +604,12 @@ export function consentView(): Array<{ personId: string; consent: boolean; conse
 
 export function issuePersonDevice(personId: string, label: string): { id: string; personId: string; label: string; token: string; createdAt: number } {
   if (!roster().some((person) => person.id === personId)) throw new Error("That person is not on this business");
-  const { device, token } = issueDevice(deviceFile(), { personId, label: label.trim().slice(0, 80), now: presenceNow() });
+  const { device, token } = issueDevice(deviceFile(), {
+    personId,
+    label: label.trim().slice(0, 80),
+    now: presenceNow(),
+    teamId: shopTeamId(),
+  });
   return { id: device.id, personId: device.personId, label: device.label, token, createdAt: device.createdAt };
 }
 
@@ -467,7 +632,7 @@ export function reviewPersonDevice(id: string) {
 export function personForPresentedDevice(token: string, ip: string): { personId: string; deviceId: string } | null {
   if (deviceAuthLocked(ip)) throw new HttpError(429, "Too many tries");
   const row = findLiveDevice(readDevices(deviceFile()), token);
-  if (!row) {
+  if (!row || !deviceOnThisTeam(row.teamId)) {
     if (noteDeviceFailure(ip)) throw new HttpError(429, "Too many tries");
     return null;
   }
@@ -571,9 +736,10 @@ export async function commitNote(input: {
   flag?: string | null;
   fix?: { lat: number; lng: number; accuracy: number; capturedAt: number } | null;
   distanceM?: number;
+  teamId?: string | null;
 }): Promise<{ record: PunchRecord | null; effect: PunchEffect }> {
   const current = ensureBook();
-  const result = await current.note(input);
+  const result = await current.note({ ...input, teamId: input.teamId ?? (shopTeamId() || null) });
   if (result.record) {
     rememberPlan(await current.mirror([input.person.id], presenceNow()));
     applyAll();
@@ -593,7 +759,7 @@ export async function takePunch(input: PunchInput): Promise<{
     throw new HttpError(403, "Presence needs a yes from that person");
   }
   const current = ensureBook();
-  const result = await current.punch(input);
+  const result = await current.punch({ ...input, teamId: input.teamId ?? (shopTeamId() || null) });
   rememberPlan(await current.mirror([input.person.id], presenceNow()));
   applyAll();
   if (result.effect !== "none") {

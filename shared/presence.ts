@@ -76,6 +76,8 @@ export const punchRecordSchema = z.object({
   distanceM: z.number().default(0),
   /** Set on a synthesized close, for example auto_closed. Absent on older lines. */
   flag: z.string().max(32).nullable().default(null),
+  /** Null on lines written before teams. Those belong to the default shop team. */
+  teamId: z.string().max(80).nullable().default(null),
 });
 export type PunchRecord = z.infer<typeof punchRecordSchema>;
 

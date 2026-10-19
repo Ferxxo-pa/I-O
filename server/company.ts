@@ -1,5 +1,5 @@
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
-import type { CompanyState } from "@shared/schema";
+import { DEFAULT_SHOP, type CompanyState, type ShopConfig } from "@shared/schema";
 import { squareConfigured } from "./square/client";
 
 let company: CompanyState = {
@@ -8,6 +8,7 @@ let company: CompanyState = {
   people: [],
   id: null,
   locationId: null,
+  shop: { ...DEFAULT_SHOP },
 };
 
 let ownerKey: string | null = null;
@@ -42,6 +43,7 @@ export function hydrateCompany(next: CompanyState, key: string | null = null) {
     people: next.people.map((person) => ({ ...person })),
     id: next.id ?? null,
     locationId: next.locationId ?? null,
+    shop: { ...DEFAULT_SHOP, ...next.shop },
   };
   ownerKey = key;
 }
@@ -83,6 +85,7 @@ export function companyView(presented: string | null): CompanyView {
     code: company.code,
     id: company.id,
     locationId: company.locationId,
+    shop: { ...DEFAULT_SHOP, ...company.shop },
     people: company.people.map((person) => ({ ...person })),
     owner,
     square: squareConfigured(),
@@ -114,24 +117,64 @@ export function joinCompany(code: string, presented: string | null = null): Comp
   return companyView(presented);
 }
 
-export function addPerson(name: string, hourlyCents: number): CompanyState {
+export function addPerson(name: string, hourlyCents: number, id = randomUUID()): CompanyState {
   if (!company.name) throw new Error("Create a company first");
   const trimmed = name.trim();
   if (!trimmed) throw new Error("Name the person");
   if (!Number.isInteger(hourlyCents) || hourlyCents <= 0) throw new Error("Enter an hourly rate");
+  if (company.people.some((person) => person.id === id)) throw new Error("That person is already on this business");
   company = {
     ...company,
     people: [
       ...company.people,
       {
-        id: randomUUID(),
+        id,
         name: trimmed,
         points: 0,
         madeCents: 0,
         hourlyCents,
+        status: "active",
+        consentedAt: null,
+        consentRevokedAt: null,
       },
     ],
   };
+  touch();
+  return company;
+}
+
+/** Mirror a presence yes/no onto the member. The person id does not change. */
+export function setPersonConsent(id: string, consent: boolean, now: number): CompanyState {
+  const person = company.people.find((entry) => entry.id === id);
+  if (!person) throw new Error("That person is not on this business");
+  company = {
+    ...company,
+    people: company.people.map((entry) =>
+      entry.id === id
+        ? {
+            ...entry,
+            consentedAt: consent ? now : entry.consentedAt,
+            consentRevokedAt: consent ? null : now,
+          }
+        : entry,
+    ),
+  };
+  touch();
+  return company;
+}
+
+export function setPersonStatus(id: string, status: "active" | "removed"): CompanyState {
+  if (!company.people.some((person) => person.id === id)) throw new Error("That person is not on this business");
+  company = {
+    ...company,
+    people: company.people.map((person) => (person.id === id ? { ...person, status } : person)),
+  };
+  touch();
+  return company;
+}
+
+export function setShopConfig(patch: Partial<ShopConfig>): CompanyState {
+  company = { ...company, shop: { ...DEFAULT_SHOP, ...company.shop, ...patch } };
   touch();
   return company;
 }

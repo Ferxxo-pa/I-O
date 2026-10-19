@@ -6,6 +6,18 @@ This page is the server side: the phone token, the checks on every automatic sig
 
 A web page cannot geofence in the background. Do not build a browser punch for that. A native wrapper is optional and is not required for the shop to run.
 
+## The team already on the board
+
+There is no second roster. The company in `data/io-state.json` is the team. Its `id` is the team id. Each person in `company.people` (`BoardPerson` in `shared/schema.ts`, written by `server/company.ts`) is the one person a phone, a punch, the presence clock, and the money counter use. The id does not change when a phone is enrolled.
+
+Iban's shop clock (PR #6) reads the same list: `getCompany().people`, or the Square pay roster when Square is connected. This branch does not add another person table, so that PR still maps by those ids.
+
+New fields on the member default so an older save still loads: `status` (`active` or `removed`), `consentedAt`, and `consentRevokedAt`. Removing someone keeps the row. New fields on the company are `shop` (fence, Wi-Fi name, open and close minutes). Empty shop fields keep the `PRESENCE_*` and `GEO_FENCE_*` environment values. `PATCH /api/company/shop` with the owner key writes them.
+
+A device stores that company id. A token from a different company id is rejected. Punches written before the id existed have no team id and still count for this shop.
+
+`GET /api/presence/me` (the phone's Bearer token) and `GET /api/presence/state/:personId` (owner key) return the counter: status, accrued seconds, and whole cents. `GET /api/presence/health/:personId` (owner key) adds the last signal time, the trigger, and whether the phone has been silent during shop hours. A silent enrolled phone is also written to the server log once per day.
+
 ## Consent
 
 Automatic presence is opt-in. The owner records it, or the person does with their PIN or device token:
@@ -29,7 +41,7 @@ Content-Type: application/json
 {"event":"arrive","trigger":"geo"}
 ```
 
-`event` is `arrive` or `leave`. `trigger` is `geo` or `wifi`. `ts` is optional. Omit it and the server clock is the event time. If `ts` is present it must be within `PRESENCE_PHONE_MAX_AGE_MS` (default 10 minutes) and not more than `PRESENCE_SIGNAL_MAX_FUTURE_MS` (default 15 seconds) ahead. The stored arrive punch still uses the server clock, so a phone cannot backdate a clock-in.
+`event` is `arrive` or `leave`. `trigger` is `geo` or `wifi`. `ts` is optional. Omit it and the server clock is the event time. If `ts` is present it must be within `PRESENCE_PHONE_MAX_AGE_MS` (default 10 minutes) and not more than `PRESENCE_SIGNAL_MAX_FUTURE_MS` (default 15 seconds) ahead. When `ts` is inside that window, the arrive punch uses it, so a retry after a dead radio still clocks from the first signal. A `ts` outside the window is rejected and does not move the clock.
 
 Shortcuts and MacroDroid do not send coordinates and cannot easily compute an HMAC. The operating-system trigger is the fence for this path. The token is the authenticator. It is bound to one person. Eight bad tokens from one IP lock that IP for 30 seconds.
 

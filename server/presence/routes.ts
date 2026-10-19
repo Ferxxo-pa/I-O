@@ -18,6 +18,8 @@ import {
   listRadios,
   personById,
   personForPresentedDevice,
+  personHealth,
+  personWork,
   personHasConsent,
   presenceLog,
   presenceNow,
@@ -457,6 +459,42 @@ export function mountPresenceRoutes(app: Express) {
       res.json({ personId, deviceId: issued.id, token: issued.token, url, snippet });
     } catch (err) {
       sendError(res, err, "Couldn't prepare that phone");
+    }
+  });
+
+  app.get("/api/presence/me", (req, res) => {
+    try {
+      const header = req.header("authorization") ?? "";
+      const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+      const found = personForPresentedDevice(token, clientIp(req));
+      if (!found) return res.status(401).json({ message: "Unknown device" });
+      const work = personWork(found.personId);
+      if (!work) return res.status(404).json({ message: "That person is not on this business" });
+      res.json(work);
+    } catch (err) {
+      sendError(res, err, "Couldn't read the counter");
+    }
+  });
+
+  app.get("/api/presence/state/:personId", (req, res) => {
+    try {
+      if (!owner(req)) throw new HttpError(403, "Only Ezven can see that");
+      const work = personWork(req.params.personId);
+      if (!work) return res.status(404).json({ message: "That person is not on this business" });
+      res.json(work);
+    } catch (err) {
+      sendError(res, err, "Couldn't read the counter");
+    }
+  });
+
+  app.get("/api/presence/health/:personId", (req, res) => {
+    try {
+      if (!owner(req)) throw new HttpError(403, "Only Ezven can see that");
+      const health = personHealth(req.params.personId);
+      if (!health) return res.status(404).json({ message: "That person is not on this business" });
+      res.json(health);
+    } catch (err) {
+      sendError(res, err, "Couldn't read that phone");
     }
   });
 
