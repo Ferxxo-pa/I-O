@@ -55,7 +55,7 @@ Phones clock in from a Shortcuts or MacroDroid automation, with no extra app and
 
 ## Go live
 
-One central server holds the company, the roster, the clock, and Square. Each employee computer opens that server in a browser and runs only the strip. Phones call the same server. A shop PC, including one reached over Tailscale, is for trying a change on your own machine. It is not the server the other computers use. The steps are in `docs/go-live.md`.
+One spare computer at the shop or at home is the server. Employee computers and phones open its free HTTPS address (Cloudflare Tunnel or Tailscale Funnel). No router ports are opened. A cloud VM is the free fallback, and Railway or Fly is the paid one. The steps, the backup, and what happens when the power or the internet drops are in `docs/go-live.md`.
 
 `GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level and closed day is stored on that pair. There is no second login.
 

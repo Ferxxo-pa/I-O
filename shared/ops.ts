@@ -243,6 +243,8 @@ export type ReadinessCheck = {
   label: string;
   ok: boolean;
   detail: string;
+  /** Shown in place of "Yes" when the check passes and the value matters. */
+  note?: string;
 };
 
 export function readiness(input: {
@@ -255,6 +257,12 @@ export function readiness(input: {
   rateDetail: string;
   ownLoginPct: number | null;
   ownLoginDetail: string;
+  backupOk?: boolean;
+  backupDetail?: string;
+  backupNote?: string;
+  publicUrlOk?: boolean;
+  publicUrlDetail?: string;
+  publicUrlNote?: string;
 }): { ready: boolean; checks: ReadinessCheck[] } {
   const webhookOk = input.webhookConfigured && input.webhookSeen;
   let webhookDetail = "Add the signature key and the notification URL";
@@ -297,6 +305,20 @@ export function readiness(input: {
       label: "Own login",
       ok: input.ownLoginPct === 100,
       detail: input.ownLoginDetail,
+    },
+    {
+      id: "backup",
+      label: "Backup",
+      ok: input.backupOk === true,
+      detail: input.backupDetail ?? "No backup yet",
+      note: input.backupNote,
+    },
+    {
+      id: "public_url",
+      label: "Public URL",
+      ok: input.publicUrlOk === true,
+      detail: input.publicUrlDetail ?? "Set PRESENCE_PUBLIC_URL",
+      note: input.publicUrlNote,
     },
   ];
   return { ready: checks.every((check) => check.ok), checks };
@@ -427,5 +449,11 @@ export function demoReadiness(): { ready: boolean; checks: ReadinessCheck[] } {
     rateDetail: "3 of 3",
     ownLoginPct: 67,
     ownLoginDetail: "2 of 3 · 67%",
+    backupOk: true,
+    backupDetail: "2h ago",
+    backupNote: "2h ago",
+    publicUrlOk: true,
+    publicUrlDetail: "https://shop.example",
+    publicUrlNote: "shop.example",
   });
 }

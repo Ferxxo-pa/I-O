@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ezdesigns.io</string>
+  <key>WorkingDirectory</key>
+  <string>/opt/io</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/node</string>
+    <string>/opt/io/scripts/run-with-env.mjs</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/io/Library/Logs/io.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/io/Library/Logs/io.err.log</string>
+</dict>
+</plist>

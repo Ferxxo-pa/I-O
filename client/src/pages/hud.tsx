@@ -1484,7 +1484,7 @@ function ChecklistPanel({ demo, onClose }: { demo: boolean; onClose: () => void 
       {checks.map((check) => (
         <div className={`menu-row${check.ok ? "" : " soft"}`} key={check.id}>
           <span>{check.label}</span>
-          <span>{check.ok ? "Yes" : check.detail}</span>
+          <span>{check.ok ? check.note || "Yes" : check.detail}</span>
         </div>
       ))}
       {error && <div className="err">{error}</div>}

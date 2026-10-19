@@ -49,9 +49,10 @@ app.use((req, res, next) => {
   }
 
   const port = Number(process.env.PORT) || 5000;
+  const host = process.env.HOST?.trim() || "0.0.0.0";
   server.listen({
     port,
-    host: "0.0.0.0",
+    host,
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);

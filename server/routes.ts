@@ -86,8 +86,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   earnEngine.start();
   startSquareSync();
 
-  app.get("/api/health", (_req, res) => {
-    res.json(healthReport());
+  app.get("/api/health", async (req, res) => {
+    if (String(req.query.probe ?? "") === "1") {
+      res.json({ ok: true });
+      return;
+    }
+    try {
+      res.json(await healthReport());
+    } catch {
+      res.status(500).json({ ok: false, message: "Health check failed" });
+    }
   });
 
   app.get("/api/state", (req, res) => {

@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly copy of the I/O data directory
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=io
+Group=io
+WorkingDirectory=/opt/io
+Environment=DATA_DIR=/var/lib/io
+EnvironmentFile=-/opt/io/.env
+ExecStart=/usr/bin/node /opt/io/scripts/backup-data.mjs

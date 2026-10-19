@@ -1,7 +1,9 @@
 import { ownLoginPct, readiness, type ReadinessCheck } from "@shared/ops";
+import { backupCheck } from "./backup";
 import { earnEngine } from "./clock/engine";
 import { currentScope, getCompany } from "./company";
 import { fightBook } from "./fight/book";
+import { publicUrlCheck } from "./publicUrl";
 import { squareConfigured } from "./square/client";
 
 export type HealthReport = {
@@ -12,7 +14,7 @@ export type HealthReport = {
 };
 
 /** Process is up when `ok` is true. `ready` is the go-live checklist. */
-export function healthReport(): HealthReport {
+export async function healthReport(): Promise<HealthReport> {
   const signals = fightBook.signals();
   const people = getCompany().people;
   const roster = people.length;
@@ -35,6 +37,8 @@ export function healthReport(): HealthReport {
   const webhookConfigured = Boolean(
     process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && process.env.SQUARE_WEBHOOK_NOTIFICATION_URL,
   );
+  const backup = backupCheck();
+  const publicUrl = await publicUrlCheck();
   const report = readiness({
     squareToken: square,
     webhookConfigured,
@@ -45,6 +49,12 @@ export function healthReport(): HealthReport {
     rateDetail,
     ownLoginPct: pct,
     ownLoginDetail,
+    backupOk: backup.ok,
+    backupDetail: backup.detail,
+    backupNote: backup.note,
+    publicUrlOk: publicUrl.ok,
+    publicUrlDetail: publicUrl.detail,
+    publicUrlNote: publicUrl.note,
   });
   return { ok: true, ready: report.ready, scope: currentScope(), checks: report.checks };
 }
