@@ -163,4 +163,75 @@ assert.equal(pinBody.includes("2468"), false);
 assert.equal(personIdForPin("2468", pinFile.pins), "ada");
 assert.equal(personIdForPin("0000", pinFile.pins), null);
 
+const teamConfig: DayConfig = { ...config, shopDayMinPeople: 2, shopDayMinMinutes: 30 };
+let teamNow = shopDateStart("2026-10-13") + 9 * 3_600_000;
+const teamRows: ReturnType<PresenceBook["list"]> = [];
+const team = new PresenceBook({
+  config: teamConfig,
+  fence,
+  now: () => teamNow,
+  records: teamRows,
+  corrections: [],
+  links: [],
+  squarePeople: [],
+  locationId: "L1",
+  append: (row) => teamRows.push(row),
+  appendCorrection: () => {},
+  saveLink: () => {},
+  transport: () => transport,
+});
+const teamFix = () => ({ lat: fence.lat, lng: fence.lng, accuracy: 15, capturedAt: teamNow });
+await team.punch({
+  person: ada,
+  claimedPersonId: null,
+  type: "arrive",
+  fix: teamFix(),
+  source: "phone",
+  desk: false,
+});
+assert.equal(team.view([ada, ben], null, teamNow).streakDays, 0);
+assert.equal(team.view([ada, ben], null, teamNow).week.workedDays, 0);
+const blocked = await team.punch({
+  person: ben,
+  claimedPersonId: null,
+  type: "arrive",
+  fix: { ...teamFix(), lat: fence.lat + 0.05 },
+  source: "phone",
+  desk: false,
+});
+assert.equal(blocked.record.accepted, false);
+assert.equal(team.view([ada, ben], null, teamNow).streakDays, 0);
+await team.punch({
+  person: ben,
+  claimedPersonId: null,
+  type: "arrive",
+  fix: teamFix(),
+  source: "phone",
+  desk: false,
+});
+assert.equal(team.view([ada, ben], null, teamNow).streakDays, 0);
+teamNow += 29 * 60_000;
+assert.equal(team.view([ada, ben], null, teamNow).streakDays, 0);
+teamNow += 60_000;
+const met = team.view([ada, ben], null, teamNow);
+assert.equal(met.streakDays, 1);
+assert.equal(met.week.workedDays, 1);
+assert.equal(met.week.days[1]?.worked, true);
+assert.equal(met.squareMode, "dry_run");
+assert.equal(fetches, 0);
+
+teamNow = shopDateStart("2026-10-14") + 9 * 3_600_000;
+await team.punch({
+  person: ada,
+  claimedPersonId: null,
+  type: "arrive",
+  fix: teamFix(),
+  source: "phone",
+  desk: false,
+});
+const still = team.view([ada, ben], null, teamNow);
+assert.equal(still.streakDays, 1);
+assert.equal(still.week.workedDays, 1);
+assert.equal(still.week.days[2]?.worked, false);
+
 console.log("presence book ok");

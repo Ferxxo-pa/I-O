@@ -31,6 +31,13 @@ export const DEFAULT_DAY = {
   closeGraceMs: 2 * 60 * 60 * 1000,
   openWeekdays: [1, 2, 3, 4, 5] as number[],
   tz: SHOP_PRESENCE.tz,
+  /**
+   * Shop streak and week. This many people must be on the clock together.
+   * Default 1, so one accepted arrival still counts.
+   */
+  shopDayMinPeople: 1,
+  /** Minutes of overlap required. Null means no minute gate. */
+  shopDayMinMinutes: null as number | null,
 };
 
 export type DayConfig = {
@@ -45,6 +52,8 @@ export type DayConfig = {
   closeGraceMs: number;
   openWeekdays: number[];
   tz: typeof SHOP_ZONE;
+  shopDayMinPeople: number;
+  shopDayMinMinutes: number | null;
 };
 
 export const punchTypeSchema = z.enum(["arrive", "leave"]);
@@ -254,6 +263,7 @@ export function deriveDay(
 
 const WEEK_LABELS = ["M", "T", "W", "T", "F", "S", "S"] as const;
 
+/** Dates with any accepted arrival. The shop streak and week use shopWorkedDates. */
 export function punchWorkedDates(
   records: readonly { accepted: boolean; type: PunchType; ts: number }[],
   tz = SHOP_PRESENCE.tz,
@@ -266,7 +276,116 @@ export function punchWorkedDates(
   return dates;
 }
 
-/** Consecutive open shop days with an accepted arrival. The unit is days, never hours. */
+type ShopPunch = {
+  personId: string;
+  accepted: boolean;
+  type: PunchType;
+  ts: number;
+  closesDay?: boolean;
+};
+
+/** Last instant that still belongs to this Chicago shop date. */
+function shopDateAsOf(date: string, now: number, tz: typeof SHOP_ZONE): number {
+  const start = shopDateStart(date, tz);
+  const next = shopDateStart(addDays(date, 1), tz);
+  if (now <= start) return start;
+  if (next > start && now >= next) return next - 1;
+  return now;
+}
+
+/** Time this person was on the clock. Breaks are cut out. Early and late still count. */
+function onClockSpans(day: PersonDay, now: number): Array<[number, number]> {
+  if (day.clockInTs == null) return [];
+  const end =
+    day.phase === "closed" ? (day.closedAt ?? day.clockInTs) : day.phase === "break" ? (day.leaveTs ?? day.clockInTs) : now;
+  if (end <= day.clockInTs) return [];
+  const gaps = day.breaks
+    .map((entry) => ({ start: entry.start, end: entry.end ?? end }))
+    .filter((entry) => entry.end > entry.start)
+    .sort((a, b) => a.start - b.start);
+  const spans: Array<[number, number]> = [];
+  let cursor = day.clockInTs;
+  for (const gap of gaps) {
+    const start = Math.max(gap.start, day.clockInTs);
+    const stop = Math.min(gap.end, end);
+    if (stop <= cursor) continue;
+    if (start > cursor) spans.push([cursor, Math.min(start, end)]);
+    cursor = Math.max(cursor, stop);
+  }
+  if (cursor < end) spans.push([cursor, end]);
+  return spans.filter(([start, stop]) => stop > start);
+}
+
+/** Milliseconds during which at least `minPeople` spans overlap. */
+function togetherMs(spans: ReadonlyArray<readonly [number, number]>, minPeople: number): number {
+  if (minPeople < 1 || spans.length === 0) return 0;
+  const events: Array<{ t: number; d: number }> = [];
+  for (const [start, end] of spans) {
+    if (end <= start) continue;
+    events.push({ t: start, d: 1 });
+    events.push({ t: end, d: -1 });
+  }
+  events.sort((a, b) => a.t - b.t || a.d - b.d);
+  let count = 0;
+  let prev = events[0]?.t ?? 0;
+  let total = 0;
+  for (const event of events) {
+    if (event.t > prev && count >= minPeople) total += event.t - prev;
+    count += event.d;
+    prev = event.t;
+  }
+  return total;
+}
+
+/**
+ * Chicago dates the shop cleared together.
+ * Accepted punches only. 9–5 is a hint, not a gate: early and late still count,
+ * and a real break does not. With the default of one person and no minute
+ * minimum, any accepted arrival counts. A higher headcount needs those people
+ * on the clock at the same time. Minutes, when set, are that overlap.
+ */
+export function shopWorkedDates(records: readonly ShopPunch[], config: DayConfig, now: number): Set<string> {
+  const byDate = new Map<string, Map<string, DayEvent[]>>();
+  for (const row of records) {
+    if (!row.accepted) continue;
+    const date = zonedParts(row.ts, config.tz).key;
+    let people = byDate.get(date);
+    if (!people) {
+      people = new Map();
+      byDate.set(date, people);
+    }
+    const events = people.get(row.personId) ?? [];
+    events.push({ type: row.type, ts: row.ts, closesDay: row.closesDay });
+    people.set(row.personId, events);
+  }
+
+  const worked = new Set<string>();
+  const minPeople = Math.max(1, Math.floor(config.shopDayMinPeople));
+  for (const [date, people] of Array.from(byDate)) {
+    const asOf = shopDateAsOf(date, now, config.tz);
+    const spans: Array<[number, number]> = [];
+    let arrivals = 0;
+    let here = 0;
+    for (const events of Array.from(people.values())) {
+      const day = deriveDay(events, config, asOf, date);
+      if (day.clockInTs == null) continue;
+      arrivals += 1;
+      if (day.phase === "working" || day.phase === "pending") here += 1;
+      spans.push(...onClockSpans(day, asOf));
+    }
+    if (arrivals < minPeople) continue;
+    const overlap = togetherMs(spans, minPeople);
+    const minutes = config.shopDayMinMinutes;
+    if (minutes != null && minutes > 0) {
+      if (overlap >= minutes * 60_000) worked.add(date);
+      continue;
+    }
+    if (minPeople <= 1 || overlap > 0 || here >= minPeople) worked.add(date);
+  }
+  return worked;
+}
+
+/** Consecutive open shop days in `worked`. The unit is days, never hours. */
 export function presenceStreak(input: {
   today: string;
   worked: ReadonlySet<string>;

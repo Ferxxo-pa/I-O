@@ -16,6 +16,19 @@ function whole(raw: string | undefined, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
+function shopPeople(raw: string | undefined, fallback: number): number {
+  if (!raw?.trim()) return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 1 ? value : fallback;
+}
+
+/** Positive minutes, or null when the shop day has no minute gate. */
+function shopMinutes(raw: string | undefined): number | null {
+  if (!raw?.trim()) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 export function dayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DayConfig {
   const open = (env.PRESENCE_OPEN_WEEKDAYS ?? "")
     .split(",")
@@ -35,5 +48,7 @@ export function dayConfigFromEnv(env: NodeJS.ProcessEnv = process.env): DayConfi
     closeGraceMs: whole(env.PRESENCE_CLOSE_GRACE_MS, DEFAULT_DAY.closeGraceMs),
     openWeekdays: open.length > 0 ? open : [...DEFAULT_DAY.openWeekdays],
     tz: env.PRESENCE_TZ?.trim() === SHOP_PRESENCE.tz ? SHOP_PRESENCE.tz : DEFAULT_DAY.tz,
+    shopDayMinPeople: shopPeople(env.PRESENCE_SHOP_DAY_MIN_PEOPLE, DEFAULT_DAY.shopDayMinPeople),
+    shopDayMinMinutes: shopMinutes(env.PRESENCE_SHOP_DAY_MIN_MINUTES),
   };
 }
