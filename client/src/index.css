@@ -1116,6 +1116,239 @@ a.company-code {
   font-size: 12px;
 }
 
+.presence-pips {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+  margin: 0 2px 8px;
+}
+
+.presence-pips i,
+.presence-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: #c7c7cc;
+}
+
+.presence-pips i.on,
+.presence-dots i.on,
+.presence-orb.on {
+  background: #12c45a;
+  box-shadow: 0 0 8px rgba(18, 196, 90, 0.7);
+}
+
+.presence-menu-week {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 214px;
+}
+
+.presence-menu-week > i,
+.presence-week > i {
+  display: block;
+  height: 3px;
+  border-radius: 99px;
+  background: #12c45a;
+}
+
+.presence-menu-week {
+  position: relative;
+}
+
+.presence-menu-week::before,
+.presence-week {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 99px;
+}
+
+.presence-menu-week::before {
+  content: "";
+  display: block;
+  height: 3px;
+  border-radius: 99px;
+}
+
+.presence-menu-week > i {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.presence-menu-days,
+.presence-days {
+  display: flex;
+  justify-content: space-between;
+  width: 214px;
+  color: #c7c7cc;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.presence-menu-days em.worked,
+.presence-days span.worked {
+  color: #12c45a;
+  font-style: normal;
+}
+
+body:has(.presence-stage),
+#root:has(.presence-stage) {
+  height: auto;
+  overflow: auto;
+}
+
+.presence-stage {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+}
+
+.presence-home {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  color: var(--mute);
+  font-size: 13px;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+
+.presence-card {
+  width: min(420px, 100%);
+  padding: 28px 28px 22px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(22px) saturate(1.35);
+}
+
+.presence-card[data-state="working"],
+.presence-card[data-state="pending"] {
+  box-shadow: 0 10px 32px rgba(18, 196, 90, 0.16);
+}
+
+.presence-card[data-state="rejected"] {
+  box-shadow: 0 10px 32px rgba(255, 59, 48, 0.14);
+}
+
+.presence-kicker,
+.presence-address,
+.presence-detail,
+.presence-keep,
+.presence-dots em {
+  color: var(--mute);
+}
+
+.presence-kicker {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.presence-address {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.presence-orb {
+  width: 18px;
+  height: 18px;
+  margin: 28px 0 0;
+  border-radius: 99px;
+  background: #c7c7cc;
+}
+
+.presence-card h1 {
+  margin: 14px 0 0;
+  font-size: 34px;
+  font-weight: 560;
+  letter-spacing: -0.045em;
+}
+
+.presence-card[data-state="working"] h1,
+.presence-card[data-state="pending"] h1 {
+  color: #12c45a;
+}
+
+.presence-card[data-state="rejected"] h1,
+.presence-card[data-state="rejected"] .presence-detail {
+  color: #ff3b30;
+}
+
+.presence-who {
+  margin: 8px 0 0;
+  font-size: 18px;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+
+.presence-detail,
+.presence-keep {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.presence-streak {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 28px;
+  color: #ff7a00;
+}
+
+.presence-streak[data-count="0"] {
+  color: #c7c7cc;
+}
+
+.presence-streak strong {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.presence-streak span {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.presence-week {
+  position: relative;
+  height: 4px;
+  margin-top: 18px;
+  overflow: hidden;
+}
+
+.presence-days {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.presence-dots {
+  list-style: none;
+  margin: 22px 0 0;
+  padding: 0;
+}
+
+.presence-dots li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.presence-dots em {
+  font-style: normal;
+  font-size: 12px;
+}
+
 @media (max-width: 480px) {
   .strip-anchor {
     right: 12px;
