@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import type { AppState } from "@shared/schema";
 import type { PresenceDot, PresenceView } from "@shared/presence";
+import { apiUrl } from "@/serverUrl";
+import { authHeaders } from "@/hooks/useEarnState";
 
 function featured(view: PresenceView | null): PresenceDot | null {
   if (!view || view.dots.length === 0) return null;
@@ -16,25 +19,51 @@ export default function PresencePage() {
   useEffect(() => {
     document.title = "Presence · EZ Designs";
     let stop = false;
-    const load = () => {
-      void fetch("/api/presence")
-        .then(async (res) => {
-          const body = (await res.json()) as PresenceView & { message?: string };
-          if (!res.ok) throw new Error(body.message || "Couldn't load presence");
-          if (!stop) {
-            setView(body);
-            setError(null);
+    let delay = 1000;
+    let timer = 0;
+    let controller: AbortController | null = null;
+    const connect = async () => {
+      controller = new AbortController();
+      try {
+        const res = await fetch(apiUrl("/api/live"), { headers: authHeaders(), signal: controller.signal });
+        if (!res.ok || !res.body) throw new Error("Couldn't load presence");
+        delay = 1000;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          buf += decoder.decode(chunk.value, { stream: true });
+          let cut = buf.indexOf("\n\n");
+          while (cut >= 0) {
+            const block = buf.slice(0, cut);
+            buf = buf.slice(cut + 2);
+            const line = block.split("\n").find((row) => row.startsWith("data: "));
+            if (line && !stop) {
+              const next = JSON.parse(line.slice(6)) as AppState;
+              setView(next.presence);
+              setError(null);
+            }
+            cut = buf.indexOf("\n\n");
           }
-        })
-        .catch((err) => {
-          if (!stop) setError(err instanceof Error ? err.message : "Couldn't load presence");
-        });
+        }
+        throw new Error("Couldn't load presence");
+      } catch (err) {
+        if (stop || (err instanceof DOMException && err.name === "AbortError")) return;
+        if (!stop) setError(err instanceof Error ? err.message : "Couldn't load presence");
+      }
+      if (stop) return;
+      timer = window.setTimeout(() => {
+        void connect();
+      }, delay);
+      delay = Math.min(delay * 2, 15_000);
     };
-    load();
-    const id = window.setInterval(load, 1000);
+    void connect();
     return () => {
       stop = true;
-      window.clearInterval(id);
+      window.clearTimeout(timer);
+      controller?.abort();
     };
   }, []);
 

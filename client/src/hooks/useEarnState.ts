@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState, PrintEvent } from "@shared/schema";
+import { apiUrl } from "@/serverUrl";
 
 export const WHO_ID = "io.who";
 export const PIN_KEY = "io.shop.pin";
+export const OWNER_KEY = "io.owner";
+
+export function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const who = localStorage.getItem(WHO_ID);
+  if (who) headers["x-person-id"] = who;
+  const pin = sessionStorage.getItem(PIN_KEY);
+  if (pin) headers["x-shop-pin"] = pin;
+  const owner = localStorage.getItem(OWNER_KEY);
+  if (owner) headers["x-owner-key"] = owner;
+  return headers;
+}
 
 export function shopPin(): string | null {
   return sessionStorage.getItem(PIN_KEY);
@@ -17,16 +30,11 @@ export function clearShopPin() {
 }
 
 function personHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const who = localStorage.getItem(WHO_ID);
-  if (who) headers["x-person-id"] = who;
-  const pin = sessionStorage.getItem(PIN_KEY);
-  if (pin) headers["x-shop-pin"] = pin;
-  return headers;
+  return authHeaders();
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     ...init,
     headers: { ...personHeaders(), ...(init?.headers as Record<string, string> | undefined) },
   });
@@ -74,22 +82,57 @@ export function useIoState() {
   }, [ingest]);
 
   useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 200);
-    let stream: EventSource | null = null;
-    try {
-      stream = new EventSource("/api/presence/stream");
-      stream.onmessage = () => {
-        void refresh();
-      };
-    } catch {
-      stream = null;
-    }
-    return () => {
-      clearInterval(id);
-      stream?.close();
+    if (new URLSearchParams(window.location.search).get("demo")) return;
+    let stop = false;
+    let timer = 0;
+    let delay = 1000;
+    let controller: AbortController | null = null;
+    const connect = async () => {
+      controller = new AbortController();
+      try {
+        const res = await fetch(apiUrl("/api/live"), {
+          headers: authHeaders(),
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) throw new Error(res.status === 401 ? "Shop PIN required" : "Offline");
+        delay = 1000;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          buf += decoder.decode(chunk.value, { stream: true });
+          let cut = buf.indexOf("\n\n");
+          while (cut >= 0) {
+            const block = buf.slice(0, cut);
+            buf = buf.slice(cut + 2);
+            const line = block.split("\n").find((row) => row.startsWith("data: "));
+            if (line) {
+              ingest(JSON.parse(line.slice(6)) as AppState);
+              setError(null);
+            }
+            cut = buf.indexOf("\n\n");
+          }
+        }
+        throw new Error("Offline");
+      } catch (err) {
+        if (stop || (err instanceof DOMException && err.name === "AbortError")) return;
+        setError(err instanceof Error && err.message ? err.message : "Offline");
+      }
+      if (stop) return;
+      timer = window.setTimeout(() => {
+        void connect();
+      }, delay);
+      delay = Math.min(delay * 2, 15_000);
     };
-  }, [refresh]);
+    void connect();
+    return () => {
+      stop = true;
+      window.clearTimeout(timer);
+      controller?.abort();
+    };
+  }, [ingest]);
 
   const run = useCallback(
     async (fn: () => Promise<AppState>) => {

@@ -22,6 +22,7 @@ export function startSquareSync() {
     });
   };
   timer = setInterval(run, 15_000);
+  timer.unref();
   run();
 }
 
@@ -80,6 +81,14 @@ export function applySquareWebhook(body: unknown): { sale: boolean; points: bool
   const snapshot = snapshotFromWebhook(body);
   if (!snapshot) return { sale: false, points: false };
   return earnEngine.ingestSquareInvoice(snapshot);
+}
+
+export function kickSquareSync() {
+  if (!squareConfigured()) return;
+  void pollSquare().catch((err) => {
+    const message = err instanceof Error ? err.message : "sync failed";
+    log(message, "square");
+  });
 }
 
 async function pollSquare() {

@@ -1,0 +1,12 @@
+[Unit]
+Description=Expose I/O with Tailscale Funnel
+After=tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tailscale funnel --bg 5000
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,9 +1,16 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { installRemoteCors } from "./http/cors";
+import { listenHost } from "./lan/bind";
+import { lanIPv4 } from "./lan/mdns";
+import { ioMode } from "./mode";
 import { flushState } from "./persist";
+import { lockSecrets, mustRefuseRoot } from "./secrets";
+import { startUpdateScheduler } from "./update/schedule";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+installRemoteCors(app);
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -20,13 +27,19 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (!path.startsWith("/api") || path === "/api/state") return;
-    log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
+    const shown = path.replace(/\/join\/[^/]+/g, "/join/[redacted]");
+    log(`${req.method} ${shown} ${res.statusCode} in ${duration}ms`);
   });
 
   next();
 });
 
 (async () => {
+  if (mustRefuseRoot(process.env.NODE_ENV, typeof process.getuid === "function" ? process.getuid() : undefined)) {
+    console.error("Refusing to run as root. Start I/O as the io user.");
+    process.exit(1);
+  }
+  lockSecrets();
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -47,9 +60,10 @@ app.use((req, res, next) => {
   }
 
   const port = Number(process.env.PORT) || 5000;
+  const host = listenHost(process.env.HOST, ioMode(), lanIPv4());
   server.listen({
     port,
-    host: "0.0.0.0",
+    host,
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
@@ -62,4 +76,5 @@ app.use((req, res, next) => {
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+  startUpdateScheduler();
 })();

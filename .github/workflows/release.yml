@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: stable or beta
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - beta
+      version:
+        description: Version, such as 0.2.0
+        required: true
+        type: string
+      publish:
+        description: Create a draft GitHub release. Stays unpublished until a reviewer publishes it.
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Pack the shop box
+        run: |
+          tar -czf "io-${{ inputs.version }}.tar.gz" dist
+          sha256sum "io-${{ inputs.version }}.tar.gz" > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: io-${{ inputs.version }}
+          path: |
+            io-${{ inputs.version }}.tar.gz
+            SHA256SUMS
+
+  publish:
+    needs: build
+    if: inputs.publish == true
+    environment: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: io-${{ inputs.version }}
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=false
+          if [ "${{ inputs.channel }}" = "beta" ]; then prerelease=true; fi
+          gh release create "v${{ inputs.version }}" \
+            --draft \
+            --title "v${{ inputs.version }}" \
+            --notes "Draft only. Publish this release after review. The shop updater ignores drafts." \
+            $( [ "$prerelease" = true ] && echo --prerelease ) \
+            "io-${{ inputs.version }}.tar.gz" SHA256SUMS

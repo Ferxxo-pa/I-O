@@ -51,16 +51,18 @@ Square does not publish a customer-messages API. Points follow invoices you send
 
 ## Presence
 
-Phones punch arrive and leave at the shop. The day, the green and gray dots, the day streak, and the week under the flame all read that same punch log. Square can mirror accepted punches and stays the source of truth for hours. See `docs/presence-clock.md`.
+Phones clock in from a Shortcuts or MacroDroid automation, with no extra app and no hardware. The day, the green and gray dots, the day streak, and the week under the flame all read that same punch log. Square can mirror accepted punches and stays the source of truth for hours. See `docs/presence-phone-automations.md` and `docs/presence-clock.md`.
 
 ## Go live
 
-`GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level and closed day is stored on that pair. This build is still one shop on one computer. There is no second login.
+One spare computer at the shop or at home is the server. Employee computers and phones open its free HTTPS address (Cloudflare Tunnel or Tailscale Funnel). No router ports are opened. A cloud VM is the free fallback, and Railway or Fly is the paid one. The steps, the backup, and what happens when the power or the internet drops are in `docs/go-live.md`.
 
-Do these before you leave it on the counter:
+`GET /api/health` stays `{ ok: true }` when the process is up. `ready` is the setup checklist, and `checks` is one line each. The same list is under **+ → Ready**. `scope` is the company id and the Square location id (or `local`). Every level and closed day is stored on that pair. There is no second login.
 
-1. Check out this branch. Do not merge it to main until the strip has been used on the shop computer.
-2. `npm install`, then copy `.env.example` to `.env`. Do not commit `.env`.
+On the central server:
+
+1. Follow `docs/go-live.md`. Leave `VITE_IO_SERVER_URL` unset so the strip and the API are the same host.
+2. Copy `.env.example` to `.env`. Do not commit `.env`. `DATA_DIR` must be a disk that survives a restart.
 3. Set `SQUARE_ACCESS_TOKEN` and `SQUARE_LOCATION_ID`. The token stays on the server.
 4. Point Square webhooks at `POST /api/square/webhook` for `invoice.published`, `invoice.payment_made`, `labor.timecard.created`, and `labor.timecard.updated`. Set `SQUARE_WEBHOOK_SIGNATURE_KEY` and `SQUARE_WEBHOOK_NOTIFICATION_URL` to that exact URL. Ready stays open until a signed delivery arrives.
 5. Create the company, set the shop PIN, and set each person's hourly rate. When Square is connected, Square keeps the rates. This app never writes wages back.

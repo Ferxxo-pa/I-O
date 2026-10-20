@@ -1,7 +1,11 @@
 import { ownLoginPct, readiness, type ReadinessCheck } from "@shared/ops";
+import { backupCheck } from "./backup";
+import { ioMode, lanBaseUrl, relayConfigured } from "./mode";
+import { webhookNotificationUrl } from "./publicBase";
 import { earnEngine } from "./clock/engine";
 import { currentScope, getCompany } from "./company";
 import { fightBook } from "./fight/book";
+import { publicUrlCheck } from "./publicUrl";
 import { squareConfigured } from "./square/client";
 
 export type HealthReport = {
@@ -12,7 +16,7 @@ export type HealthReport = {
 };
 
 /** Process is up when `ok` is true. `ready` is the go-live checklist. */
-export function healthReport(): HealthReport {
+export async function healthReport(): Promise<HealthReport> {
   const signals = fightBook.signals();
   const people = getCompany().people;
   const roster = people.length;
@@ -32,19 +36,38 @@ export function healthReport(): HealthReport {
       ? "Add the team"
       : `${rated} of ${roster}`;
 
-  const webhookConfigured = Boolean(
-    process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && process.env.SQUARE_WEBHOOK_NOTIFICATION_URL,
-  );
+  const backup = backupCheck();
+  const local = ioMode() === "local-relay";
+  const webhookConfigured = local || Boolean(process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && webhookNotificationUrl());
+  const publicUrl = local ? null : await publicUrlCheck();
+  let lanNote = "";
+  try {
+    lanNote = new URL(lanBaseUrl()).host;
+  } catch {
+    lanNote = lanBaseUrl();
+  }
   const report = readiness({
     squareToken: square,
     webhookConfigured,
-    webhookSeen: signals.webhookSeen,
+    webhookSeen: local || signals.webhookSeen,
     pinSet: signals.pinSet,
     rentEntered: signals.rentEntered,
     ratesOk,
     rateDetail,
     ownLoginPct: pct,
     ownLoginDetail,
+    backupOk: backup.ok,
+    backupDetail: backup.detail,
+    backupNote: backup.note,
+    webhookNote: local ? "Square is polled. Webhooks are off." : undefined,
+    publicUrlOk: local ? relayConfigured() : publicUrl?.ok,
+    publicUrlLabel: local ? "Shop LAN" : undefined,
+    publicUrlDetail: local
+      ? relayConfigured()
+        ? lanBaseUrl()
+        : "Set RELAY_PUBLIC_URL and RELAY_SHOP_SECRET"
+      : publicUrl?.detail,
+    publicUrlNote: local ? (relayConfigured() ? lanNote : undefined) : publicUrl?.note,
   });
   return { ok: true, ready: report.ready, scope: currentScope(), checks: report.checks };
 }

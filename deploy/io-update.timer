@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly I/O update check
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=io-update.service
+
+[Install]
+WantedBy=timers.target

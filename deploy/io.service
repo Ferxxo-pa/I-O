@@ -1,0 +1,28 @@
+[Unit]
+Description=I/O central server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=io
+Group=io
+WorkingDirectory=/opt/io
+Environment=NODE_ENV=production
+Environment=PORT=5000
+Environment=DATA_DIR=/var/lib/io
+EnvironmentFile=-/opt/io/.env
+# Leave HOST unset in local-relay. The process binds the shop LAN address, never 0.0.0.0.
+# public mode sets HOST=127.0.0.1 so only a tunnel on this machine can connect.
+# run-with-env probes /api/health?probe=1 and restores dist.previous if that fails.
+ExecStart=/usr/bin/node /opt/io/scripts/run-with-env.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/io /opt/io
+
+[Install]
+WantedBy=multi-user.target

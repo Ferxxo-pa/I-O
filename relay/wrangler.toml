@@ -1,0 +1,19 @@
+name = "io-relay"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Create the database once: npx wrangler d1 create io-relay
+# Paste the printed database_id here before the first deploy.
+[[d1_databases]]
+binding = "DB"
+database_name = "io-relay"
+database_id = "replace-after-wrangler-d1-create"
+
+# Secrets are not vars. The worker learns the shop pull secret.
+# Phones POST plain events with their bearer token. The worker stores the
+# token hash, the event, and the time. It does not store names, wages, or
+# the Square access token.
+#   npx wrangler secret put RELAY_SHOP_SECRET
+# Optional, only if Square should forward webhooks:
+#   npx wrangler secret put RELAY_SQUARE_WEBHOOK_KEY
+#   wrangler var RELAY_SQUARE_NOTIFICATION_URL = the notification URL Square signs

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { PIN_KEY, WHO_ID, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
+import { OWNER_KEY, PIN_KEY, WHO_ID, authHeaders, clearShopPin, setShopPin, shopPin, useIoState } from "@/hooks/useEarnState";
+import { apiUrl } from "@/serverUrl";
 import { ching, clearedChime, unlockChing } from "@/lib/ching";
 import {
   DEFAULT_FIGHT_SETTINGS,
@@ -24,12 +25,13 @@ import {
   type WeekPreset,
   type WeekView,
 } from "@shared/week";
+import { releaseNotes, type ReleaseNote } from "@shared/notes";
 import type { PresenceView } from "@shared/presence";
 import type { CompanyState, PrintEvent } from "@shared/schema";
 
 type CompanyView = CompanyState & { owner?: boolean; square?: boolean; ownerKey?: string };
 
-const OWNER_STORE = "io.owner";
+const OWNER_STORE = OWNER_KEY;
 const WHO_NAME = "io.who.name";
 
 type TeamPerson = { id: string; name: string };
@@ -78,9 +80,9 @@ function readDemo(): DemoScene | null {
   return null;
 }
 
-function readPanel(): "menu" | "levels" | "checklist" | "settings" | null {
+function readPanel(): "menu" | "levels" | "checklist" | "settings" | "news" | null {
   const value = new URLSearchParams(window.location.search).get("panel");
-  if (value === "menu" || value === "levels" || value === "checklist" || value === "settings") return value;
+  if (value === "menu" || value === "levels" || value === "checklist" || value === "settings" || value === "news") return value;
   return null;
 }
 
@@ -432,6 +434,11 @@ export default function Hud() {
   const calm = useMemo(calmMotion, []);
   const [levelsOpen, setLevelsOpen] = useState(() => readPanel() === "levels");
   const [checklistOpen, setChecklistOpen] = useState(() => readPanel() === "checklist");
+  const [news, setNews] = useState(() => readPanel() === "news");
+  const bundled = useMemo(() => releaseNotes(), []);
+  const [version, setVersion] = useState(bundled.version);
+  const [notice, setNotice] = useState(bundled.notice);
+  const [entries, setEntries] = useState<ReleaseNote[]>(bundled.entries);
   const [change, setChange] = useState(false);
   const [whoOpen, setWhoOpen] = useState(false);
   const [whoMode, setWhoMode] = useState<"clock" | "link">("clock");
@@ -450,6 +457,18 @@ export default function Hud() {
   const heard = useRef(new Set<string>());
   const wasCleared = useRef<boolean | null>(null);
   const demo = demoScene ? demoModel(demoScene, weekPreset) : null;
+  useEffect(() => {
+    if (demoScene) return;
+    void fetch(apiUrl("/api/changelog"), { headers: authHeaders() })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json()) as { version?: string; notice?: string; entries?: ReleaseNote[] };
+        if (body.version) setVersion(body.version);
+        if (body.notice) setNotice(body.notice);
+        if (Array.isArray(body.entries) && body.entries.length) setEntries(body.entries);
+      })
+      .catch(() => undefined);
+  }, [demoScene]);
 
   useEffect(() => {
     const unlock = () => unlockChing();
@@ -545,12 +564,12 @@ export default function Hud() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("join");
     const load = code
-      ? fetch("/api/company/join", {
+      ? fetch(apiUrl("/api/company/join"), {
           method: "POST",
           headers: ownerHeaders(),
           body: JSON.stringify({ code }),
         })
-      : fetch("/api/company", { headers: ownerHeaders() });
+      : fetch(apiUrl("/api/company"), { headers: ownerHeaders() });
     void load
       .then(async (res) => {
         const next = (await res.json()) as CompanyView;
@@ -575,7 +594,7 @@ export default function Hud() {
 
   const saveCompany = async (path: string, body: unknown) => {
     setSettingsError(null);
-    const res = await fetch(path, {
+    const res = await fetch(apiUrl(path), {
       method: "POST",
       headers: ownerHeaders(),
       body: JSON.stringify(body),
@@ -587,7 +606,7 @@ export default function Hud() {
 
   const saveFight = async (path: string, body: unknown) => {
     setSettingsError(null);
-    const res = await fetch(path, {
+    const res = await fetch(apiUrl(path), {
       method: path.endsWith("/pin") || path.includes("/approve") ? "POST" : "PATCH",
       headers: ownerHeaders(),
       body: JSON.stringify(body),
@@ -609,7 +628,7 @@ export default function Hud() {
     setChange(false);
     setWhoMode(mode);
     setWhoOpen(true);
-    const res = await fetch("/api/company/who");
+    const res = await fetch(apiUrl("/api/company/who"), { headers: authHeaders() });
     const body = (await res.json()) as { people?: TeamPerson[]; source?: "square" | "manual"; message?: string };
     if (!res.ok) {
       setTeam([]);
@@ -686,6 +705,29 @@ export default function Hud() {
   return (
     <div className="stage">
       <div className="strip-anchor">
+        <button type="button" className="whats-new" onClick={() => setNews((open) => !open)}>
+          I/O {version} · {notice}
+        </button>
+        {news && (
+          <section className="news-panel" aria-label="What's new">
+            <header>
+              <h2>What's new</h2>
+              <button type="button" onClick={() => setNews(false)} aria-label="Close what's new">
+                Close
+              </button>
+            </header>
+            {entries.map((entry) => (
+              <div key={entry.version}>
+                <p>{entry.version}</p>
+                <ul>
+                  {entry.bullets.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </section>
+        )}
         <PrintTape
           events={demo ? (demoHit ? [demoHit] : []) : freshEvents}
           onDone={dismissTick}
@@ -880,7 +922,7 @@ export default function Hud() {
             />
           )}
         </AnimatePresence>
-        {error && !menu && <div className="err">{error}</div>}
+        {error && !menu && !demo && <div className="err">{error}</div>}
       </div>
     </div>
   );
@@ -1182,7 +1224,7 @@ function ChangePanel({
 
   useEffect(() => {
     let cancel = false;
-    void fetch("/api/company/roster", { headers: ownerHeaders() })
+    void fetch(apiUrl("/api/company/roster"), { headers: ownerHeaders() })
       .then(async (res) => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.message || "Couldn't load people");
@@ -1206,7 +1248,7 @@ function ChangePanel({
       return;
     }
     setError(null);
-    const res = await fetch(`/api/company/people/${id}`, {
+    const res = await fetch(apiUrl(`/api/company/people/${id}`), {
       method: "PATCH",
       headers: ownerHeaders(),
       body: JSON.stringify({ hourlyCents: cents }),
@@ -1228,7 +1270,7 @@ function ChangePanel({
       return;
     }
     setError(null);
-    const res = await fetch("/api/company/people", {
+    const res = await fetch(apiUrl("/api/company/people"), {
       method: "POST",
       headers: ownerHeaders(),
       body: JSON.stringify({ name, hourlyCents: cents }),
@@ -1434,7 +1476,7 @@ function ChecklistPanel({ demo, onClose }: { demo: boolean; onClose: () => void 
   useEffect(() => {
     if (demo) return;
     let cancel = false;
-    void fetch("/api/health")
+    void fetch(apiUrl("/api/health"))
       .then(async (res) => {
         const body = (await res.json()) as {
           ready?: boolean;
@@ -1483,7 +1525,7 @@ function ChecklistPanel({ demo, onClose }: { demo: boolean; onClose: () => void 
       {checks.map((check) => (
         <div className={`menu-row${check.ok ? "" : " soft"}`} key={check.id}>
           <span>{check.label}</span>
-          <span>{check.ok ? "Yes" : check.detail}</span>
+          <span>{check.ok ? check.note || "Yes" : check.detail}</span>
         </div>
       ))}
       {error && <div className="err">{error}</div>}

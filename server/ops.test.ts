@@ -164,6 +164,9 @@ const checks = readiness({
 assert.equal(checks.ready, false);
 assert.equal(checks.checks.find((row) => row.id === "webhook")?.ok, false);
 assert.equal(checks.checks.find((row) => row.id === "login")?.detail, "2 of 3 · 67%");
+assert.equal(checks.checks.find((row) => row.id === "backup")?.ok, false);
+assert.equal(checks.checks.find((row) => row.id === "backup")?.detail, "No backup yet");
+assert.equal(checks.checks.find((row) => row.id === "public_url")?.detail, "Set PUBLIC_BASE_URL");
 
 function atChicago(key: string, hourOfDay: number): number {
   const [year, month, day] = key.split("-").map(Number);

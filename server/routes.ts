@@ -1,10 +1,15 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { fightSettingsSchema } from "@shared/fight";
+import { releaseNotes } from "@shared/notes";
 import { levelRulesSchema } from "@shared/ops";
 import { configSchema, inputTypeSchema } from "@shared/schema";
 import { HttpError, assertShopPin, pinShape } from "./auth/pin";
-import { addPerson, companyView, createCompany, joinCompany, setPersonRate } from "./company";
+import { assertPublicReader, shopLocked } from "./auth/reader";
+import { isShopSource } from "./lan/bind";
+import { ioMode } from "./mode";
+import { webhookNotificationUrl } from "./publicBase";
+import { addPerson, companyView, createCompany, joinCompany, setPersonRate, setShopConfig } from "./company";
 import { earnEngine } from "./clock/engine";
 import { fightBook } from "./fight/book";
 import { startPersistence } from "./persist";
@@ -24,6 +29,18 @@ function personIdFrom(req: Request): string | null {
   const body = typeof req.body?.personId === "string" ? req.body.personId.trim() : "";
   const header = req.header("x-person-id")?.trim() ?? "";
   return body || header || null;
+}
+
+/** The computer's linked person and the body must name the same person. */
+function clockPersonId(req: Request): string {
+  const body = typeof req.body?.personId === "string" ? req.body.personId.trim() : "";
+  const header = req.header("x-person-id")?.trim() ?? "";
+  if (body && header && body !== header) {
+    throw new HttpError(403, "This computer is linked to someone else");
+  }
+  const personId = body || header;
+  if (!personId) throw new Error("Choose who you are");
+  return personId;
 }
 
 async function peopleOnTheBusiness(): Promise<
@@ -62,6 +79,19 @@ function requirePinIfSet(req: Request) {
   if (fightBook.pinSet()) requirePin(req);
 }
 
+/** Anonymous callers cannot change the shop. Owner key until a PIN exists, then the PIN. */
+function requireShopActor(req: Request) {
+  if (!shopLocked()) {
+    requirePinIfSet(req);
+    return;
+  }
+  if (fightBook.pinSet()) {
+    requirePin(req);
+    return;
+  }
+  if (!companyView(ownerKeyFrom(req)).owner) throw new HttpError(403, "Only the owner can change that");
+}
+
 function sendError(res: Response, err: unknown, fallback: string) {
   const message = err instanceof Error ? err.message : fallback;
   const status =
@@ -74,19 +104,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
   earnEngine.start();
   startSquareSync();
 
-  app.get("/api/health", (_req, res) => {
-    res.json(healthReport());
+  if (ioMode() === "local-relay") {
+    app.use((req, res, next) => {
+      const addr = req.socket?.remoteAddress || "";
+      if (isShopSource(addr)) return next();
+      res.status(403).json({ message: "Shop network only" });
+    });
+  }
+
+  app.get("/api/health", async (req, res) => {
+    if (String(req.query.probe ?? "") === "1") {
+      res.json({ ok: true });
+      return;
+    }
+    try {
+      assertPublicReader(req);
+      res.json(await healthReport());
+    } catch (err) {
+      if (err instanceof HttpError) return sendError(res, err, "Health check failed");
+      res.status(500).json({ ok: false, message: "Health check failed" });
+    }
   });
 
   app.get("/api/state", (req, res) => {
-    res.json(earnEngine.getState(personIdFrom(req)));
+    try {
+      assertPublicReader(req);
+      res.json(earnEngine.getState(personIdFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't load the clock");
+    }
+  });
+
+  app.get("/api/live", (req, res) => {
+    try {
+      assertPublicReader(req);
+    } catch (err) {
+      sendError(res, err, "Couldn't load the clock");
+      return;
+    }
+    const personId = personIdFrom(req);
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    const send = () => {
+      if (res.writableEnded) return;
+      res.write(`data: ${JSON.stringify(earnEngine.getState(personId))}\n\n`);
+    };
+    send();
+    const stop = earnEngine.addChangeListener(send);
+    const beat = setInterval(() => {
+      if (!res.writableEnded) res.write(`: beat\n\n`);
+    }, 25_000);
+    beat.unref();
+    req.on("close", () => {
+      clearInterval(beat);
+      stop();
+    });
+  });
+
+  app.get("/api/changelog", (req, res) => {
+    try {
+      assertPublicReader(req);
+      res.json(releaseNotes());
+    } catch (err) {
+      sendError(res, err, "Couldn't load the notes");
+    }
   });
 
   app.post("/api/clock/in", async (req, res) => {
     try {
       requirePin(req);
-      const personId = personIdFrom(req);
-      if (!personId) throw new Error("Choose who you are");
+      const personId = clockPersonId(req);
       const person = (await peopleOnTheBusiness()).find((entry) => entry.id === personId);
       if (!person) throw new Error("That person is not on this business");
       if (!person.hourlyCents) throw new Error("Square has no hourly wage for that person");
@@ -105,8 +195,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/clock/out", async (req, res) => {
     try {
       requirePin(req);
-      const personId = personIdFrom(req);
-      if (!personId) throw new Error("Choose who you are");
+      const personId = clockPersonId(req);
       res.json(await earnEngine.clockOutPerson(personId));
     } catch (err) {
       sendError(res, err, "Clock-out failed");
@@ -114,6 +203,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/input/:type", (req, res) => {
+    try {
+      assertPublicReader(req);
+    } catch (err) {
+      return sendError(res, err, "Couldn't record that");
+    }
     const parsed = inputTypeSchema.safeParse(req.params.type);
     if (!parsed.success) {
       return res.status(400).json({ message: "Unknown input type" });
@@ -123,6 +217,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Back-compat alias while UI migrates
   app.post("/api/actions/:type", (req, res) => {
+    try {
+      assertPublicReader(req);
+    } catch (err) {
+      return sendError(res, err, "Couldn't record that");
+    }
     const parsed = inputTypeSchema.safeParse(req.params.type);
     if (!parsed.success) {
       return res.status(400).json({ message: "Unknown input type" });
@@ -132,7 +231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/config", (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
     } catch (err) {
       return sendError(res, err, "Couldn't save that");
     }
@@ -151,7 +250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: "Not found" });
     }
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
     } catch (err) {
       return sendError(res, err, "Couldn't reset");
     }
@@ -159,12 +258,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/company", (req, res) => {
-    res.json(companyView(ownerKeyFrom(req)));
+    try {
+      assertPublicReader(req);
+      res.json(companyView(ownerKeyFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't load the company");
+    }
   });
 
   app.post("/api/company", (req, res) => {
     try {
-      requirePinIfSet(req);
+      if (shopLocked() && fightBook.pinSet()) requirePin(req);
+      else requirePinIfSet(req);
       const name = typeof req.body?.name === "string" ? req.body.name : "";
       res.json(createCompany(name, ownerKeyFrom(req)));
     } catch (err) {
@@ -175,29 +280,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/company/join", (req, res) => {
     try {
       const code = typeof req.body?.code === "string" ? req.body.code : "";
-      res.json(joinCompany(code, ownerKeyFrom(req)));
+      const view = joinCompany(code, ownerKeyFrom(req));
+      if (view.owner) {
+        res.json(view);
+        return;
+      }
+      res.json({
+        ...view,
+        people: view.people.map((person) => ({ ...person, hourlyCents: 0 })),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not join that company";
       res.status(400).json({ message });
     }
   });
 
-  app.get("/api/company/who", async (_req, res) => {
+  app.get("/api/company/who", async (req, res) => {
     try {
+      assertPublicReader(req);
       const people = await peopleOnTheBusiness();
       res.json({
         source: squareConfigured() ? "square" : "manual",
         people: people.map((person) => ({ id: person.id, name: person.name })),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Couldn't load the team";
-      res.status(400).json({ message });
+      sendError(res, err, "Couldn't load the team");
     }
   });
 
   app.get("/api/company/roster", async (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
       requireOwner(req);
       const squarePeople = await squarePayRoster();
       if (squarePeople) return res.json({ source: "square", people: squarePeople });
@@ -209,7 +322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/company/people", (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
       if (squareConfigured()) throw new Error("Square sets the rates");
       requireOwner(req);
       const name = typeof req.body?.name === "string" ? req.body.name : "";
@@ -224,7 +337,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/company/people/:id", (req, res) => {
     try {
-      requirePinIfSet(req);
+      requireShopActor(req);
       if (squareConfigured()) throw new Error("Square sets the rates");
       requireOwner(req);
       const hourlyCents = Number(req.body?.hourlyCents);
@@ -233,6 +346,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(companyView(ownerKeyFrom(req)));
     } catch (err) {
       sendError(res, err, "Could not save that rate");
+    }
+  });
+
+  app.patch("/api/company/shop", (req, res) => {
+    try {
+      requireShopActor(req);
+      requireOwner(req);
+      const body = req.body ?? {};
+      const num = (key: string): number | null | undefined => {
+        if (body[key] == null || body[key] === "") return undefined;
+        const value = Number(body[key]);
+        return Number.isFinite(value) ? value : undefined;
+      };
+      setShopConfig({
+        ...(typeof body.timezone === "string" && body.timezone.trim() ? { timezone: body.timezone.trim() } : {}),
+        ...(typeof body.wifiSsid === "string" ? { wifiSsid: body.wifiSsid.trim() } : {}),
+        ...(num("fenceLat") !== undefined ? { fenceLat: num("fenceLat")! } : {}),
+        ...(num("fenceLng") !== undefined ? { fenceLng: num("fenceLng")! } : {}),
+        ...(num("fenceRadiusM") !== undefined ? { fenceRadiusM: num("fenceRadiusM")! } : {}),
+        ...(num("openMin") !== undefined ? { openMin: num("openMin")! } : {}),
+        ...(num("closeMin") !== undefined ? { closeMin: num("closeMin")! } : {}),
+        ...(num("autoCloseMin") !== undefined ? { autoCloseMin: num("autoCloseMin")! } : {}),
+        ...(num("graceMs") !== undefined ? { graceMs: num("graceMs")! } : {}),
+      });
+      res.json(companyView(ownerKeyFrom(req)));
+    } catch (err) {
+      sendError(res, err, "Couldn't save the shop");
     }
   });
 
@@ -281,7 +421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/square/webhook", (req, res) => {
     const key = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
-    const url = process.env.SQUARE_WEBHOOK_NOTIFICATION_URL;
+    const url = webhookNotificationUrl();
     if (!key || !url) {
       return res.status(401).json({ message: "Square webhook is not configured" });
     }

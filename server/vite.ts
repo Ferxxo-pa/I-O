@@ -8,6 +8,14 @@ import { nanoid } from "nanoid";
 
 const viteLogger = createLogger();
 
+/** Strip bearer tokens and phone secrets before anything reaches the console. */
+export function redactLog(message: string): string {
+  return message
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\bio_[A-Za-z0-9_-]+\b/g, "io_[redacted]")
+    .replace(/\/join\/[^/?\s]+/g, "/join/[redacted]");
+}
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -16,7 +24,7 @@ export function log(message: string, source = "express") {
     hour12: true,
   });
 
-  console.log(`${formattedTime} [${source}] ${message}`);
+  console.log(`${formattedTime} [${source}] ${redactLog(message)}`);
 }
 
 export async function setupVite(app: Express, server: Server) {

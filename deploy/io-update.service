@@ -1,0 +1,12 @@
+[Unit]
+Description=I/O update check
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=io
+Group=io
+WorkingDirectory=/opt/io
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/io/.env
+ExecStart=/usr/bin/node /opt/io/scripts/self-update.mjs

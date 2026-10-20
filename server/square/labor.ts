@@ -3,6 +3,58 @@ import { squareFetch } from "./client";
 import { squareLocationId } from "./location";
 import { primaryJobWage, type JobWage, type WageSetting } from "./parse";
 
+export class SquareMemberError extends Error {
+  reason: "deactivated" | "unassigned";
+  constructor(reason: "deactivated" | "unassigned") {
+    super(
+      reason === "deactivated"
+        ? "Square team member is deactivated"
+        : "Square team member is not assigned to this location",
+    );
+    this.reason = reason;
+  }
+}
+
+type SquareTeamMember = {
+  id?: string;
+  status?: string;
+  given_name?: string;
+  family_name?: string;
+  assigned_locations?: {
+    assignment_type?: string;
+    location_ids?: string[];
+  };
+};
+
+export type SquareMemberGate = {
+  teamMemberId: string;
+  name: string;
+  locationId: string;
+  hourlyCents: number;
+  jobTitle: string;
+};
+
+/** Active Square member assigned to this shop. The wage is read from Square, never written. */
+export async function gateSquareMember(teamMemberId: string): Promise<SquareMemberGate> {
+  const shop = await squareLocationId();
+  const body = await squareFetch<{ team_member?: SquareTeamMember }>(
+    `/v2/team-members/${encodeURIComponent(teamMemberId)}`,
+  );
+  const member = body.team_member;
+  if (!member || member.status !== "ACTIVE") throw new SquareMemberError("deactivated");
+  const assigned = member.assigned_locations;
+  const ids = assigned?.location_ids ?? [];
+  const allLocations = assigned?.assignment_type === "ALL_CURRENT_AND_FUTURE_LOCATIONS";
+  if (!shop || (!allLocations && !ids.includes(shop))) throw new SquareMemberError("unassigned");
+  const extra = await squareFetch<{ wage_setting?: WageSetting }>(
+    `/v2/team-members/${encodeURIComponent(teamMemberId)}/wage-setting`,
+  );
+  const job = primaryJobWage(extra.wage_setting);
+  if (!job) throw new Error("Square has no hourly wage for that person");
+  const name = [member.given_name, member.family_name].filter(Boolean).join(" ") || "Team";
+  return { teamMemberId, name, locationId: shop, hourlyCents: job.hourlyCents, jobTitle: job.title };
+}
+
 export type RemoteTimecard = {
   personId: string;
   name: string;
@@ -95,17 +147,30 @@ export function timecardFromWebhook(body: unknown): RemoteTimecard | null {
   };
 }
 
-export async function openTimecard(teamMemberId: string, hourlyCents: number): Promise<string> {
+const opening = new Map<string, Promise<string>>();
+
+export function openTimecard(teamMemberId: string, hourlyCents: number, locationId?: string): Promise<string> {
+  const pending = opening.get(teamMemberId);
+  if (pending) return pending;
+  const run = openTimecardNow(teamMemberId, hourlyCents, locationId);
+  opening.set(teamMemberId, run);
+  void run.finally(() => {
+    if (opening.get(teamMemberId) === run) opening.delete(teamMemberId);
+  });
+  return run;
+}
+
+async function openTimecardNow(teamMemberId: string, hourlyCents: number, locationId?: string): Promise<string> {
   const existing = await findOpenTimecard(teamMemberId);
   if (existing) return existing;
 
-  const locationId = await locationForMember(teamMemberId);
+  const location = locationId || (await locationForMember(teamMemberId));
   const wage = await wageForMember(teamMemberId, hourlyCents);
   const body = await squareFetch<{ timecard?: { id?: string } }>("/v2/labor/timecards", {
     method: "POST",
     body: JSON.stringify(
       timecardCreateBody({
-        locationId,
+        locationId: location,
         teamMemberId,
         startAt: new Date().toISOString(),
         wage,
@@ -188,12 +253,15 @@ async function locationForMember(teamMemberId: string): Promise<string> {
   return locationId;
 }
 
-export async function closeTimecard(id: string): Promise<void> {
+export async function closeTimecard(id: string, teamMemberId?: string): Promise<void> {
   const current = await squareFetch<{ timecard?: SquareTimecard }>(
     `/v2/labor/timecards/${encodeURIComponent(id)}`,
   );
   const card = current.timecard;
   if (!card || card.version === undefined) throw new Error("Square timecard is missing");
+  if (teamMemberId && card.team_member_id !== teamMemberId) {
+    throw new Error("That timecard belongs to someone else");
+  }
   if (card.status === "CLOSED" || card.end_at) return;
 
   await squareFetch(`/v2/labor/timecards/${encodeURIComponent(id)}`, {
