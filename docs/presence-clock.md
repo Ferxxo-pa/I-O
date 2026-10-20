@@ -44,6 +44,8 @@ Worked time is what the shop-computer counter follows. It is not pay. Square com
 
 These windows are env settings: `PRESENCE_ARRIVE_START`, `PRESENCE_ARRIVE_END`, `PRESENCE_LUNCH_START`, `PRESENCE_LUNCH_END`, `PRESENCE_MIN_AWAY_MS`, `PRESENCE_OPEN`, `PRESENCE_CLOSE`, `PRESENCE_DAY_CLOSE`, `PRESENCE_CLOSE_GRACE_MS`.
 
+The shop-wide streak and the week bar use a second gate. `PRESENCE_SHOP_DAY_MIN_PEOPLE` (default 1) is how many people must be on the clock together. `PRESENCE_SHOP_DAY_MIN_MINUTES` is optional. When it is set, that overlap has to last at least that many minutes. Unset, there is no minute minimum. With the default of one person, any accepted arrival still counts. Rejected punches never count. The clock is Chicago time. Early and late punches count. 9–5 is not a cutoff, and a real break is not time together.
+
 ## I'm here, and a forgotten clock-out
 
 `POST /api/presence/here` is the one-tap fallback. With a fresh accurate fix it is a normal arrive (`source: "here"`). Without a fix it is accepted only when the request carries `x-desk-token` matching `PRESENCE_DESK_TOKEN` on the server. That token stays on the shop computer. A remote "I'm here" with no fix is logged as `desk_required` and changes nothing.
@@ -57,9 +59,9 @@ Approval appends one leave with `source: "correction"` and `closesDay: true`. De
 
 ## I/O
 
-Green means clocked in (including a trip that has not yet become a break). Gray means out, on break, or day closed. The dots sit above the strip. The flame is consecutive open shop days that have an accepted arrival. The unit is days, not hours. Today with nobody in yet does not break the run. A missed open day does. Saturday and Sunday are skipped unless they are listed in `PRESENCE_OPEN_WEEKDAYS`.
+Green means clocked in (including a trip that has not yet become a break). Gray means out, on break, or day closed. The dots sit above the strip. The flame is consecutive open days the shop cleared together (see the headcount and optional minutes above). The unit is days, not hours. Today, while the shop is still short of that line, does not break the run. A missed open day does. Saturday and Sunday are skipped unless they are listed in `PRESENCE_OPEN_WEEKDAYS`.
 
-The week bar under the flame is those same days, Monday through Sunday. The green and red money bar is still Square sales.
+The week bar under the flame is those same shop days, Monday through Sunday. The green and red money bar is still Square sales.
 
 When an arrival is accepted, that person's counter starts on the shop computer. The server pushes `GET /api/presence/stream` and the strip also polls `/api/state`. A break or a closed day stops the counter at the leave time. Time after the leave is not accrued. This path does not open the older wage-writing timecard helper.
 

@@ -7,7 +7,7 @@ import {
   presenceReasonText,
   presenceStreak,
   presenceWeek,
-  punchWorkedDates,
+  shopWorkedDates,
   type DayConfig,
   type DayPhase,
   type PersonDay,
@@ -229,7 +229,7 @@ export class PresenceBook {
   ): PresenceView {
     const config = this.opts.config;
     const date = zonedParts(now, config.tz).key;
-    const worked = punchWorkedDates(this.records, config.tz);
+    const worked = shopWorkedDates(this.records, config, now);
     const dots = people.map((person) => this.dot(person, now));
     const you = viewerId ? (dots.find((dot) => dot.personId === viewerId) ?? null) : null;
     return {
