@@ -296,6 +296,7 @@ function GameMenu({
   presence,
   onClock,
   onSettings,
+  onChange,
 }: {
   fight: FightView | null;
   calm: boolean;
@@ -307,9 +308,24 @@ function GameMenu({
   presence: PresenceView | null;
   onClock: () => void;
   onSettings: () => void;
+  onChange: () => void;
 }) {
   const week = fight?.week ?? null;
-  if (!week) return null;
+  if (!week) {
+    return (
+      <div className="col">
+        <p className="menu-note">Name the company in Change, then set the shop PIN.</p>
+        <div className="tool-row">
+          <button type="button" className="gear dock" aria-label="Settings" onClick={onSettings}>
+            <GearIcon />
+          </button>
+        </div>
+        <button type="button" className="menu-row who" onClick={onChange}>
+          <span>Change</span>
+        </button>
+      </div>
+    );
+  }
   const filled = week.ownCents + week.cushionUsedCents;
   const step = menuLevel({
     weeksCovered: week.weeksCovered,
@@ -341,6 +357,9 @@ function GameMenu({
           <GearIcon />
         </button>
       </div>
+      <button type="button" className="menu-row who" onClick={onChange}>
+        <span>Change</span>
+      </button>
     </div>
   );
 }
@@ -658,6 +677,14 @@ export default function Hud() {
     setChange(false);
   };
 
+  const openChange = () => {
+    if (demo) return;
+    if (!guard("change")) return;
+    setMenu(false);
+    setSettings(false);
+    setChange(true);
+  };
+
   const guard = (next: "clock" | "settings" | "change") => {
     if (demo && next === "clock") return false;
     if (!pinSet) {
@@ -680,6 +707,7 @@ export default function Hud() {
   const finishPin = (pin: string) => {
     setShopPin(pin);
     setPinOpen(false);
+    void refresh();
     const next = afterPin;
     setAfterPin(null);
     if (next === "settings") setSettings(true);
@@ -876,6 +904,7 @@ export default function Hud() {
                     if (!demo && !guard("settings")) return;
                     setSettings(true);
                   }}
+                  onChange={openChange}
                 />
               )}
             </motion.div>
@@ -900,7 +929,9 @@ export default function Hud() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {change && <ChangePanel onClose={() => setChange(false)} onCompany={takeCompany} />}
+          {change && (
+            <ChangePanel company={company} onClose={() => setChange(false)} onCompany={takeCompany} />
+          )}
         </AnimatePresence>
 
         <AnimatePresence>
@@ -1210,19 +1241,24 @@ function GearScreen({
 }
 
 function ChangePanel({
+  company,
   onClose,
   onCompany,
 }: {
+  company: CompanyView | null;
   onClose: () => void;
   onCompany: (next: CompanyView) => void;
 }) {
   const [people, setPeople] = useState<Array<{ id: string; name: string; hourlyCents: number | null }>>([]);
   const [source, setSource] = useState<"square" | "manual">("manual");
+  const [companyName, setCompanyName] = useState("");
   const [name, setName] = useState("");
   const [rate, setRate] = useState("");
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!company?.name) return;
     let cancel = false;
     void fetch(apiUrl("/api/company/roster"), { headers: ownerHeaders() })
       .then(async (res) => {
@@ -1238,7 +1274,64 @@ function ChangePanel({
     return () => {
       cancel = true;
     };
-  }, []);
+  }, [company?.name, company?.people.length]);
+
+  const createCompany = async () => {
+    if (!companyName.trim()) {
+      setError("Name the company");
+      return;
+    }
+    setError(null);
+    const res = await fetch(apiUrl("/api/company"), {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ name: companyName.trim() }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      setError(body.message || "Could not create the company");
+      return;
+    }
+    onCompany(body);
+    setCompanyName("");
+  };
+
+  const consent = async (personId: string) => {
+    setError(null);
+    const res = await fetch(apiUrl("/api/presence/consent"), {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ personId, consent: true }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      setError(body.message || "Couldn't save consent");
+      return;
+    }
+    const next = await fetch(apiUrl("/api/company"), { headers: ownerHeaders() });
+    const view = await next.json();
+    if (!next.ok) {
+      setError(view.message || "Couldn't load the company");
+      return;
+    }
+    onCompany(view);
+  };
+
+  const phoneLink = async (personId: string) => {
+    setError(null);
+    setInviteUrl(null);
+    const res = await fetch(apiUrl("/api/presence/phone/setup"), {
+      method: "POST",
+      headers: ownerHeaders(),
+      body: JSON.stringify({ personId, label: "Phone" }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      setError(body.message || "Couldn't prepare that phone");
+      return;
+    }
+    setInviteUrl(typeof body.inviteUrl === "string" ? body.inviteUrl : null);
+  };
 
   const saveRate = async (id: string, raw: string) => {
     const dollars = Number(raw);
@@ -1300,30 +1393,59 @@ function ChangePanel({
           Close
         </button>
       </div>
+      {!company?.name ? (
+        <form
+          className="ask"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createCompany();
+          }}
+        >
+          <input
+            value={companyName}
+            onChange={(event) => setCompanyName(event.target.value)}
+            placeholder="Company"
+            aria-label="Company"
+          />
+        </form>
+      ) : (
+        <p className="menu-note">{company.name}. The hourly rate stays on this computer. It is not sent to Square.</p>
+      )}
       {source === "square" && <p className="pay-source">Square</p>}
-      {people.map((person) => (
-        <div className="pay-row" key={person.id}>
-          <span>{person.name}</span>
-          {source === "square" ? (
-            <span>{person.hourlyCents ? `$${rateText(person.hourlyCents)}/hr` : "—"}</span>
-          ) : (
-            <span className="pay-rate">
-              <span>$</span>
-              <input
-                aria-label={`${person.name} hourly rate`}
-                defaultValue={rateText(person.hourlyCents ?? 2000)}
-                inputMode="decimal"
-                onBlur={(event) => void saveRate(person.id, event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") (event.target as HTMLInputElement).blur();
-                }}
-              />
-              <span>/hr</span>
-            </span>
-          )}
-        </div>
-      ))}
-      {source === "manual" && (
+      {people.map((person) => {
+        const consented = company?.people.some((row) => row.id === person.id && row.consentedAt != null);
+        return (
+          <div className="pay-row" key={person.id}>
+            <span>{person.name}</span>
+            {source === "square" ? (
+              <span>{person.hourlyCents ? `$${rateText(person.hourlyCents)}/hr` : "—"}</span>
+            ) : (
+              <span className="pay-rate">
+                <span>$</span>
+                <input
+                  aria-label={`${person.name} hourly rate`}
+                  defaultValue={rateText(person.hourlyCents ?? 2000)}
+                  inputMode="decimal"
+                  onBlur={(event) => void saveRate(person.id, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+                  }}
+                />
+                <span>/hr</span>
+              </span>
+            )}
+            {!consented && (
+              <button type="button" onClick={() => void consent(person.id)}>
+                Consent
+              </button>
+            )}
+            <button type="button" onClick={() => void phoneLink(person.id)} aria-label={`Phone link for ${person.name}`}>
+              Phone
+            </button>
+          </div>
+        );
+      })}
+      {company?.name && source === "manual" && (
         <form
           className="ask"
           onSubmit={(event) => {
@@ -1351,6 +1473,11 @@ function ChangePanel({
             }}
           />
         </form>
+      )}
+      {inviteUrl && (
+        <p className="menu-note">
+          Open this once on that phone: <a href={inviteUrl}>{inviteUrl}</a>
+        </p>
       )}
       {error && <div className="err">{error}</div>}
     </motion.div>

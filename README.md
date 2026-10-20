@@ -18,6 +18,8 @@ npm run dev
 
 Open http://localhost:5000. Each PC links to one person, then **I/O** clocks that person in and out. The green and red numbers stay the whole business.
 
+Shop PC test, including the Windows start script: [TESTING.md](TESTING.md).
+
 ```bash
 npm run build
 npm start
