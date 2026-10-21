@@ -129,6 +129,8 @@ powercfg /change hibernate-timeout-ac 0
 
 Leave Windows Update set to automatic. The start script runs `deploy\windows\lock-secrets.cmd` (ACLs for the `io` user) and then `scripts\run-with-env.mjs`, which reads `.env` and starts again 3 seconds after an exit. Create a standard user named `io` and set `IO_SERVICE_USER=io` if the account name differs. Do not run I/O as Administrator.
 
+`deploy\windows\install-boot.cmd` creates that startup task from whichever folder you cloned. Right-click it and choose Run as administrator. It also keeps the computer awake while it is plugged in. Close `scripts\start-shop.cmd` after that so only one copy is running.
+
 If you would rather have a Windows service, install [nssm](https://nssm.cc/) and point it at `node.exe` with arguments `C:\io\scripts\run-with-env.mjs`, AppDirectory `C:\io`, and exit action Restart. pm2 (`pm2 start scripts/run-with-env.mjs --name io` then `pm2 save` and `pm2 startup`) is the other service option. The Task Scheduler commands above are the one that does not add a tool.
 
 ## Restore

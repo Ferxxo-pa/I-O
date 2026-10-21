@@ -1,5 +1,7 @@
 # I/O
 
+Shop owner on a Windows computer: start with [SETUP.md](SETUP.md). To have Codex walk you through that setup, copy the prompt in [CODEX_SETUP.md](CODEX_SETUP.md).
+
 **Input vs Output.** A tiny trading-terminal strip that gamifies work.
 
 ```

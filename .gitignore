@@ -25,6 +25,17 @@ logs
 
 # Runtime data
 data/
+/dist.previous
+/data.pre-update
+/incoming
+/update.lock
+/update-pending.json
+/SHA256SUMS
+/SHA256SUMS.sig
+/io-*.tar.gz
+update-private.pem
+update-public.pem
+signing-key.pem
 pids
 *.pid
 *.seed
