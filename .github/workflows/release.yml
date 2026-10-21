@@ -1,3 +1,6 @@
+# Builds a shop archive from main, signs the checksum, and can open a draft release.
+# Drafts stay unpublished. The shop updater ignores them. Do not remove --draft.
+
 name: Release
 
 on:
@@ -12,17 +15,28 @@ on:
           - stable
           - beta
       version:
-        description: Version, such as 0.2.0
+        description: Version, such as 0.2.1. Must match package.json.
         required: true
         type: string
       publish:
-        description: Create a draft GitHub release. Stays unpublished until a reviewer publishes it.
+        description: Create a draft GitHub release. It stays a draft until someone publishes it.
         required: true
         default: false
         type: boolean
 
 jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run from main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Run Release from the main branch. This run was ${{ github.ref }}."
+            exit 1
+          fi
+
   build:
+    needs: guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,9 +49,15 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: Pack the shop box
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          tar -czf "io-${{ inputs.version }}.tar.gz" dist
-          sha256sum "io-${{ inputs.version }}.tar.gz" > SHA256SUMS
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$RELEASE_VERSION" ]; then
+            echo "package.json is $pkg. The workflow version is $RELEASE_VERSION. Make them the same on main, then run this again."
+            exit 1
+          fi
+          node scripts/pack-release.mjs "$RELEASE_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: io-${{ inputs.version }}
@@ -53,18 +73,44 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/download-artifact@v4
         with:
           name: io-${{ inputs.version }}
+          path: .
+      - name: Sign the checksum
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "Add an Ed25519 private key as the UPDATE_SIGNING_KEY secret on the release environment."
+            echo "The private key stays in GitHub. It does not go in the repo or on the shop computer."
+            exit 1
+          fi
+          umask 077
+          keyfile="$RUNNER_TEMP/signing-key.pem"
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$UPDATE_SIGNING_KEY" > "$keyfile"
+          if ! grep -q "BEGIN" "$keyfile"; then
+            printf '%b\n' "$UPDATE_SIGNING_KEY" > "$keyfile"
+          fi
+          node scripts/sign-checksum.mjs SHA256SUMS SHA256SUMS.sig "$keyfile" --print-public | tee "$RUNNER_TEMP/update-public.pem"
+          echo "Copy the public key above into UPDATE_TRUST_PUBKEY on the shop computer."
       - name: Create a draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
         run: |
-          prerelease=false
-          if [ "${{ inputs.channel }}" = "beta" ]; then prerelease=true; fi
-          gh release create "v${{ inputs.version }}" \
+          prerelease=()
+          if [ "$RELEASE_CHANNEL" = "beta" ]; then prerelease=(--prerelease); fi
+          gh release create "v${RELEASE_VERSION}" \
             --draft \
-            --title "v${{ inputs.version }}" \
-            --notes "Draft only. Publish this release after review. The shop updater ignores drafts." \
-            $( [ "$prerelease" = true ] && echo --prerelease ) \
-            "io-${{ inputs.version }}.tar.gz" SHA256SUMS
+            --title "v${RELEASE_VERSION}" \
+            --notes "Draft only. The shop updater ignores drafts. Publish this release in GitHub when the shop should install it." \
+            "${prerelease[@]}" \
+            "io-${RELEASE_VERSION}.tar.gz" SHA256SUMS SHA256SUMS.sig

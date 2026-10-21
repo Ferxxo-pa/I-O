@@ -104,3 +104,76 @@ export function planUpdate(input) {
   }
   return { action: "install", release };
 }
+
+/** One SHA256SUMS line. Two spaces, the same shape sha256sum writes. */
+export function shaFromSums(text, filename) {
+  for (const line of String(text).split(/\r?\n/)) {
+    const match = /^([a-f0-9]{64})\s+\*?(\S+)\s*$/i.exec(line.trim());
+    if (match && match[2] === filename) return match[1];
+  }
+  return "";
+}
+
+/** Map the GitHub releases API into the rows the planner understands. */
+export function githubReleases(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    const version = String(row?.tag_name || "").replace(/^v/, "");
+    const assets = Array.isArray(row?.assets) ? row.assets : [];
+    const asset = assets.find((item) => item?.name === `io-${version}.tar.gz`);
+    const sums = assets.find((item) => item?.name === "SHA256SUMS");
+    const sig = assets.find((item) => item?.name === "SHA256SUMS.sig");
+    return {
+      version,
+      draft: Boolean(row?.draft),
+      prerelease: Boolean(row?.prerelease),
+      asset: asset?.browser_download_url || "",
+      sums: sums?.browser_download_url || "",
+      signatureUrl: sig?.browser_download_url || "",
+      sha256: "",
+      signature: "",
+      notes: typeof row?.body === "string" ? row.body : "",
+    };
+  });
+}
+
+export function releaseVersionOk(version) {
+  return /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$/.test(String(version || "").trim());
+}
+
+/**
+ * PEM text, a one-line PEM with literal \n, or a path to a PEM file.
+ * The private key never belongs here.
+ */
+export function readTrustKey(value, fs = null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const unescaped = raw.replace(/\\n/g, "\n");
+  if (unescaped.includes("BEGIN")) return unescaped;
+  if (fs?.existsSync?.(raw)) {
+    try {
+      return String(fs.readFileSync(raw, "utf8"));
+    } catch {
+      return raw;
+    }
+  }
+  return unescaped;
+}
+
+/** skip, windows (stop the shop node so the boot loop restarts it), or systemd. */
+export function restartPlan(platform, env = {}) {
+  if (env.UPDATE_RESTART === "0") return "skip";
+  return platform === "win32" ? "windows" : "systemd";
+}
+
+/** Stop only the shop server. The updater process is left running. */
+export function windowsServerStopScript(pid) {
+  const id = Number(pid);
+  if (!Number.isInteger(id) || id <= 0) throw new Error("Bad pid");
+  return [
+    `$self = ${id}`,
+    "Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" |",
+    "Where-Object { $_.ProcessId -ne $self -and $_.CommandLine -match 'dist[\\\\/]index\\.js' } |",
+    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join(" ");
+}

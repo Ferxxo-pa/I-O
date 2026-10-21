@@ -1,6 +1,6 @@
 # Test I/O on the shop PC
 
-This is the first run on the Windows computer at the shop. The longer owner checklist is [docs/tester-setup.md](docs/tester-setup.md). Phone trigger screens are [docs/presence-phone-automations.md](docs/presence-phone-automations.md). Overnight updates stay off for this test. How the checksum, signature, and rollback work is [docs/updates.md](docs/updates.md).
+This is the first run on the Windows computer at the shop. The plain-language owner guide is [SETUP.md](SETUP.md). The longer owner checklist is [docs/tester-setup.md](docs/tester-setup.md). Phone trigger screens are [docs/presence-phone-automations.md](docs/presence-phone-automations.md). Overnight updates stay off for this test. How the checksum, signature, and rollback work is [docs/updates.md](docs/updates.md).
 
 Square stays a dry run. Do not set `SQUARE_PRESENCE_MIRROR`. Do not run `npm run relay:deploy` or `deploy:cf`. Do not put a Square token anywhere except `.env` on this PC. The hourly rate you type stays on this PC. I/O does not send it to Square.
 

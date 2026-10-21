@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { restorePreviousDist } from "./update-apply.mjs";
 import { nextBootAction } from "./update-lib.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -88,11 +89,7 @@ function follow(child) {
 }
 
 function rollback() {
-  const previous = join(root, "dist.previous");
-  const dist = join(root, "dist");
-  if (!existsSync(previous)) return;
-  rmSync(dist, { recursive: true, force: true });
-  renameSync(previous, dist);
+  restorePreviousDist(root);
 }
 
 const pending = readPending();
